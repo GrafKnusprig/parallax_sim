@@ -27,6 +27,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [SerializeField] private Material planetMaterial;
     [SerializeField] private float minProxyRadius = 2f;
     [SerializeField] private float maxProxyRadius = 200f;
+    [SerializeField] private bool useHighQualitySpheres = true;
+    [SerializeField] private int sphereSubdivisions = 3;  // Higher = more detailed (0-4 recommended)
 
     [Header("Player (real space)")]
     [SerializeField] private float moveSpeedAuPerSecond = 0.01f;
@@ -47,7 +49,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [Header("Super Near Zone - Breathtaking Flybys")]
     [SerializeField] private float superNearSpeed = 0.00001f;  // Ultra-slow for dramatic flybys
     [SerializeField] private float superNearScale = 0.0001f;   // Massive planet effect
-    [SerializeField] private float superNearTransitionDistanceAu = 0.01f;  // Very close encounters
+    [SerializeField] private float superNearTransitionDistanceAu = 0.01f;  // Fallback for very small bodies
+    [SerializeField] private float superNearRadiusMultiplier = 2.0f;  // Super near zone = planet radius * this multiplier
+    [SerializeField] private bool adaptToplanetSize = true;  // Whether to adapt super near zone to planet size
     
     [Header("Safety Features")]
     [SerializeField] private bool enableSafeSpawn = true;
@@ -265,14 +269,22 @@ public class SolarSystemParallaxManager : MonoBehaviour
             float radiusKm = BodyRadiiKm.TryGetValue(naifId, out float r) ? r : 1_000f;
 
             // Create proxy sphere
-            GameObject proxy = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            proxy.name = name;
+            GameObject proxy;
+            if (useHighQualitySpheres)
+            {
+                proxy = CreateHighQualitySphere(name, sphereSubdivisions);
+            }
+            else
+            {
+                proxy = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                proxy.name = name;
+                var col = proxy.GetComponent<Collider>();
+                if (col) Destroy(col);
+            }
+            
             proxy.transform.SetParent(transform, false);
             proxy.transform.localPosition = Vector3.zero;
             proxy.transform.localScale = Vector3.one; // will be updated in UpdateBodyProxies
-
-            var col = proxy.GetComponent<Collider>();
-            if (col) Destroy(col);
 
             var renderer = proxy.GetComponent<MeshRenderer>();
             if (renderer != null)
@@ -379,6 +391,115 @@ public class SolarSystemParallaxManager : MonoBehaviour
         cleaned = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(cleaned.ToLower());
         
         return cleaned;
+    }
+    
+    private GameObject CreateHighQualitySphere(string name, int subdivisions)
+    {
+        GameObject sphere = new GameObject(name);
+        MeshFilter meshFilter = sphere.AddComponent<MeshFilter>();
+        MeshRenderer meshRenderer = sphere.AddComponent<MeshRenderer>();
+        
+        // Create icosphere mesh for better quality
+        Mesh mesh = CreateIcosphereMesh(subdivisions);
+        meshFilter.mesh = mesh;
+        
+        return sphere;
+    }
+    
+    private Mesh CreateIcosphereMesh(int subdivisions)
+    {
+        // Create an icosphere (geodesic sphere) which has much better triangle distribution than UV sphere
+        List<Vector3> vertices = new List<Vector3>();
+        List<int> triangles = new List<int>();
+        List<Vector2> uvs = new List<Vector2>();
+        
+        // Golden ratio for icosahedron
+        float phi = (1.0f + Mathf.Sqrt(5.0f)) / 2.0f;
+        float invPhi = 1.0f / phi;
+        
+        // Create initial icosahedron vertices
+        vertices.AddRange(new Vector3[] {
+            new Vector3(-invPhi, phi, 0).normalized,
+            new Vector3(invPhi, phi, 0).normalized,
+            new Vector3(-invPhi, -phi, 0).normalized,
+            new Vector3(invPhi, -phi, 0).normalized,
+            new Vector3(0, -invPhi, phi).normalized,
+            new Vector3(0, invPhi, phi).normalized,
+            new Vector3(0, -invPhi, -phi).normalized,
+            new Vector3(0, invPhi, -phi).normalized,
+            new Vector3(phi, 0, -invPhi).normalized,
+            new Vector3(phi, 0, invPhi).normalized,
+            new Vector3(-phi, 0, -invPhi).normalized,
+            new Vector3(-phi, 0, invPhi).normalized
+        });
+        
+        // Create initial icosahedron triangles
+        int[] initialTriangles = {
+            0, 11, 5, 0, 5, 1, 0, 1, 7, 0, 7, 10, 0, 10, 11,
+            1, 5, 9, 5, 11, 4, 11, 10, 2, 10, 7, 6, 7, 1, 8,
+            3, 9, 4, 3, 4, 2, 3, 2, 6, 3, 6, 8, 3, 8, 9,
+            4, 9, 5, 2, 4, 11, 6, 2, 10, 8, 6, 7, 9, 8, 1
+        };
+        
+        triangles.AddRange(initialTriangles);
+        
+        // Subdivide
+        Dictionary<string, int> midpointCache = new Dictionary<string, int>();
+        
+        for (int i = 0; i < subdivisions; i++)
+        {
+            List<int> newTriangles = new List<int>();
+            
+            for (int t = 0; t < triangles.Count; t += 3)
+            {
+                int v1 = triangles[t];
+                int v2 = triangles[t + 1];
+                int v3 = triangles[t + 2];
+                
+                int m1 = GetMidpoint(v1, v2, vertices, midpointCache);
+                int m2 = GetMidpoint(v2, v3, vertices, midpointCache);
+                int m3 = GetMidpoint(v3, v1, vertices, midpointCache);
+                
+                newTriangles.AddRange(new int[] { v1, m1, m3, v2, m2, m1, v3, m3, m2, m1, m2, m3 });
+            }
+            
+            triangles = newTriangles;
+        }
+        
+        // Generate UVs
+        for (int i = 0; i < vertices.Count; i++)
+        {
+            Vector3 v = vertices[i];
+            float u = Mathf.Atan2(v.x, v.z) / (2 * Mathf.PI) + 0.5f;
+            float v_coord = Mathf.Asin(v.y) / Mathf.PI + 0.5f;
+            uvs.Add(new Vector2(u, v_coord));
+        }
+        
+        Mesh mesh = new Mesh();
+        mesh.vertices = vertices.ToArray();
+        mesh.triangles = triangles.ToArray();
+        mesh.uv = uvs.ToArray();
+        mesh.RecalculateNormals();
+        mesh.RecalculateBounds();
+        
+        return mesh;
+    }
+    
+    private int GetMidpoint(int v1, int v2, List<Vector3> vertices, Dictionary<string, int> cache)
+    {
+        string key = v1 < v2 ? $"{v1},{v2}" : $"{v2},{v1}";
+        
+        if (cache.ContainsKey(key))
+        {
+            return cache[key];
+        }
+        
+        Vector3 midpoint = ((vertices[v1] + vertices[v2]) * 0.5f).normalized;
+        vertices.Add(midpoint);
+        int index = vertices.Count - 1;
+        cache[key] = index;
+        
+        return index;
     }
     
     private void EnsureSafeSpawnPosition()
@@ -523,37 +644,42 @@ public class SolarSystemParallaxManager : MonoBehaviour
         // Distance to planet surface (not center) - prevent negative distance
         distanceToNearestPlanet = Mathf.Max(0.00001f, distanceAu - planetRadiusAu);
         
-        // Calculate scale based on distance with super near zone for breathtaking flybys
+        // Calculate adaptive super near zone distance based on planet size
+        float adaptiveSuperNearDistance = adaptToplanetSize ? 
+            Mathf.Max(superNearTransitionDistanceAu, planetRadiusAu * superNearRadiusMultiplier) : 
+            superNearTransitionDistanceAu;
+        
+        // Calculate scale based on distance with adaptive super near zone for breathtaking flybys
         float targetScale;
         
-        if (distanceToNearestPlanet < superNearTransitionDistanceAu)
+        if (distanceToNearestPlanet < adaptiveSuperNearDistance)
         {
             // Super near zone: transition from superNearScale to minScale
-            float superNearFactor = distanceToNearestPlanet / superNearTransitionDistanceAu;
+            float superNearFactor = distanceToNearestPlanet / adaptiveSuperNearDistance;
             superNearFactor = superNearFactor * superNearFactor; // Exponential for dramatic effect
             targetScale = Mathf.Lerp(superNearScale, minScale, superNearFactor);
         }
         else
         {
             // Normal scale transition from minScale to maxScale
-            float scaleFactor = Mathf.Clamp01((distanceToNearestPlanet - superNearTransitionDistanceAu) / (scaleTransitionDistanceAu - superNearTransitionDistanceAu));
+            float scaleFactor = Mathf.Clamp01((distanceToNearestPlanet - adaptiveSuperNearDistance) / (scaleTransitionDistanceAu - adaptiveSuperNearDistance));
             targetScale = Mathf.Lerp(minScale, maxScale, scaleFactor);
         }
         
         // Calculate speed based on distance with four zones: super near, close, normal, and hyperspeed
         float targetSpeed;
         
-        if (distanceToNearestPlanet < superNearTransitionDistanceAu)
+        if (distanceToNearestPlanet < adaptiveSuperNearDistance)
         {
             // Super near zone: transition from superNearSpeed to minSpeed for breathtaking flybys
-            float superNearFactor = distanceToNearestPlanet / superNearTransitionDistanceAu;
+            float superNearFactor = distanceToNearestPlanet / adaptiveSuperNearDistance;
             superNearFactor = superNearFactor * superNearFactor * superNearFactor; // Cubic for ultra-dramatic slowdown
             targetSpeed = Mathf.Lerp(superNearSpeed, minSpeed, superNearFactor);
         }
         else if (distanceToNearestPlanet < speedTransitionDistanceAu)
         {
             // Close zone: exponential curve from minSpeed to maxSpeed
-            float speedFactor = (distanceToNearestPlanet - superNearTransitionDistanceAu) / (speedTransitionDistanceAu - superNearTransitionDistanceAu);
+            float speedFactor = (distanceToNearestPlanet - adaptiveSuperNearDistance) / (speedTransitionDistanceAu - adaptiveSuperNearDistance);
             speedFactor = speedFactor * speedFactor; // Square for exponential curve
             targetSpeed = Mathf.Lerp(minSpeed, maxSpeed, speedFactor);
         }
@@ -577,7 +703,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         float speedLerpSpeed = 25f;
         
         // Emergency braking: if we're moving too fast and getting close, brake harder
-        if (distanceToNearestPlanet < superNearTransitionDistanceAu * 3f && currentSpeed > targetSpeed)
+        if (distanceToNearestPlanet < adaptiveSuperNearDistance * 3f && currentSpeed > targetSpeed)
         {
             speedLerpSpeed = 100f; // Ultra-fast braking for super near encounters
         }
@@ -599,10 +725,10 @@ public class SolarSystemParallaxManager : MonoBehaviour
         // Debug info (remove or comment out when not needed)
         if (Time.frameCount % 30 == 0) // Every 30 frames
         {
-            string zone = distanceToNearestPlanet < superNearTransitionDistanceAu ? "SUPER NEAR" :
+            string zone = distanceToNearestPlanet < adaptiveSuperNearDistance ? "SUPER NEAR" :
                          distanceToNearestPlanet < speedTransitionDistanceAu ? "CLOSE" :
                          distanceToNearestPlanet < hyperSpeedTransitionDistanceAu ? "NORMAL" : "HYPERSPEED";
-            Debug.Log($"Zone: {zone}, Distance: {distanceToNearestPlanet:F6} AU, Scale: {currentScale:F5}, Speed: {currentSpeed:F6} AU/s, Planet: {nearestPlanet.name}");
+            Debug.Log($"Zone: {zone}, Distance: {distanceToNearestPlanet:F6} AU, SuperNear: {adaptiveSuperNearDistance:F6} AU, Scale: {currentScale:F5}, Speed: {currentSpeed:F6} AU/s, Planet: {nearestPlanet.name}");
         }
     }
     
