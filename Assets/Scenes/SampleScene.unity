@@ -460,6 +460,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: '::'
   csvFileName: solar_system_positions_with_velocity.csv
+  planetMaterialsCsvFileName: planet_materials.csv
   targetDate: 2023-07-10
   horizonRadius: 1000
   horizonMaterial: {fileID: 2100000, guid: f12098f110e17446eab1f24a6e51f488, type: 2}
@@ -471,14 +472,19 @@ MonoBehaviour:
   enableDynamicBehavior: 1
   baseScale: 1
   minScale: 0.0001
-  maxScale: 10
+  maxScale: 20
   scaleTransitionDistanceAu: 0.1
-  baseSpeed: 0.01
+  baseSpeed: 0.1
   minSpeed: 0.001
-  maxSpeed: 0.1
+  maxSpeed: 1
   speedTransitionDistanceAu: 0.1
   hyperSpeed: 1
   hyperSpeedTransitionDistanceAu: 2
+  superNearSpeed: 0.00001
+  superNearScale: 0.0001
+  superNearTransitionDistanceAu: 0.0001
+  enableSafeSpawn: 1
+  safeSpawnDistanceAu: 0.01
   moveAction: {fileID: -1680190386980627800, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   verticalAction: {fileID: 0}
   enableLabels: 1
