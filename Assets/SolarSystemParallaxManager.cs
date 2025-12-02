@@ -11,6 +11,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [Header("CSV")]
     [Tooltip("File name inside StreamingAssets")]
     [SerializeField] private string csvFileName = "solar_system_positions_with_velocity.csv";
+    
+    [Tooltip("Planet materials CSV file inside StreamingAssets")]
+    [SerializeField] private string planetMaterialsCsvFileName = "planet_materials.csv";
 
     [Tooltip("We use a single snapshot for this date (YYYY-MM-DD).")]
     [SerializeField] private string targetDate = "2023-07-10";
@@ -45,6 +48,10 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [SerializeField] private float superNearSpeed = 0.00001f;  // Ultra-slow for dramatic flybys
     [SerializeField] private float superNearScale = 0.0001f;   // Massive planet effect
     [SerializeField] private float superNearTransitionDistanceAu = 0.01f;  // Very close encounters
+    
+    [Header("Safety Features")]
+    [SerializeField] private bool enableSafeSpawn = true;
+    [SerializeField] private float safeSpawnDistanceAu = 0.01f;  // Minimum safe distance from planet surface
 
     [Tooltip("New Input System: 2D move (x: strafe, y: forward).")]
     [SerializeField] private InputActionReference moveAction;
@@ -73,6 +80,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private float currentScale;
     private float currentSpeed;
     private float distanceToNearestPlanet;
+    
+    // Planet-specific materials
+    private Dictionary<int, Material> planetMaterials = new Dictionary<int, Material>();
 
     private class BodyInstance
     {
@@ -124,6 +134,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     {
         CreateHorizonSphere();
         SetupLabelCanvas();
+        LoadPlanetMaterials();
         LoadBodiesFromCsv();
         if (bodies.Count == 0)
         {
@@ -136,6 +147,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         // Set initial camera scale
         Camera.main.transform.localScale = Vector3.one * currentScale;
+        
+        Debug.Log($"Player spawn position: {playerRealPosAu} AU");
     }
 
     private void SetupLabelCanvas()
@@ -262,9 +275,14 @@ public class SolarSystemParallaxManager : MonoBehaviour
             if (col) Destroy(col);
 
             var renderer = proxy.GetComponent<MeshRenderer>();
-            if (renderer != null && planetMaterial != null)
+            if (renderer != null)
             {
-                renderer.sharedMaterial = planetMaterial;
+                // Try to use planet-specific material first, fall back to generic material
+                Material materialToUse = planetMaterials.TryGetValue(naifId, out Material specificMaterial) ? specificMaterial : planetMaterial;
+                if (materialToUse != null)
+                {
+                    renderer.sharedMaterial = materialToUse;
+                }
             }
 
             var body = new BodyInstance
@@ -297,6 +315,12 @@ public class SolarSystemParallaxManager : MonoBehaviour
         {
             Debug.LogWarning("Earth (naifId 399) not found on " + targetDate + ". Player starts at origin in real space.");
             playerRealPosAu = Vector3.zero;
+        }
+        
+        // Safety check: ensure player doesn't spawn inside a planet
+        if (enableSafeSpawn)
+        {
+            EnsureSafeSpawnPosition();
         }
     }
 
@@ -355,6 +379,126 @@ public class SolarSystemParallaxManager : MonoBehaviour
         cleaned = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(cleaned.ToLower());
         
         return cleaned;
+    }
+    
+    private void EnsureSafeSpawnPosition()
+    {
+        const int maxAttempts = 10;
+        int attempts = 0;
+        
+        while (attempts < maxAttempts)
+        {
+            bool insidePlanet = false;
+            BodyInstance problematicPlanet = null;
+            
+            // Check if player is inside any planet
+            foreach (var body in bodies)
+            {
+                Vector3 offsetAu = body.realPosAu - playerRealPosAu;
+                float distanceAu = offsetAu.magnitude;
+                float planetRadiusAu = body.radiusKm / (float)AU_KM;
+                float requiredDistanceAu = planetRadiusAu + safeSpawnDistanceAu;
+                
+                if (distanceAu < requiredDistanceAu)
+                {
+                    insidePlanet = true;
+                    problematicPlanet = body;
+                    break;
+                }
+            }
+            
+            if (!insidePlanet)
+            {
+                // Safe position found
+                if (attempts > 0)
+                {
+                    Debug.Log($"Moved player to safe spawn position: {playerRealPosAu} after {attempts} attempts");
+                }
+                break;
+            }
+            
+            // Move player away from the problematic planet
+            Vector3 directionAway = (playerRealPosAu - problematicPlanet.realPosAu).normalized;
+            if (directionAway.sqrMagnitude < 0.0001f)
+            {
+                // If positions are identical, choose a random direction
+                directionAway = new Vector3(UnityEngine.Random.Range(-1f, 1f), UnityEngine.Random.Range(-1f, 1f), UnityEngine.Random.Range(-1f, 1f)).normalized;
+            }
+            
+            float problematicPlanetRadiusAu = problematicPlanet.radiusKm / (float)AU_KM;
+            float safeDistance = problematicPlanetRadiusAu + safeSpawnDistanceAu;
+            playerRealPosAu = problematicPlanet.realPosAu + directionAway * safeDistance;
+            
+            attempts++;
+            Debug.Log($"Player was inside {problematicPlanet.name}, moved to safe distance. Attempt {attempts}");
+        }
+        
+        if (attempts >= maxAttempts)
+        {
+            Debug.LogWarning($"Could not find safe spawn position after {maxAttempts} attempts. Player may still be close to a planet.");
+        }
+    }
+    
+    private void LoadPlanetMaterials()
+    {
+        string path = Path.Combine(Application.streamingAssetsPath, planetMaterialsCsvFileName);
+        if (!File.Exists(path))
+        {
+            Debug.LogWarning($"Planet materials CSV not found at {path}. Using default materials.");
+            return;
+        }
+        
+        try
+        {
+            var lines = File.ReadAllLines(path);
+            if (lines.Length <= 1)
+            {
+                Debug.LogWarning("Planet materials CSV seems empty or header-only.");
+                return;
+            }
+            
+            for (int i = 1; i < lines.Length; i++)
+            {
+                string line = lines[i].Trim();
+                if (string.IsNullOrEmpty(line)) continue;
+                
+                string[] parts = line.Split(',');
+                if (parts.Length < 2) continue;
+                
+                if (int.TryParse(parts[0], out int naifId))
+                {
+                    string materialPath = parts[1].Trim();
+                    
+                    // Load material from asset path (works in editor and build)
+                    Material material = null;
+                    
+#if UNITY_EDITOR
+                    // In editor, use AssetDatabase
+                    material = UnityEditor.AssetDatabase.LoadAssetAtPath<Material>(materialPath);
+#else
+                    // In build, try to find material by converting path to Resources path
+                    string resourcesPath = materialPath.Replace("Assets/", "").Replace(".mat", "");
+                    material = Resources.Load<Material>(resourcesPath);
+#endif
+                    
+                    if (material != null)
+                    {
+                        planetMaterials[naifId] = material;
+                        Debug.Log($"Loaded material for NAIF ID {naifId}: {materialPath}");
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"Could not load material at path: {materialPath} for NAIF ID {naifId}");
+                    }
+                }
+            }
+            
+            Debug.Log($"Loaded {planetMaterials.Count} planet-specific materials.");
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"Error loading planet materials CSV: {e.Message}");
+        }
     }
 
     // --- Dynamic scaling and speed ---
