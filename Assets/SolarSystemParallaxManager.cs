@@ -338,15 +338,13 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
         Vector3 camForward = cam.transform.forward;
         Vector3 camRight = cam.transform.right;
+        Vector3 camUp = cam.transform.up;
 
-        // Flatten forward to horizontal if you don't want flying with pitch:
-        camForward.y = 0f;
-        camForward.Normalize();
-
+        // Full 3D movement based on camera orientation
         Vector3 moveDir =
-            camRight * move.x +
-            camForward * move.y +
-            Vector3.up * vertical;
+            camRight * move.x +        // strafe left/right
+            camForward * move.y +      // move forward/backward in camera direction
+            camUp * vertical;          // move up/down relative to camera
 
         if (moveDir.sqrMagnitude < 1e-6f) return;
 
