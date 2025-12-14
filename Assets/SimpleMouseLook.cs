@@ -3,8 +3,13 @@ using UnityEngine.InputSystem;
 
 public class SimpleMouseLook : MonoBehaviour
 {
+    [Header("Mode")]
+    [SerializeField] private bool vrMode = true;
+    [Tooltip("When enabled, uses VR head tracking. When disabled, uses mouse look.")]
+    
     [Header("Input")]
-    [SerializeField] private InputActionReference lookAction; // Player/Look (Vector2)
+    [SerializeField] private InputActionReference vrLookAction; // VR head tracking (for VR mode)
+    [SerializeField] private InputActionReference mouseLookAction; // Mouse look (for non-VR mode)
 
     [Header("Settings")]
     [SerializeField] private float sensitivity = 0.1f;
@@ -15,14 +20,28 @@ public class SimpleMouseLook : MonoBehaviour
 
     private void OnEnable()
     {
-        if (lookAction != null)
-            lookAction.action.Enable();
+        EnableCurrentLookAction();
     }
 
     private void OnDisable()
     {
-        if (lookAction != null)
-            lookAction.action.Disable();
+        DisableAllLookActions();
+    }
+    
+    private void EnableCurrentLookAction()
+    {
+        if (vrMode && vrLookAction != null)
+            vrLookAction.action.Enable();
+        else if (!vrMode && mouseLookAction != null)
+            mouseLookAction.action.Enable();
+    }
+    
+    private void DisableAllLookActions()
+    {
+        if (vrLookAction != null)
+            vrLookAction.action.Disable();
+        if (mouseLookAction != null)
+            mouseLookAction.action.Disable();
     }
 
     private void Start()
@@ -40,10 +59,19 @@ public class SimpleMouseLook : MonoBehaviour
 
     private void Update()
     {
-        if (lookAction == null) return;
+        // In VR mode, VR head tracking handles rotation, so we skip manual rotation
+        if (vrMode)
+        {
+            // VR head tracking is handled by the Tracked Pose Driver component
+            // No manual rotation needed here
+            return;
+        }
+        
+        // Non-VR mode: use mouse look
+        if (mouseLookAction == null) return;
 
         // Mouse delta / right stick etc.
-        Vector2 delta = lookAction.action.ReadValue<Vector2>();
+        Vector2 delta = mouseLookAction.action.ReadValue<Vector2>();
 
         // Horizontal: yaw, Vertical: pitch
         yaw   += delta.x * sensitivity;
