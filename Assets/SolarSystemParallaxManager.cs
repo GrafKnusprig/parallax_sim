@@ -32,6 +32,10 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
     [Header("Player (real space)")]
     [SerializeField] private float moveSpeedAuPerSecond = 0.01f;
+    
+    [Header("Camera")]
+    [Tooltip("The camera to use for rendering and movement calculations. If not set, will use Camera.main.")]
+    [SerializeField] private Camera targetCamera;
 
     [Header("Dynamic Scaling & Speed")]
     [SerializeField] private bool enableDynamicBehavior = true;
@@ -134,6 +138,14 @@ public class SolarSystemParallaxManager : MonoBehaviour
         if (verticalAction != null) verticalAction.action.Disable();
     }
 
+    private Camera GetActiveCamera()
+    {
+        if (targetCamera != null)
+            return targetCamera;
+        
+        return Camera.main;
+    }
+    
     private void Start()
     {
         CreateHorizonSphere();
@@ -150,7 +162,15 @@ public class SolarSystemParallaxManager : MonoBehaviour
         currentSpeed = baseSpeed;
         
         // Set initial camera scale
-        Camera.main.transform.localScale = Vector3.one * currentScale;
+        Camera cam = GetActiveCamera();
+        if (cam != null)
+        {
+            cam.transform.localScale = Vector3.one * currentScale;
+        }
+        else
+        {
+            Debug.LogError("No camera found! Please assign a camera in the Inspector or tag a camera as MainCamera.");
+        }
         
         Debug.Log($"Player spawn position: {playerRealPosAu} AU");
     }
@@ -716,7 +736,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         currentSpeed = Mathf.Lerp(currentSpeed, targetSpeed, Time.deltaTime * speedLerpSpeed);
         
         // Apply scale to camera
-        Camera cam = Camera.main;
+        Camera cam = GetActiveCamera();
         if (cam != null)
         {
             cam.transform.localScale = Vector3.one * currentScale;
@@ -763,7 +783,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
         // Movement is expressed in camera space, but we do NOT move the camera in Unity world.
         // We only move the player in REAL space (AU).
-        Camera cam = Camera.main;
+        Camera cam = GetActiveCamera();
         if (cam == null) return;
 
         Vector3 camForward = cam.transform.forward;
@@ -824,7 +844,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
             // --- UI label update ---
             if (enableLabels && body.labelUI != null)
             {
-                Camera cam = Camera.main;
+                Camera cam = GetActiveCamera();
                 if (cam != null)
                 {
                     // Convert world position to screen position
