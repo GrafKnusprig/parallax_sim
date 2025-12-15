@@ -104,6 +104,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private GameObject hudUI;
     private Text hudText;
 
+    private Canvas hudCanvas;
+
     private class BodyInstance
     {
         public string name;
@@ -160,7 +162,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private void Start()
     {
         CreateHorizonSphere();
-        SetupLabelCanvas();
+        //SetupLabelCanvas();
         CreateHUD();
         LoadPlanetMaterials();
         LoadBodiesFromCsv();
@@ -187,67 +189,111 @@ public class SolarSystemParallaxManager : MonoBehaviour
         Debug.Log($"Player spawn position: {playerRealPosAu} AU");
     }
 
-    private void SetupLabelCanvas()
-    {
-        if (enableLabels && labelCanvas == null)
-        {
-            // Create a Canvas for labels if one isn't assigned
-            GameObject canvasGO = new GameObject("LabelCanvas");
-            canvasGO.transform.SetParent(transform, false);
-            
-            Canvas canvas = canvasGO.AddComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            canvas.sortingOrder = 100;
-            
-            CanvasScaler scaler = canvasGO.AddComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1920, 1080);
-            
-            canvasGO.AddComponent<GraphicRaycaster>();
-            
-            labelCanvas = canvas;
-            Debug.Log("Created automatic label canvas");
-        }
-    }
-    
     private void CreateHUD()
     {
         if (!enableHUD) return;
-        
-        if (labelCanvas == null)
+
+        // 1. Create a dedicated GameObject for the HUD
+        GameObject hudGO = new GameObject("HUD_Canvas");
+
+        // 2. Parent it to the Camera so it moves with your head
+        Camera cam = GetActiveCamera();
+        if (cam != null)
         {
-            Debug.LogWarning("Cannot create HUD: Label Canvas not available. HUD requires a canvas.");
-            return;
+            hudGO.transform.SetParent(cam.transform);
         }
-        
-        // Create HUD GameObject
-        hudUI = new GameObject("HUD");
-        hudUI.transform.SetParent(labelCanvas.transform, false);
-        
-        // Add RectTransform
-        RectTransform rectTransform = hudUI.AddComponent<RectTransform>();
-        
-        // Position at top-left corner
-        rectTransform.anchorMin = new Vector2(0, 1);
-        rectTransform.anchorMax = new Vector2(0, 1);
-        rectTransform.pivot = new Vector2(0, 1);
-        rectTransform.anchoredPosition = hudPosition;
-        rectTransform.sizeDelta = new Vector2(300, 150);
-        
-        // Add Text component
-        hudText = hudUI.AddComponent<Text>();
+
+        // 3. Configure Canvas as WorldSpace
+        hudCanvas = hudGO.AddComponent<Canvas>();
+        hudCanvas.renderMode = RenderMode.WorldSpace;
+
+        // 4. IMPORTANT: Position and Scale for VR
+        // Position: 0.5 meters in front of your face
+        hudGO.transform.localPosition = new Vector3(0f, -0.1f, 0.5f);
+        hudGO.transform.localRotation = Quaternion.identity;
+        // Scale: World Space UI needs to be very small (0.001 is standard for readable text)
+        hudGO.transform.localScale = Vector3.one * 0.001f;
+
+        // 5. Add UI Elements
+        GameObject textGO = new GameObject("HUD_Text");
+        textGO.transform.SetParent(hudGO.transform, false);
+
+        // Sizing the text container
+        RectTransform rt = textGO.AddComponent<RectTransform>();
+        rt.sizeDelta = new Vector2(400, 200);
+
+        hudText = textGO.AddComponent<Text>();
         hudText.font = labelFont != null ? labelFont : Resources.GetBuiltinResource<Font>("Arial.ttf");
-        hudText.fontSize = hudFontSize;
+        hudText.fontSize = 30; // Larger font size because we scaled the canvas down
         hudText.color = hudColor;
         hudText.alignment = TextAnchor.UpperLeft;
         hudText.horizontalOverflow = HorizontalWrapMode.Overflow;
         hudText.verticalOverflow = VerticalWrapMode.Overflow;
-        
-        // Initial text
-        hudText.text = "Speed: 0.00000 AU/s\nZone: NORMAL";
-        
-        Debug.Log("HUD created successfully");
+
+        hudText.text = "Initializing HUD...";
     }
+
+    //private void SetupLabelCanvas()
+    //{
+    //    if (enableLabels && labelCanvas == null)
+    //    {
+    //        // Create a Canvas for labels if one isn't assigned
+    //        GameObject canvasGO = new GameObject("LabelCanvas");
+    //        canvasGO.transform.SetParent(transform, false);
+
+    //        Canvas canvas = canvasGO.AddComponent<Canvas>();
+    //        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+    //        canvas.sortingOrder = 100;
+
+    //        CanvasScaler scaler = canvasGO.AddComponent<CanvasScaler>();
+    //        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+    //        scaler.referenceResolution = new Vector2(1920, 1080);
+
+    //        canvasGO.AddComponent<GraphicRaycaster>();
+
+    //        labelCanvas = canvas;
+    //        Debug.Log("Created automatic label canvas");
+    //    }
+    //}
+
+    //private void CreateHUD()
+    //{
+    //    if (!enableHUD) return;
+
+    //    if (labelCanvas == null)
+    //    {
+    //        Debug.LogWarning("Cannot create HUD: Label Canvas not available. HUD requires a canvas.");
+    //        return;
+    //    }
+
+    //    // Create HUD GameObject
+    //    hudUI = new GameObject("HUD");
+    //    hudUI.transform.SetParent(labelCanvas.transform, false);
+
+    //    // Add RectTransform
+    //    RectTransform rectTransform = hudUI.AddComponent<RectTransform>();
+
+    //    // Position at top-left corner
+    //    rectTransform.anchorMin = new Vector2(0, 1);
+    //    rectTransform.anchorMax = new Vector2(0, 1);
+    //    rectTransform.pivot = new Vector2(0, 1);
+    //    rectTransform.anchoredPosition = hudPosition;
+    //    rectTransform.sizeDelta = new Vector2(300, 150);
+
+    //    // Add Text component
+    //    hudText = hudUI.AddComponent<Text>();
+    //    hudText.font = labelFont != null ? labelFont : Resources.GetBuiltinResource<Font>("Arial.ttf");
+    //    hudText.fontSize = hudFontSize;
+    //    hudText.color = hudColor;
+    //    hudText.alignment = TextAnchor.UpperLeft;
+    //    hudText.horizontalOverflow = HorizontalWrapMode.Overflow;
+    //    hudText.verticalOverflow = VerticalWrapMode.Overflow;
+
+    //    // Initial text
+    //    hudText.text = "Speed: 0.00000 AU/s\nZone: NORMAL";
+
+    //    Debug.Log("HUD created successfully");
+    //}
 
     private void Update()
     {
@@ -407,33 +453,66 @@ public class SolarSystemParallaxManager : MonoBehaviour
         }
     }
 
+    //private void CreateLabelForBody(BodyInstance body)
+    //{
+    //    if (labelCanvas == null)
+    //    {
+    //        Debug.LogWarning("Label Canvas not assigned. Please assign a Canvas for labels.");
+    //        return;
+    //    }
+
+    //    // Create UI GameObject
+    //    GameObject labelGO = new GameObject(body.name + "_Label");
+    //    labelGO.transform.SetParent(labelCanvas.transform, false);
+
+    //    // Add RectTransform
+    //    RectTransform rectTransform = labelGO.AddComponent<RectTransform>();
+    //    rectTransform.sizeDelta = new Vector2(200, 30);
+
+    //    // Add Text component
+    //    Text textComponent = labelGO.AddComponent<Text>();
+    //    textComponent.text = body.name;
+    //    textComponent.font = labelFont != null ? labelFont : Resources.GetBuiltinResource<Font>("Arial.ttf");
+    //    textComponent.fontSize = labelFontSize;
+    //    textComponent.color = labelColor;
+    //    textComponent.alignment = TextAnchor.MiddleLeft;
+    //    textComponent.horizontalOverflow = HorizontalWrapMode.Overflow;
+    //    textComponent.verticalOverflow = VerticalWrapMode.Overflow;
+
+    //    // Store references
+    //    body.labelUI = labelGO;
+    //}
     private void CreateLabelForBody(BodyInstance body)
     {
-        if (labelCanvas == null)
-        {
-            Debug.LogWarning("Label Canvas not assigned. Please assign a Canvas for labels.");
-            return;
-        }
-
-        // Create UI GameObject
+        // Create a dedicated Canvas for this specific body
         GameObject labelGO = new GameObject(body.name + "_Label");
-        labelGO.transform.SetParent(labelCanvas.transform, false);
 
-        // Add RectTransform
-        RectTransform rectTransform = labelGO.AddComponent<RectTransform>();
-        rectTransform.sizeDelta = new Vector2(200, 30);
+        // Parent it to the proxy (the sphere) so it moves with the planet
+        labelGO.transform.SetParent(body.proxy, false);
 
-        // Add Text component
-        Text textComponent = labelGO.AddComponent<Text>();
-        textComponent.text = body.name;
-        textComponent.font = labelFont != null ? labelFont : Resources.GetBuiltinResource<Font>("Arial.ttf");
-        textComponent.fontSize = labelFontSize;
-        textComponent.color = labelColor;
-        textComponent.alignment = TextAnchor.MiddleLeft;
-        textComponent.horizontalOverflow = HorizontalWrapMode.Overflow;
-        textComponent.verticalOverflow = VerticalWrapMode.Overflow;
+        Canvas c = labelGO.AddComponent<Canvas>();
+        c.renderMode = RenderMode.WorldSpace;
 
-        // Store references
+        // Position slightly above the sphere
+        // Since we are inside the proxy, localPosition 0,0,0 is the center.
+        // We move it up by 0.5 units (relative to the proxy scale) plus a bit extra
+        labelGO.transform.localPosition = new Vector3(0, 0.6f, 0);
+        labelGO.transform.localScale = Vector3.one * 0.005f; // Small scale for World Space
+
+        // Create Text
+        GameObject textObj = new GameObject("Text");
+        textObj.transform.SetParent(labelGO.transform, false);
+
+        Text t = textObj.AddComponent<Text>();
+        t.text = body.name;
+        t.font = labelFont != null ? labelFont : Resources.GetBuiltinResource<Font>("Arial.ttf");
+        t.fontSize = 50; // Large font, scaled down by canvas
+        t.color = labelColor;
+        t.alignment = TextAnchor.MiddleCenter;
+        t.horizontalOverflow = HorizontalWrapMode.Overflow;
+        t.verticalOverflow = VerticalWrapMode.Overflow;
+
+        // Assign to body instance
         body.labelUI = labelGO;
     }
 
@@ -929,72 +1008,82 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
     private void UpdateBodyProxies()
     {
+        Camera cam = GetActiveCamera();
+
         foreach (var body in bodies)
         {
+            // 1. Calculate Real Space Position
             Vector3 offsetAu = body.realPosAu - playerRealPosAu;
             float distAu = offsetAu.magnitude;
 
+            // 2. Hide if too close (on top of player)
             if (distAu < 1e-6f)
             {
                 body.proxy.gameObject.SetActive(false);
-                if (body.labelUI != null)
-                    body.labelUI.SetActive(false);
+                if (body.labelUI != null) body.labelUI.SetActive(false);
                 continue;
             }
 
             body.proxy.gameObject.SetActive(true);
 
+            // 3. Position the Proxy on the Horizon Sphere
             Vector3 dir = offsetAu / distAu;
-
-            // Position on horizon sphere
             Vector3 proxyPos = dir * horizonRadius;
             body.proxy.position = proxyPos;
 
-            // Apparent angular radius (radians)
+            // 4. Calculate Sphere Scale (Angular Size)
             double distKm = distAu * AU_KM;
             double angularRadius = Math.Atan(body.radiusKm / distKm);
-
-            // Proxy radius at distance horizonRadius
             double proxyRadius = Math.Tan(angularRadius) * horizonRadius;
 
             float r = (float)proxyRadius;
-
-            // Clamp to keep things sane in Unity
             r = Mathf.Clamp(r, minProxyRadius, maxProxyRadius);
 
             float diameter = r * 2f;
+
+            // Apply scale to the Planet Sphere
             body.proxy.localScale = new Vector3(diameter, diameter, diameter);
 
-            // --- UI label update ---
+            // ---------------------------------------------------------
+            // 5. VR LABEL UPDATES (World Space)
+            // ---------------------------------------------------------
             if (enableLabels && body.labelUI != null)
             {
-                Camera cam = GetActiveCamera();
+                body.labelUI.SetActive(true);
+
                 if (cam != null)
                 {
-                    // Convert world position to screen position
-                    Vector3 screenPos = cam.WorldToScreenPoint(body.proxy.position);
-                    
-                    // Check if object is in front of camera and on screen
-                    bool isVisible = screenPos.z > 0 && 
-                                   screenPos.x >= 0 && screenPos.x <= Screen.width &&
-                                   screenPos.y >= 0 && screenPos.y <= Screen.height;
-                    
-                    body.labelUI.SetActive(isVisible);
-                    
-                    if (isVisible)
+                    // A. BILLBOARDING
+                    // Make the text look at the camera.
+                    // We look at the label's position + the camera's forward vector 
+                    // to ensure it aligns perfectly with the camera plane.
+                    body.labelUI.transform.LookAt(
+                        body.labelUI.transform.position + cam.transform.rotation * Vector3.forward,
+                        cam.transform.rotation * Vector3.up
+                    );
+
+                    // B. SCALE COMPENSATION
+                    // Since the Label is a child of the Proxy, if the Proxy scale (diameter) is 200,
+                    // the label becomes massive. We need to shrink the label locally 
+                    // to counteract the parent's size.
+
+                    float parentScale = body.proxy.localScale.x;
+
+                    // The target size we want the UI to appear in the world
+                    float targetWorldScale = 0.05f;
+
+                    if (parentScale > 0.0001f)
                     {
-                        // Convert screen position to canvas position
-                        RectTransform canvasRect = labelCanvas.GetComponent<RectTransform>();
-                        RectTransform labelRect = body.labelUI.GetComponent<RectTransform>();
-                        
-                        Vector2 canvasPos;
-                        RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                            canvasRect, screenPos, labelCanvas.worldCamera, out canvasPos);
-                        
-                        // Add offset to position label to the right of the planet
-                        canvasPos.x += labelOffsetPixels;
-                        
-                        labelRect.localPosition = canvasPos;
+                        // Inverse scale: Desired / Parent
+                        float compensatedScale = targetWorldScale / parentScale;
+                        body.labelUI.transform.localScale = Vector3.one * compensatedScale;
+
+                        // C. POSITION ADJUSTMENT
+                        // Keep the label just above the sphere surface.
+                        // Local Y 0.5 is the edge of the sphere. We add a small buffer.
+                        // We divide the buffer by parentScale so the gap stays consistent visually.
+                        float heightBuffer = 5.0f / parentScale;
+                        body.labelUI.transform.localPosition = new Vector3(0, 0.5f + heightBuffer, 0);
                     }
                 }
             }

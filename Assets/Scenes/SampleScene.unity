@@ -599,6 +599,10 @@ MonoBehaviour:
   labelFontSize: 14
   labelColor: {r: 0.4374216, g: 1, b: 0.033018887, a: 1}
   labelOffsetPixels: 20
+  enableHUD: 1
+  hudFontSize: 16
+  hudColor: {r: 0, g: 1, b: 1, a: 1}
+  hudPosition: {x: 20, y: -20}
 --- !u!4 &713169412
 Transform:
   m_ObjectHideFlags: 0
@@ -677,7 +681,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8135023674665499069, guid: 58d0a4ac86f2348deb02f3880c71378e, type: 3}
       propertyPath: m_IsActive
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8518324294302271954, guid: 58d0a4ac86f2348deb02f3880c71378e, type: 3}
       propertyPath: m_LocalPosition.x
