@@ -173,7 +173,6 @@ public class SolarSystemParallaxManager : MonoBehaviour
         currentScale = baseScale;
         currentSpeed = baseSpeed;
 
-        // TODO: TEST IN VR
         // Set initial camera scale
         Camera cam = GetActiveCamera();
         if (cam != null)
@@ -786,11 +785,6 @@ public class SolarSystemParallaxManager : MonoBehaviour
         currentScale = Mathf.Lerp(currentScale, targetScale, Time.deltaTime * scaleLerpSpeed);
         currentSpeed = Mathf.Lerp(currentSpeed, targetSpeed, Time.deltaTime * speedLerpSpeed);
         
-        // TODO: TEST IN VR LAB - Dynamic camera scaling per frame
-        // This makes planets appear bigger when close and smaller when far.
-        // May cause camera position drift (~0.1 units) in faster zones due to floating-point precision.
-        // Test in VR lab: Does this improve the experience? Does it cause noticeable drift?
-        // Possible alternatives: Adjust FOV instead of scale
         // Apply scale to camera
         Camera cam = GetActiveCamera();
         if (cam != null)
