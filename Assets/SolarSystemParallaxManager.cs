@@ -32,6 +32,10 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
     [Header("Player (real space)")]
     [SerializeField] private float moveSpeedAuPerSecond = 0.01f;
+    
+    [Header("Camera")]
+    [Tooltip("The camera to use for rendering and movement calculations. If not set, will use Camera.main.")]
+    [SerializeField] private Camera targetCamera;
 
     [Header("Dynamic Scaling & Speed")]
     [SerializeField] private bool enableDynamicBehavior = true;
@@ -70,8 +74,15 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [SerializeField] private int labelFontSize = 14;
     [SerializeField] private Color labelColor = Color.white;
     [SerializeField] private float labelOffsetPixels = 20f; // offset from planet center in pixels
+    
+    [Header("HUD (Heads-Up Display)")]
+    [SerializeField] private bool enableHUD = true;
+    [SerializeField] private int hudFontSize = 16;
+    [SerializeField] private Color hudColor = Color.cyan;
+    [SerializeField] private Vector2 hudPosition = new Vector2(20f, -20f); // offset from top-left corner
 
     private const double AU_KM = 149_597_870.7;
+    private const double SPEED_OF_LIGHT_KM_S = 299_792.458; // km/s
 
     private Vector3 playerRealPosAu; // player position in AU (real space)
 
@@ -83,10 +94,15 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private BodyInstance nearestPlanet;
     private float currentScale;
     private float currentSpeed;
+    private float actualSpeed; // Actual movement speed (0 when standing still)
     private float distanceToNearestPlanet;
     
     // Planet-specific materials
     private Dictionary<int, Material> planetMaterials = new Dictionary<int, Material>();
+    
+    // HUD elements
+    private GameObject hudUI;
+    private Text hudText;
 
     private class BodyInstance
     {
@@ -98,7 +114,6 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
         // UI-based labels
         public GameObject labelUI;
-        public Text labelText;
     }
 
     // Radii for main bodies (km), keyed by NAIF ID used in your file
@@ -134,10 +149,19 @@ public class SolarSystemParallaxManager : MonoBehaviour
         if (verticalAction != null) verticalAction.action.Disable();
     }
 
+    private Camera GetActiveCamera()
+    {
+        if (targetCamera != null)
+            return targetCamera;
+        
+        return Camera.main;
+    }
+    
     private void Start()
     {
         CreateHorizonSphere();
         SetupLabelCanvas();
+        CreateHUD();
         LoadPlanetMaterials();
         LoadBodiesFromCsv();
         if (bodies.Count == 0)
@@ -148,9 +172,17 @@ public class SolarSystemParallaxManager : MonoBehaviour
         // Initialize dynamic behavior
         currentScale = baseScale;
         currentSpeed = baseSpeed;
-        
+
         // Set initial camera scale
-        Camera.main.transform.localScale = Vector3.one * currentScale;
+        Camera cam = GetActiveCamera();
+        if (cam != null)
+        {
+            cam.transform.localScale = Vector3.one * currentScale;
+        }
+        else
+        {
+            Debug.LogError("No camera found! Please assign a camera in the Inspector or tag a camera as MainCamera.");
+        }
         
         Debug.Log($"Player spawn position: {playerRealPosAu} AU");
     }
@@ -176,6 +208,45 @@ public class SolarSystemParallaxManager : MonoBehaviour
             labelCanvas = canvas;
             Debug.Log("Created automatic label canvas");
         }
+    }
+    
+    private void CreateHUD()
+    {
+        if (!enableHUD) return;
+        
+        if (labelCanvas == null)
+        {
+            Debug.LogWarning("Cannot create HUD: Label Canvas not available. HUD requires a canvas.");
+            return;
+        }
+        
+        // Create HUD GameObject
+        hudUI = new GameObject("HUD");
+        hudUI.transform.SetParent(labelCanvas.transform, false);
+        
+        // Add RectTransform
+        RectTransform rectTransform = hudUI.AddComponent<RectTransform>();
+        
+        // Position at top-left corner
+        rectTransform.anchorMin = new Vector2(0, 1);
+        rectTransform.anchorMax = new Vector2(0, 1);
+        rectTransform.pivot = new Vector2(0, 1);
+        rectTransform.anchoredPosition = hudPosition;
+        rectTransform.sizeDelta = new Vector2(300, 150);
+        
+        // Add Text component
+        hudText = hudUI.AddComponent<Text>();
+        hudText.font = labelFont != null ? labelFont : Resources.GetBuiltinResource<Font>("Arial.ttf");
+        hudText.fontSize = hudFontSize;
+        hudText.color = hudColor;
+        hudText.alignment = TextAnchor.UpperLeft;
+        hudText.horizontalOverflow = HorizontalWrapMode.Overflow;
+        hudText.verticalOverflow = VerticalWrapMode.Overflow;
+        
+        // Initial text
+        hudText.text = "Speed: 0.00000 AU/s\nZone: NORMAL";
+        
+        Debug.Log("HUD created successfully");
     }
 
     private void Update()
@@ -364,7 +435,6 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
         // Store references
         body.labelUI = labelGO;
-        body.labelText = textComponent;
     }
 
     private float ParseFloat(string s)
@@ -716,11 +786,14 @@ public class SolarSystemParallaxManager : MonoBehaviour
         currentSpeed = Mathf.Lerp(currentSpeed, targetSpeed, Time.deltaTime * speedLerpSpeed);
         
         // Apply scale to camera
-        Camera cam = Camera.main;
+        Camera cam = GetActiveCamera();
         if (cam != null)
         {
             cam.transform.localScale = Vector3.one * currentScale;
         }
+        
+        // Update HUD
+        UpdateHUD();
         
         // Debug info (remove or comment out when not needed)
         if (Time.frameCount % 30 == 0) // Every 30 frames
@@ -729,6 +802,70 @@ public class SolarSystemParallaxManager : MonoBehaviour
                          distanceToNearestPlanet < speedTransitionDistanceAu ? "CLOSE" :
                          distanceToNearestPlanet < hyperSpeedTransitionDistanceAu ? "NORMAL" : "HYPERSPEED";
             Debug.Log($"Zone: {zone}, Distance: {distanceToNearestPlanet:F6} AU, SuperNear: {adaptiveSuperNearDistance:F6} AU, Scale: {currentScale:F5}, Speed: {currentSpeed:F6} AU/s, Planet: {nearestPlanet.name}");
+        }
+    }
+    
+    private void UpdateHUD()
+    {
+        if (!enableHUD || hudText == null) return;
+        
+        // Determine current zone
+        string zone = "NORMAL";
+        if (nearestPlanet != null)
+        {
+            float adaptiveSuperNearDistance = adaptToplanetSize ? 
+                Mathf.Max(superNearTransitionDistanceAu, (nearestPlanet.radiusKm / (float)AU_KM) * superNearRadiusMultiplier) : 
+                superNearTransitionDistanceAu;
+            
+            if (distanceToNearestPlanet < adaptiveSuperNearDistance)
+                zone = "SUPER NEAR";
+            else if (distanceToNearestPlanet < speedTransitionDistanceAu)
+                zone = "CLOSE";
+            else if (distanceToNearestPlanet < hyperSpeedTransitionDistanceAu)
+                zone = "NORMAL";
+            else
+                zone = "HYPERSPEED";
+        }
+        
+        // Convert speed from AU/s to km/s and km/h
+        double speedKmPerSecond = actualSpeed * AU_KM; // Use actualSpeed instead of currentSpeed
+        double speedKmPerHour = speedKmPerSecond * 3600.0;
+        
+        // Calculate percentage of light speed
+        double lightSpeedPercentage = (speedKmPerSecond / SPEED_OF_LIGHT_KM_S) * 100.0;
+        
+        // Format speed display based on magnitude (no scientific notation)
+        string speedKmhDisplay;
+        if (speedKmPerHour >= 1_000_000_000) // Billions
+            speedKmhDisplay = $"{speedKmPerHour / 1_000_000_000:F2}B km/h";
+        else if (speedKmPerHour >= 1_000_000) // Millions
+            speedKmhDisplay = $"{speedKmPerHour / 1_000_000:F2}M km/h";
+        else if (speedKmPerHour >= 1_000) // Thousands
+            speedKmhDisplay = $"{speedKmPerHour:N0} km/h";
+        else
+            speedKmhDisplay = $"{speedKmPerHour:F2} km/h";
+        
+        // Format light speed as percentage
+        string lightSpeedDisplay;
+        if (lightSpeedPercentage >= 100)
+            lightSpeedDisplay = $"{lightSpeedPercentage:F2}%"; // Over 100% (faster than light!)
+        else if (lightSpeedPercentage >= 1)
+            lightSpeedDisplay = $"{lightSpeedPercentage:F2}%";
+        else if (lightSpeedPercentage >= 0.01)
+            lightSpeedDisplay = $"{lightSpeedPercentage:F4}%";
+        else
+            lightSpeedDisplay = $"{lightSpeedPercentage:F6}%";
+        
+        // Update HUD text
+        hudText.text = $"Speed: {speedKmhDisplay}\n" +
+                      $"Light Speed: {lightSpeedDisplay}\n" +
+                      $"Zone: {zone}\n" +
+                      $"Scale: {currentScale:F4}";
+        
+        if (nearestPlanet != null)
+        {
+            hudText.text += $"\nNearest: {nearestPlanet.name}\n" +
+                           $"Distance: {distanceToNearestPlanet:F6} AU";
         }
     }
     
@@ -763,7 +900,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
         // Movement is expressed in camera space, but we do NOT move the camera in Unity world.
         // We only move the player in REAL space (AU).
-        Camera cam = Camera.main;
+        Camera cam = GetActiveCamera();
         if (cam == null) return;
 
         Vector3 camForward = cam.transform.forward;
@@ -776,11 +913,18 @@ public class SolarSystemParallaxManager : MonoBehaviour
             camForward * move.y +      // move forward/backward in camera direction
             camUp * vertical;          // move up/down relative to camera
 
-        if (moveDir.sqrMagnitude < 1e-6f) return;
+        if (moveDir.sqrMagnitude < 1e-6f)
+        {
+            actualSpeed = 0f; // Standing still
+            return;
+        }
 
         moveDir.Normalize();
         float effectiveSpeed = enableDynamicBehavior ? currentSpeed : moveSpeedAuPerSecond;
         playerRealPosAu += moveDir * (effectiveSpeed * Time.deltaTime);
+        
+        // Track actual movement speed
+        actualSpeed = effectiveSpeed;
     }
 
     private void UpdateBodyProxies()
@@ -824,7 +968,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
             // --- UI label update ---
             if (enableLabels && body.labelUI != null)
             {
-                Camera cam = Camera.main;
+                Camera cam = GetActiveCamera();
                 if (cam != null)
                 {
                     // Convert world position to screen position
