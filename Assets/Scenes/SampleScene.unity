@@ -573,7 +573,7 @@ MonoBehaviour:
   useHighQualitySpheres: 1
   sphereSubdivisions: 3
   moveSpeedAuPerSecond: 0.1
-  targetCamera: {fileID: 0}
+  targetCamera: {fileID: 1528494429}
   enableDynamicBehavior: 1
   baseScale: 1
   minScale: 0.0001
@@ -637,7 +637,7 @@ MonoBehaviour:
   maxStarSize: 500
   starColor: {r: 1, g: 1, b: 1, a: 1}
   starBrightness: 1
-  enableLOD: 1
+  enableLOD: 0
   maxRenderDistanceParsecs: 500
   maxStarsToRender: 100000
   lodNearDistance: 10
@@ -647,6 +647,8 @@ MonoBehaviour:
   useRealParallax: 0
   showDebugInfo: 0
   debugStarLimit: 1000
+  spreadClusteredStars: 1
+  spreadFactor: 10
 --- !u!1 &832575517
 GameObject:
   m_ObjectHideFlags: 0
