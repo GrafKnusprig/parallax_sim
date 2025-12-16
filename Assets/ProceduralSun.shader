@@ -44,6 +44,7 @@ Shader "Custom/ProceduralSun"
                 float4 positionHCS : SV_POSITION;
                 float3 worldPos    : TEXCOORD0;
                 float3 worldNormal : TEXCOORD1;
+                float3 objectPos   : TEXCOORD2;
             };
 
             CBUFFER_START(UnityPerMaterial)
@@ -119,6 +120,8 @@ Shader "Custom/ProceduralSun"
                 OUT.worldPos    = TransformObjectToWorld(IN.positionOS.xyz);
                 OUT.worldNormal = TransformObjectToWorldNormal(IN.normalOS);
                 OUT.positionHCS = TransformWorldToHClip(OUT.worldPos);
+                // Use normalized object-space position for scale-independent noise
+                OUT.objectPos   = normalize(IN.positionOS.xyz);
 
                 return OUT;
             }
@@ -134,7 +137,9 @@ Shader "Custom/ProceduralSun"
 
                 float t = _Time.y;
 
-                float3 p = IN.worldPos * _NoiseScale;
+                // Use normalized object-space position instead of world position
+                // This makes the noise pattern independent of object scale
+                float3 p = IN.objectPos * _NoiseScale;
 
                 float n1 = fbm(p + float3(t * _FlowSpeed1, 0, 0));
                 float n2 = fbm(p + float3(0, t * _FlowSpeed2, t * 0.3));
