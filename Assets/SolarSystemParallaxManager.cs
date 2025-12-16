@@ -21,7 +21,10 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [Header("Horizon bubble")]
     [SerializeField] private float horizonRadius = 1000f;
     [SerializeField] private Material horizonMaterial;
-    [SerializeField] private bool showHorizonSphere = false;
+    [SerializeField] private bool showHorizonSphere = false;  // Make sure this is FALSE
+    
+    // Public accessor for StellarParallaxManager
+    public float HorizonRadius => horizonRadius;
 
     [Header("Planets / Bodies")]
     [SerializeField] private Material planetMaterial;
@@ -84,7 +87,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private const double AU_KM = 149_597_870.7;
     private const double SPEED_OF_LIGHT_KM_S = 299_792.458; // km/s
 
-    private Vector3 playerRealPosAu; // player position in AU (real space)
+    [System.NonSerialized]
+    public Vector3 playerRealPosAu; // player position in AU (real space) - public for StellarParallaxManager
 
     private GameObject horizonSphere;
 
@@ -103,6 +107,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
     // HUD elements
     private GameObject hudUI;
     private Text hudText;
+    
+    // Stellar parallax integration
+    private StellarParallaxManager stellarManager;
 
     private class BodyInstance
     {
@@ -159,6 +166,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
     
     private void Start()
     {
+        // Get reference to stellar manager if present
+        stellarManager = GetComponent<StellarParallaxManager>();
+        
         CreateHorizonSphere();
         SetupLabelCanvas();
         CreateHUD();
@@ -257,6 +267,12 @@ public class SolarSystemParallaxManager : MonoBehaviour
         }
         UpdatePlayerMovement();
         UpdateBodyProxies();
+        
+        // Notify stellar manager of position change
+        if (stellarManager != null)
+        {
+            stellarManager.OnPlayerPositionChanged(playerRealPosAu);
+        }
     }
 
     // --- Setup ---
@@ -866,6 +882,14 @@ public class SolarSystemParallaxManager : MonoBehaviour
         {
             hudText.text += $"\nNearest: {nearestPlanet.name}\n" +
                            $"Distance: {distanceToNearestPlanet:F6} AU";
+        }
+        
+        // Add stellar manager debug info
+        if (stellarManager != null)
+        {
+            hudText.text += $"\nStars Loaded: {stellarManager.GetLoadedStarCount()}\n" +
+                           $"Stars Visible: {stellarManager.GetVisibleStarCount()}\n" +
+                           $"Stars Ready: {(stellarManager.IsDataLoaded() ? "Yes" : "Loading...")}";
         }
     }
     

@@ -541,6 +541,7 @@ GameObject:
   m_Component:
   - component: {fileID: 713169412}
   - component: {fileID: 713169411}
+  - component: {fileID: 713169413}
   m_Layer: 0
   m_Name: GameObject
   m_TagString: Untagged
@@ -599,6 +600,10 @@ MonoBehaviour:
   labelFontSize: 14
   labelColor: {r: 0.4374216, g: 1, b: 0.033018887, a: 1}
   labelOffsetPixels: 20
+  enableHUD: 1
+  hudFontSize: 16
+  hudColor: {r: 0, g: 1, b: 1, a: 1}
+  hudPosition: {x: 20, y: -20}
 --- !u!4 &713169412
 Transform:
   m_ObjectHideFlags: 0
@@ -614,6 +619,34 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &713169413
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 713169410}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b8f4e3d2a1c5f4e8b9d7a2c4f6e1b3a5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StellarParallaxManager
+  gaiaCsvFileName: GAIA_DR3_R7882_phi178182_absz0220.csv
+  starMaterial: {fileID: 2100000, guid: a7b6c8d9e4f3a2b1c8d7e6f5a4b3c9d2, type: 2}
+  baseStarSize: 5
+  maxStarSize: 500
+  starColor: {r: 1, g: 1, b: 1, a: 1}
+  starBrightness: 1
+  enableLOD: 1
+  maxRenderDistanceParsecs: 500
+  maxStarsToRender: 100000
+  lodNearDistance: 10
+  lodFarDistance: 30
+  showParallaxMotion: 1
+  parallaxExaggeration: 100
+  useRealParallax: 0
+  showDebugInfo: 0
+  debugStarLimit: 1000
 --- !u!1 &832575517
 GameObject:
   m_ObjectHideFlags: 0
@@ -1051,8 +1084,8 @@ Camera:
   m_GameObject: {fileID: 1528494424}
   m_Enabled: 1
   serializedVersion: 2
-  m_ClearFlags: 1
-  m_BackGroundColor: {r: 0.19215687, g: 0.3019608, b: 0.4745098, a: 0}
+  m_ClearFlags: 2
+  m_BackGroundColor: {r: 0, g: 0, b: 0, a: 0}
   m_projectionMatrixMode: 1
   m_GateFitMode: 2
   m_FOVAxisMode: 0
@@ -1105,7 +1138,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fedede27f4ed946388ff7be5bab26585, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SimpleMouseLook
-  vrMode: 1
+  vrMode: 0
   vrLookAction: {fileID: -530380113134220495, guid: c348712bda248c246b8c49b3db54643f, type: 3}
   mouseLookAction: {fileID: -5681291154727990353, guid: 7f59cc19636f04d5cbbc64e77a20787f, type: 3}
   sensitivity: 0.1
