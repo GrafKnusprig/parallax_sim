@@ -128,3 +128,5 @@ $RECYCLE.BIN/
 
 # Windows shortcuts
 *.lnk
+
+Assets/StreamingAssets/GAIA_DR3_R7882_phi178182_absz0220.csv
