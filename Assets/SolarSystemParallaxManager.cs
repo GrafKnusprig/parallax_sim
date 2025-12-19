@@ -884,7 +884,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
                            $"Distance: {distanceToNearestPlanet:F6} AU";
         }
         
-        // Add stellar manager debug info
+        // Add stellar manager info
         if (stellarManager != null)
         {
             hudText.text += $"\nStars Loaded: {stellarManager.GetLoadedStarCount()}\n" +

@@ -17,7 +17,6 @@ public class StellarParallaxManager : MonoBehaviour
     [Header("Star Rendering")]
     [SerializeField] private Material starMaterial;
     [SerializeField] private float baseStarSize = 0.1f;
-    [SerializeField] private float maxStarSize = 2.0f;
     [SerializeField] private Color starColor = Color.white;
     [SerializeField] private float starBrightness = 1.0f;
     
@@ -25,8 +24,6 @@ public class StellarParallaxManager : MonoBehaviour
     [SerializeField] private bool enableLOD = true;
     [SerializeField] private float maxRenderDistanceParsecs = 50f;  // Only render stars within this distance
     [SerializeField] private int maxStarsToRender = 100000;  // Maximum stars to render at once
-    [SerializeField] private float lodNearDistance = 10f;  // Distance where all nearby stars are shown
-    [SerializeField] private float lodFarDistance = 30f;   // Distance where star culling becomes aggressive
     
     [Header("Parallax Visualization")]
     [SerializeField] private bool showParallaxMotion = true;
@@ -55,11 +52,19 @@ public class StellarParallaxManager : MonoBehaviour
     private List<StarData> allStars = new List<StarData>();
     private List<StarData> visibleStars = new List<StarData>();
     private GameObject starParent;
-    private List<GameObject> starInstances = new List<GameObject>();
+    
+    // Point sprite rendering
+    private Mesh starMesh;
+    private Vector3[] starPositions;
+    private Color[] starColors;
+    private Matrix4x4[] starMatrices;
+    private MaterialPropertyBlock materialPropertyBlock;
     
     // References
     private SolarSystemParallaxManager solarSystemManager;
     private Camera playerCamera;
+    
+    // UI components removed for clean interface
     
     // State
     private Vector3 lastPlayerPosition = Vector3.zero;
@@ -83,10 +88,17 @@ public class StellarParallaxManager : MonoBehaviour
         playerCamera = Camera.main;
         if (playerCamera == null)
         {
-            playerCamera = FindObjectOfType<Camera>();
+            playerCamera = FindFirstObjectByType<Camera>();
+        }
+        
+        // Initialize rendering components
+        if (materialPropertyBlock == null)
+        {
+            materialPropertyBlock = new MaterialPropertyBlock();
         }
         
         CreateStarParent();
+        InitializePointSpriteSystem();
         
         // Start loading stars asynchronously
         loadingCoroutine = StartCoroutine(LoadStarsAsync());
@@ -99,6 +111,95 @@ public class StellarParallaxManager : MonoBehaviour
         starParent.transform.localPosition = Vector3.zero;
         starParent.transform.localRotation = Quaternion.identity;
         starParent.transform.localScale = Vector3.one;
+    }
+    
+    private void InitializePointSpriteSystem()
+    {
+        // Create a simple quad mesh for star rendering with geometry shader
+        starMesh = new Mesh();
+        starMesh.name = "StarQuadMesh";
+        
+        // Create a simple quad for billboard rendering
+        Vector3[] vertices = {
+            new Vector3(-0.5f, -0.5f, 0),
+            new Vector3( 0.5f, -0.5f, 0),
+            new Vector3( 0.5f,  0.5f, 0),
+            new Vector3(-0.5f,  0.5f, 0)
+        };
+        
+        Vector2[] uv = {
+            new Vector2(0, 0),
+            new Vector2(1, 0),
+            new Vector2(1, 1),
+            new Vector2(0, 1)
+        };
+        
+        int[] triangles = {
+            0, 1, 2,
+            2, 3, 0
+        };
+        
+        starMesh.vertices = vertices;
+        starMesh.uv = uv;
+        starMesh.triangles = triangles;
+        starMesh.RecalculateNormals();
+        starMesh.bounds = new Bounds(Vector3.zero, Vector3.one * 10000f);
+        
+        // Initialize material property block
+        materialPropertyBlock = new MaterialPropertyBlock();
+        
+        if (showDebugInfo)
+        {
+            Debug.Log("Star rendering system initialized with quad mesh for billboard rendering");
+        }
+    }
+    
+    private void CreateStarPatchLabel()
+    {
+        // Debug text creation removed for clean UI
+        // Only log essential information
+        if (showDebugInfo)
+        {
+            Debug.Log("Star rendering system initialized - debug text removed from UI");
+        }
+    }
+    
+    private Canvas GetPlanetLabelCanvas()
+    {
+        if (solarSystemManager == null) return null;
+        
+        // Look for existing planet labels to find the canvas they use
+        GameObject[] planetLabels = GameObject.FindGameObjectsWithTag("Untagged");
+        foreach (GameObject obj in planetLabels)
+        {
+            if (obj.name.Contains("_Label") && obj.GetComponent<UnityEngine.UI.Text>() != null)
+            {
+                Canvas canvas = obj.GetComponentInParent<Canvas>();
+                if (canvas != null)
+                {
+                    Debug.Log($"Found planet label canvas: {canvas.name}");
+                    return canvas;
+                }
+            }
+        }
+        
+        // Fallback: look for any canvas that might be used for labels
+        Canvas[] allCanvases = FindObjectsByType<Canvas>(FindObjectsSortMode.None);
+        foreach (Canvas canvas in allCanvases)
+        {
+            // Skip world space canvases (likely not for UI labels)
+            if (canvas.renderMode == RenderMode.WorldSpace) continue;
+            
+            // Check if this canvas has any text components (likely a UI canvas)
+            if (canvas.GetComponentInChildren<UnityEngine.UI.Text>() != null)
+            {
+                Debug.Log($"Using canvas for star patch label: {canvas.name}");
+                return canvas;
+            }
+        }
+        
+        Debug.LogWarning("Could not find suitable canvas for star patch label");
+        return null;
     }
     
     private IEnumerator LoadStarsAsync()
@@ -184,7 +285,7 @@ public class StellarParallaxManager : MonoBehaviour
         
         // Initial star visibility update
         UpdateVisibleStars();
-        CreateStarInstances();
+        PreparePointSpriteData();
     }
     
     private bool TryParseStellarData(string line, int index, out StarData star)
@@ -252,9 +353,20 @@ public class StellarParallaxManager : MonoBehaviour
         if (Vector3.Distance(lastPlayerPosition, playerPosParsecs) > 0.001f) // 0.001 parsecs threshold
         {
             UpdateVisibleStars();
-            UpdateStarPositions(playerPosParsecs);
+            UpdatePointSpritePositions(playerPosParsecs);
             lastPlayerPosition = playerPosParsecs;
         }
+        
+        // Performance monitoring
+        if (Time.frameCount % 60 == 0 && showDebugInfo) // Every 60 frames
+        {
+            Debug.Log($"StellarParallaxManager Status: {visibleStars.Count} visible stars, " +
+                     $"Positions array: {(starPositions?.Length ?? 0)}, " +
+                     $"Matrices array: {(starMatrices?.Length ?? 0)}");
+        }
+        
+        // Render point sprites every frame
+        RenderPointSprites();
     }
     
     private Vector3 GetPlayerPositionAU()
@@ -303,168 +415,149 @@ public class StellarParallaxManager : MonoBehaviour
         }
     }
     
-    private void CreateStarInstances()
+    private void PreparePointSpriteData()
     {
-        // Clear existing star instances
-        foreach (var star in starInstances)
+        int starCount = visibleStars.Count;
+        if (starCount == 0)
         {
-            if (star != null)
-                DestroyImmediate(star);
-        }
-        starInstances.Clear();
-        
-        // Create new star instances for visible stars
-        foreach (var star in visibleStars)
-        {
-            GameObject starObj = CreateStarInstance(star);
-            if (starObj != null)
-            {
-                starInstances.Add(starObj);
-                
-                // Set initial position
-                Vector3 playerPos = GetPlayerPositionAU() * AU_TO_PARSEC;
-                Vector3 worldPos = CalculateStarWorldPosition(star, playerPos);
-                starObj.transform.position = worldPos;
-                
-                if (showDebugInfo && star.originalIndex < 10)
-                {
-                    Debug.Log($"Star {star.originalIndex}: World position ({worldPos.x:F1},{worldPos.y:F1},{worldPos.z:F1}), " +
-                             $"magnitude={worldPos.magnitude:F1}, scale={starObj.transform.localScale.x:F2}");
-                }
-            }
+            starPositions = new Vector3[0];
+            starColors = new Color[0];
+            starMatrices = new Matrix4x4[0];
+            return;
         }
         
-        Debug.Log($"Created {starInstances.Count} star instances from {visibleStars.Count} visible stars");
+        // Initialize arrays
+        starPositions = new Vector3[starCount];
+        starColors = new Color[starCount];
+        starMatrices = new Matrix4x4[starCount];
         
-        // Check for potential render artifacts
-        if (showDebugInfo)
+        // Get initial player position
+        Vector3 playerPos = GetPlayerPositionAU() * AU_TO_PARSEC;
+        
+        for (int i = 0; i < starCount; i++)
         {
-            int largeStars = 0;
-            foreach (var starObj in starInstances)
-            {
-                if (starObj != null && starObj.transform.localScale.x > 2f)
-                {
-                    largeStars++;
-                }
-            }
-            if (largeStars > 0)
-            {
-                Debug.LogWarning($"Found {largeStars} stars with large scale - possible render artifacts!");
-            }
-        }
-    }
-    
-    private GameObject CreateStarInstance(StarData star)
-    {
-        // Create a simple quad for the star
-        GameObject starObj = GameObject.CreatePrimitive(PrimitiveType.Quad);
-        starObj.name = $"Star_{star.originalIndex}";
-        starObj.transform.SetParent(starParent.transform, false);
-        
-        // Remove collider for performance
-        var collider = starObj.GetComponent<Collider>();
-        if (collider) DestroyImmediate(collider);
-        
-        // Ensure proper initial orientation (face towards center)
-        starObj.transform.rotation = Quaternion.identity;
-        
-        // Set material
-        var renderer = starObj.GetComponent<MeshRenderer>();
-        if (renderer != null)
-        {
-            Material materialToUse = null;
+            StarData star = visibleStars[i];
             
-            if (starMaterial != null)
-            {
-                materialToUse = starMaterial;
-                if (showDebugInfo && star.originalIndex < 3)
-                {
-                    Debug.Log($"Star {star.originalIndex}: Using custom star material {starMaterial.name}");
-                }
-            }
-            else
-            {
-                // Fallback to Unity's built-in unlit material
-                materialToUse = new Material(Shader.Find("Sprites/Default"));
-                Debug.LogWarning("Star material is null! Using fallback material. Please assign StarMaterial in inspector.");
-            }
+            // Calculate position
+            Vector3 worldPos = CalculateStarWorldPosition(star, playerPos);
+            starPositions[i] = worldPos;
             
-            renderer.material = materialToUse;
-            renderer.material.color = starColor * starBrightness;
+            // Set color and brightness
+            starColors[i] = starColor * starBrightness;
             
-            // Make it emissive so it's always visible
-            if (renderer.material.HasProperty("_EmissionColor"))
-            {
-                renderer.material.SetColor("_EmissionColor", starColor * starBrightness * 0.5f);
-            }
+            // Create transformation matrix with scale
+            float scale = Mathf.Clamp(baseStarSize, 0.1f, 5f);
+            starMatrices[i] = Matrix4x4.TRS(worldPos, Quaternion.identity, Vector3.one * scale);
             
             if (showDebugInfo && star.originalIndex < 3)
             {
-                Debug.Log($"Star {star.originalIndex}: Material={materialToUse.name}, Color={starColor * starBrightness}, Shader={materialToUse.shader.name}");
-            }
-        }
-        else
-        {
-            Debug.LogError($"No MeshRenderer found on star {star.originalIndex}");
-        }
-        
-        // All stars are on horizon sphere, so use uniform scaling
-        // Could vary by stellar magnitude if we had that data
-        float scale = Mathf.Clamp(baseStarSize, 0.1f, 5f);  // Clamp to reasonable bounds
-        
-        // Use normal star scaling - no debug enlargement to avoid render artifacts
-        // if (showDebugInfo && star.originalIndex < 5)
-        // {
-        //     scale = maxStarSize * 2f;
-        // }
-        
-        starObj.transform.localScale = Vector3.one * scale;
-        
-        // Debug bounds
-        if (showDebugInfo && star.originalIndex < 3)
-        {
-            Bounds bounds = renderer.bounds;
-            Debug.Log($"Star {star.originalIndex}: Scale={scale}, Bounds={bounds.size}, Center={bounds.center}");
-        }
-        
-        // Always face camera properly
-        if (playerCamera != null)
-        {
-            starObj.transform.LookAt(playerCamera.transform);
-            
-            // Debug large stars that might cause render artifacts
-            if (showDebugInfo && starObj.transform.localScale.x > 2f)
-            {
-                Debug.LogWarning($"Star {star.originalIndex} has large scale {starObj.transform.localScale.x} - potential render artifact!");
+                Debug.Log($"Point sprite {star.originalIndex}: Position=({worldPos.x:F1},{worldPos.y:F1},{worldPos.z:F1}), Scale={scale:F2}");
             }
         }
         
-        return starObj;
+        Debug.Log($"Prepared point sprite data for {starCount} stars");
     }
     
-    private void UpdateStarPositions(Vector3 playerPosParsecs)
+
+    
+    private void UpdatePointSpritePositions(Vector3 playerPosParsecs)
     {
-        for (int i = 0; i < starInstances.Count && i < visibleStars.Count; i++)
+        if (starPositions == null || starPositions.Length != visibleStars.Count)
         {
-            if (starInstances[i] == null) continue;
-            
+            PreparePointSpriteData();
+            return;
+        }
+        
+        for (int i = 0; i < visibleStars.Count; i++)
+        {
             StarData star = visibleStars[i];
             Vector3 starWorldPos = CalculateStarWorldPosition(star, playerPosParsecs);
             
-            starInstances[i].transform.position = starWorldPos;
+            starPositions[i] = starWorldPos;
             
-            // Face camera (stars should always face the observer)
-            if (playerCamera != null)
-            {
-                starInstances[i].transform.LookAt(playerCamera.transform);
-            }
+            // Update transformation matrix
+            float scale = Mathf.Clamp(baseStarSize, 0.1f, 5f);
+            starMatrices[i] = Matrix4x4.TRS(starWorldPos, Quaternion.identity, Vector3.one * scale);
             
             // Debug first few star positions
             if (showDebugInfo && star.originalIndex < 3)
             {
-                Debug.Log($"Star {star.originalIndex} updated position: {starWorldPos}");
+                Debug.Log($"Point sprite {star.originalIndex} updated position: {starWorldPos}");
             }
         }
+    }
+    
+    private void RenderPointSprites()
+    {
+        if (starMatrices == null || starMatrices.Length == 0)
+        {
+            return;
+        }
+        
+        // Use the StarPoint material if available, otherwise create a fallback
+        Material materialToUse = starMaterial;
+        if (materialToUse == null)
+        {
+            // Try to find the StarPoint shader first
+            Shader starShader = Shader.Find("Custom/StarPoint");
+            if (starShader != null)
+            {
+                materialToUse = new Material(starShader);
+                if (showDebugInfo)
+                {
+                    Debug.Log("Created StarPoint material from shader");
+                }
+            }
+            else
+            {
+                // Fallback to Unlit/Color for simple rendering
+                materialToUse = new Material(Shader.Find("Unlit/Color"));
+                if (showDebugInfo)
+                {
+                    Debug.Log("Using Unlit/Color fallback shader");
+                }
+            }
+        }
+        
+        if (starMesh == null)
+        {
+            Debug.LogError("Star mesh is null! Re-initializing...");
+            InitializePointSpriteSystem();
+            return;
+        }
+        
+        // Set material properties
+        materialPropertyBlock.SetColor("_Color", starColor * starBrightness);
+        materialPropertyBlock.SetFloat("_Brightness", starBrightness);
+        materialPropertyBlock.SetFloat("_Size", baseStarSize);
+        
+        // Render stars in batches
+        int batchSize = 1023; // Unity's instancing limit
+        int totalStars = starMatrices.Length;
+        
+        for (int startIndex = 0; startIndex < totalStars; startIndex += batchSize)
+        {
+            int count = Mathf.Min(batchSize, totalStars - startIndex);
+            
+            // Create batch array
+            Matrix4x4[] batch = new Matrix4x4[count];
+            System.Array.Copy(starMatrices, startIndex, batch, 0, count);
+            
+            // Render batch of star quads
+            Graphics.DrawMeshInstanced(
+                starMesh,
+                0,
+                materialToUse,
+                batch,
+                count,
+                materialPropertyBlock
+            );
+        }
+    }
+    
+    private void UpdateStarPatchLabel()
+    {
+        // Debug text removed - clean UI
     }
     
     private Vector3 CalculateStarWorldPosition(StarData star, Vector3 playerPosParsecs)
@@ -509,8 +602,8 @@ public class StellarParallaxManager : MonoBehaviour
                 parallaxOffset *= parallaxExaggeration;
             }
             
-            // Apply the angular shift to the star's direction
-            Vector3 shiftedDirection = (workingDirection + parallaxOffset).normalized;
+            // Apply the angular shift to the star's direction (subtract for correct parallax)
+            Vector3 shiftedDirection = (workingDirection - parallaxOffset).normalized;
             
             // Project onto the horizon sphere
             Vector3 finalPos = shiftedDirection * horizonRadius;
@@ -558,6 +651,8 @@ public class StellarParallaxManager : MonoBehaviour
         {
             StopCoroutine(loadingCoroutine);
         }
+        
+        // UI cleanup no longer needed
     }
     
     // Public methods for integration with SolarSystemParallaxManager
@@ -573,7 +668,7 @@ public class StellarParallaxManager : MonoBehaviour
         if (Vector3.Distance(lastPlayerPosition, playerPosParsecs) > 0.001f)
         {
             UpdateVisibleStars();
-            UpdateStarPositions(playerPosParsecs);
+            UpdatePointSpritePositions(playerPosParsecs);
             lastPlayerPosition = playerPosParsecs;
         }
     }
