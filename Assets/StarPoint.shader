@@ -20,39 +20,59 @@ Shader "Custom/StarPoint"
             CGPROGRAM
             #pragma vertex vert
             #pragma fragment frag
+            #pragma multi_compile_instancing
             #include "UnityCG.cginc"
 
             struct appdata
             {
                 float4 vertex : POSITION;
                 float2 uv : TEXCOORD0;
+                UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
             struct v2f
             {
+                float4 pos : SV_POSITION;
                 float2 uv : TEXCOORD0;
-                float4 vertex : SV_POSITION;
-                float distance : TEXCOORD1;
+                float3 worldPos : TEXCOORD1;
+                UNITY_VERTEX_OUTPUT_STEREO
             };
 
             fixed4 _Color;
             float _Brightness;
             float _Size;
 
-            v2f vert (appdata v)
+            v2f vert(appdata v)
             {
                 v2f o;
-                o.vertex = UnityObjectToClipPos(v.vertex);
-                o.uv = v.uv;
+                UNITY_SETUP_INSTANCE_ID(v);
+                UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
                 
-                // Calculate distance from camera for brightness falloff
+                // Transform vertex to world space
                 float3 worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
-                o.distance = distance(_WorldSpaceCameraPos, worldPos);
+                
+                // Calculate billboard vectors for camera-facing quads
+                float3 viewDir = normalize(_WorldSpaceCameraPos - worldPos);
+                float3 upDir = float3(0, 1, 0);
+                float3 rightDir = normalize(cross(upDir, viewDir));
+                upDir = normalize(cross(viewDir, rightDir));
+                
+                // Scale based on distance and size parameter
+                float dist = length(_WorldSpaceCameraPos - worldPos);
+                float scale = _Size * max(0.1, dist * 0.0001);
+                
+                // Apply billboard transformation
+                float3 localPos = v.vertex.xyz * scale;
+                worldPos += rightDir * localPos.x + upDir * localPos.y;
+                
+                o.pos = mul(UNITY_MATRIX_VP, float4(worldPos, 1.0));
+                o.uv = v.uv;
+                o.worldPos = worldPos;
                 
                 return o;
             }
 
-            fixed4 frag (v2f i) : SV_Target
+            fixed4 frag(v2f i) : SV_Target
             {
                 // Create a circular star point
                 float2 center = float2(0.5, 0.5);
@@ -62,14 +82,17 @@ Shader "Custom/StarPoint"
                 float alpha = 1.0 - smoothstep(0.0, 0.5, dist);
                 
                 // Brighten the center
-                alpha = pow(alpha, 0.5);
+                alpha = pow(alpha, 0.8);
                 
-                // Distance-based brightness (optional)
-                float brightness = _Brightness;// / max(1.0, i.distance * 0.001);
+                // Distance-based brightness
+                float brightness = _Brightness;
                 
                 fixed4 col = _Color;
                 col.rgb *= brightness;
                 col.a *= alpha;
+                
+                // Ensure minimum visibility
+                col.a = max(col.a, 0.1 * alpha);
                 
                 return col;
             }

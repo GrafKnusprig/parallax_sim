@@ -634,20 +634,17 @@ MonoBehaviour:
   gaiaCsvFileName: GAIA_DR3_R7882_phi178182_absz0220.csv
   starMaterial: {fileID: 2100000, guid: a7b6c8d9e4f3a2b1c8d7e6f5a4b3c9d2, type: 2}
   baseStarSize: 5
-  maxStarSize: 500
   starColor: {r: 1, g: 1, b: 1, a: 1}
   starBrightness: 1
   enableLOD: 0
   maxRenderDistanceParsecs: 500
   maxStarsToRender: 100000
-  lodNearDistance: 10
-  lodFarDistance: 30
-  showParallaxMotion: 1
-  parallaxExaggeration: 100
+  showParallaxMotion: 0
+  parallaxExaggeration: 1
   useRealParallax: 0
   showDebugInfo: 0
   debugStarLimit: 1000
-  spreadClusteredStars: 1
+  spreadClusteredStars: 0
   spreadFactor: 10
 --- !u!1 &832575517
 GameObject:
