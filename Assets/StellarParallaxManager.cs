@@ -9,23 +9,24 @@ using UnityEngine;
 public class StellarParallaxManager : MonoBehaviour
 {
     [Header("Gaia GDR1 Data Settings")]
-    [Tooltip("Virtual render distance from nearest to farthest star")]
+    [Tooltip("Virtual render distance from nearest to farthest star (%)")]
     [SerializeField] private float renderDistanceRange = 50f;  // Distance in parsecs
     
     [Header("Parallax Settings")]
-    [Tooltip("Exaggerate parallax effect for visibility (1 = real parallax, >1 = exaggerated)")]
+    [Tooltip("Exaggerate parallax effect for visibility (1x = real parallax, >1x = exaggerated)")]
     [SerializeField] private float parallaxExaggeration = 100f;
     [Tooltip("Show parallax motion based on player position")]
     [SerializeField] private bool enableParallax = true;
     
     [Header("Star Rendering")]
     [SerializeField] private Material starMaterial;
+    [Tooltip("Base size for all stars (Unity units)")]
     [SerializeField] private float baseStarSize = 0.1f;
     [SerializeField] private Color starColor = Color.white;
-    [Tooltip("Maximum stars to render per frame")]
+    [Tooltip("Overall brightness for all stars (0-5x)")]
+    [SerializeField] private float starBrightness = 1.0f;
+    [Tooltip("Maximum stars to render per frame (count)")]
     [SerializeField] private int maxStarsPerFrame = 5000;
-    [Tooltip("Show debug info about star culling")]
-    [SerializeField] private bool showCullingDebug = true;
     
     // Constants
     private const float PARSEC_TO_AU = 206264.806f;  // 1 parsec = 206,264.806 AU
@@ -327,11 +328,6 @@ public class StellarParallaxManager : MonoBehaviour
             if (visibleStars.Count >= maxStarsPerFrame)
                 break;
         }
-        
-        if (showCullingDebug)
-        {
-            Debug.Log($"Camera FOV: {playerCamera.fieldOfView:F1}° + {FOV_CULLING_MARGIN:F0}° margin | Distance range: {maxDistance:F1}pc | Stars in range: {starsInRange}, FOV: {starsInFOV}, Visible: {visibleStars.Count}");
-        }
     }
     
     private void UpdateStarRendering()
@@ -399,6 +395,7 @@ public class StellarParallaxManager : MonoBehaviour
         // Set material properties
         materialPropertyBlock.SetColor("_Color", starColor);
         materialPropertyBlock.SetFloat("_Size", baseStarSize);
+        materialPropertyBlock.SetFloat("_Brightness", starBrightness);
         
         // Render stars in batches (Unity has limits on instanced rendering)
         const int BATCH_SIZE = 1023; // Unity's limit for Graphics.DrawMeshInstanced
@@ -428,6 +425,9 @@ public class StellarParallaxManager : MonoBehaviour
         
         // Clamp parallax exaggeration to reasonable range
         parallaxExaggeration = Mathf.Clamp(parallaxExaggeration, 1f, 1000f);
+        
+        // Clamp brightness setting
+        starBrightness = Mathf.Clamp(starBrightness, 0.1f, 5f);
         
         // Clamp max stars per frame
         maxStarsPerFrame = Mathf.Clamp(maxStarsPerFrame, 100, 50000);
