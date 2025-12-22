@@ -60,10 +60,6 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [SerializeField] private float superNearRadiusMultiplier = 2.0f;  // Super near zone = planet radius * this multiplier
     [SerializeField] private bool adaptToplanetSize = true;  // Whether to adapt super near zone to planet size
     
-    [Header("Safety Features")]
-    [SerializeField] private bool enableSafeSpawn = true;
-    [SerializeField] private float safeSpawnDistanceAu = 0.01f;  // Minimum safe distance from planet surface
-
     [Tooltip("New Input System: 2D move (x: strafe, y: forward).")]
     [SerializeField] private InputActionReference moveAction;
 
@@ -402,11 +398,14 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
             bodies.Add(body);
 
-            // Player start at Earth (399) in real coordinates
+            // Player positioned in front of Earth for good viewing
             if (naifId == 399 && !earthFound)
             {
-                playerRealPosAu = realPosAu;
+                // Position player at a good distance in front of Earth for viewing
+                Vector3 earthOffset = new Vector3(0, 0, -0.1f); // 0.1 AU in front of Earth along -Z axis
+                playerRealPosAu = realPosAu + earthOffset;
                 earthFound = true;
+                Debug.Log($"Player positioned in front of Earth at: {playerRealPosAu} AU");
             }
         }
 
@@ -414,12 +413,6 @@ public class SolarSystemParallaxManager : MonoBehaviour
         {
             Debug.LogWarning("Earth (naifId 399) not found on " + targetDate + ". Player starts at origin in real space.");
             playerRealPosAu = Vector3.zero;
-        }
-        
-        // Safety check: ensure player doesn't spawn inside a planet
-        if (enableSafeSpawn)
-        {
-            EnsureSafeSpawnPosition();
         }
     }
 
@@ -586,64 +579,6 @@ public class SolarSystemParallaxManager : MonoBehaviour
         cache[key] = index;
         
         return index;
-    }
-    
-    private void EnsureSafeSpawnPosition()
-    {
-        const int maxAttempts = 10;
-        int attempts = 0;
-        
-        while (attempts < maxAttempts)
-        {
-            bool insidePlanet = false;
-            BodyInstance problematicPlanet = null;
-            
-            // Check if player is inside any planet
-            foreach (var body in bodies)
-            {
-                Vector3 offsetAu = body.realPosAu - playerRealPosAu;
-                float distanceAu = offsetAu.magnitude;
-                float planetRadiusAu = body.radiusKm / (float)AU_KM;
-                float requiredDistanceAu = planetRadiusAu + safeSpawnDistanceAu;
-                
-                if (distanceAu < requiredDistanceAu)
-                {
-                    insidePlanet = true;
-                    problematicPlanet = body;
-                    break;
-                }
-            }
-            
-            if (!insidePlanet)
-            {
-                // Safe position found
-                if (attempts > 0)
-                {
-                    Debug.Log($"Moved player to safe spawn position: {playerRealPosAu} after {attempts} attempts");
-                }
-                break;
-            }
-            
-            // Move player away from the problematic planet
-            Vector3 directionAway = (playerRealPosAu - problematicPlanet.realPosAu).normalized;
-            if (directionAway.sqrMagnitude < 0.0001f)
-            {
-                // If positions are identical, choose a random direction
-                directionAway = new Vector3(UnityEngine.Random.Range(-1f, 1f), UnityEngine.Random.Range(-1f, 1f), UnityEngine.Random.Range(-1f, 1f)).normalized;
-            }
-            
-            float problematicPlanetRadiusAu = problematicPlanet.radiusKm / (float)AU_KM;
-            float safeDistance = problematicPlanetRadiusAu + safeSpawnDistanceAu;
-            playerRealPosAu = problematicPlanet.realPosAu + directionAway * safeDistance;
-            
-            attempts++;
-            Debug.Log($"Player was inside {problematicPlanet.name}, moved to safe distance. Attempt {attempts}");
-        }
-        
-        if (attempts >= maxAttempts)
-        {
-            Debug.LogWarning($"Could not find safe spawn position after {maxAttempts} attempts. Player may still be close to a planet.");
-        }
     }
     
     private void LoadPlanetMaterials()
