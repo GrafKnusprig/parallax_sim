@@ -1,75 +1,65 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using UnityEngine;
-using Unity.Collections;
-using Unity.Jobs;
-using System.Collections;
 
 [RequireComponent(typeof(SolarSystemParallaxManager))]
 public class StellarParallaxManager : MonoBehaviour
 {
-    [Header("Stellar Data")]
-    [Tooltip("GAIA CSV file name inside StreamingAssets")]
-    [SerializeField] private string gaiaCsvFileName = "GAIA_DR3_R7882_phi178182_absz0220.csv";
+    [Header("Gaia GDR1 Data Settings")]
+    [Tooltip("Virtual render distance from nearest to farthest star")]
+    [SerializeField] private float renderDistanceRange = 50f;  // Distance in parsecs
     
     [Header("Star Rendering")]
     [SerializeField] private Material starMaterial;
     [SerializeField] private float baseStarSize = 0.1f;
     [SerializeField] private Color starColor = Color.white;
-    [SerializeField] private float starBrightness = 1.0f;
+    [Tooltip("Maximum stars to render per frame")]
+    [SerializeField] private int maxStarsPerFrame = 5000;
+    [Tooltip("Show debug info about star culling")]
+    [SerializeField] private bool showCullingDebug = true;
     
-    [Header("Performance & LOD")]
-    [SerializeField] private bool enableLOD = true;
-    [SerializeField] private float maxRenderDistanceParsecs = 50f;  // Only render stars within this distance
-    [SerializeField] private int maxStarsToRender = 100000;  // Maximum stars to render at once
-    
-    [Header("Parallax Visualization")]
-    [SerializeField] private bool showParallaxMotion = true;
-    [SerializeField] private float parallaxExaggeration = 100f;  // Exaggerate parallax effect for visibility
-    [SerializeField] private bool useRealParallax = false;  // Use real parallax (very subtle) vs exaggerated
-    
-    [Header("Debug")]
-    [SerializeField] private bool showDebugInfo = true;
-    [SerializeField] private int debugStarLimit = 1000;  // Limit stars for debugging
-    [SerializeField] private bool spreadClusteredStars = true;  // Artificially spread stars if they're too clustered
-    [SerializeField] private float spreadFactor = 10f;  // How much to spread clustered stars
-
     // Constants
-    private const float PARSEC_TO_AU = 206264.806f;  // 1 parsec = 206,264.806 AU
-    private const float AU_TO_PARSEC = 1f / PARSEC_TO_AU;
+    private const float PARSEC_TO_AU = 206264.806f;
+    private const int CSV_FILE_COUNT = 6;
     
-    // Star data structure
+    // Star data structure for GDR1 format
     private struct StarData
     {
-        public Vector3 positionParsecs;  // Position in parsecs (heliocentric)
+        public Vector3 positionParsecs;  // 3D position in parsecs (galactic coordinates)
         public float distance;           // Distance from Sun in parsecs
-        public int originalIndex;        // Original index in CSV for debugging
+        public float magnitude;          // G magnitude for brightness
+        public int originalIndex;        // Original index for debugging
     }
     
-    // Rendering data
+    // Data storage
     private List<StarData> allStars = new List<StarData>();
     private List<StarData> visibleStars = new List<StarData>();
-    private GameObject starParent;
+    private Dictionary<int, StarData> nearestStars = new Dictionary<int, StarData>();
     
-    // Point sprite rendering
+    // Rendering components
     private Mesh starMesh;
     private Vector3[] starPositions;
-    private Color[] starColors;
     private Matrix4x4[] starMatrices;
     private MaterialPropertyBlock materialPropertyBlock;
+    private GameObject starParent;
     
     // References
     private SolarSystemParallaxManager solarSystemManager;
     private Camera playerCamera;
     
-    // UI components removed for clean interface
-    
     // State
-    private Vector3 lastPlayerPosition = Vector3.zero;
     private bool starsLoaded = false;
-    private Coroutine loadingCoroutine;
+    private float minStarDistance = float.MaxValue;
+    private float maxStarDistance = 0f;
+    private Vector3 lastCameraPosition;
+    private Vector3 lastCameraForward;
+    private float lastRenderDistance = -1f;
+    
+    // Performance optimization
+    private const float FOV_CULLING_MARGIN = 45f; // Large margin for seamless rendering
     
     private void Awake()
     {
@@ -84,42 +74,58 @@ public class StellarParallaxManager : MonoBehaviour
     
     private void Start()
     {
-        // Get camera reference (try to use the same one as solar system manager)
-        playerCamera = Camera.main;
-        if (playerCamera == null)
-        {
-            playerCamera = FindFirstObjectByType<Camera>();
-        }
+        playerCamera = Camera.main ?? FindFirstObjectByType<Camera>();
         
-        // Initialize rendering components
         if (materialPropertyBlock == null)
-        {
             materialPropertyBlock = new MaterialPropertyBlock();
-        }
         
         CreateStarParent();
-        InitializePointSpriteSystem();
+        InitializeStarMesh();
+        StartCoroutine(LoadGDR1DataAsync());
+    }
+    
+    private void Update()
+    {
+        if (!starsLoaded) return;
         
-        // Start loading stars asynchronously
-        loadingCoroutine = StartCoroutine(LoadStarsAsync());
+        Vector3 currentCameraPos = playerCamera.transform.position;
+        Vector3 currentCameraForward = playerCamera.transform.forward;
+        
+        // Update only if camera moved significantly or render distance changed
+        bool shouldUpdate = Vector3.Distance(currentCameraPos, lastCameraPosition) > 0.5f ||
+                           Vector3.Angle(currentCameraForward, lastCameraForward) > 2f ||
+                           Mathf.Abs(renderDistanceRange - lastRenderDistance) > 0.1f;
+        
+        if (shouldUpdate)
+        {
+            UpdateVisibleStars();
+            UpdateStarRendering();
+            
+            lastCameraPosition = currentCameraPos;
+            lastCameraForward = currentCameraForward;
+            lastRenderDistance = renderDistanceRange;
+        }
+        
+        RenderStars();
     }
     
     private void CreateStarParent()
     {
-        starParent = new GameObject("Stars");
+        if (starParent != null) return;
+        
+        starParent = new GameObject("Gaia_GDR1_Stars");
         starParent.transform.SetParent(transform, false);
         starParent.transform.localPosition = Vector3.zero;
         starParent.transform.localRotation = Quaternion.identity;
         starParent.transform.localScale = Vector3.one;
     }
     
-    private void InitializePointSpriteSystem()
+    private void InitializeStarMesh()
     {
-        // Create a simple quad mesh for star rendering with geometry shader
         starMesh = new Mesh();
-        starMesh.name = "StarQuadMesh";
+        starMesh.name = "StarPointMesh";
         
-        // Create a simple quad for billboard rendering
+        // Create simple quad for point sprite rendering
         Vector3[] vertices = {
             new Vector3(-0.5f, -0.5f, 0),
             new Vector3( 0.5f, -0.5f, 0),
@@ -134,161 +140,84 @@ public class StellarParallaxManager : MonoBehaviour
             new Vector2(0, 1)
         };
         
-        int[] triangles = {
-            0, 1, 2,
-            2, 3, 0
-        };
+        int[] triangles = { 0, 1, 2, 2, 3, 0 };
         
         starMesh.vertices = vertices;
         starMesh.uv = uv;
         starMesh.triangles = triangles;
         starMesh.RecalculateNormals();
         starMesh.bounds = new Bounds(Vector3.zero, Vector3.one * 10000f);
-        
-        // Initialize material property block
-        materialPropertyBlock = new MaterialPropertyBlock();
-        
-        if (showDebugInfo)
-        {
-            Debug.Log("Star rendering system initialized with quad mesh for billboard rendering");
-        }
     }
     
-    private void CreateStarPatchLabel()
+    private IEnumerator LoadGDR1DataAsync()
     {
-        // Debug text creation removed for clean UI
-        // Only log essential information
-        if (showDebugInfo)
-        {
-            Debug.Log("Star rendering system initialized - debug text removed from UI");
-        }
-    }
-    
-    private Canvas GetPlanetLabelCanvas()
-    {
-        if (solarSystemManager == null) return null;
+        Debug.Log("Loading Gaia GDR1 stellar data...");
         
-        // Look for existing planet labels to find the canvas they use
-        GameObject[] planetLabels = GameObject.FindGameObjectsWithTag("Untagged");
-        foreach (GameObject obj in planetLabels)
-        {
-            if (obj.name.Contains("_Label") && obj.GetComponent<UnityEngine.UI.Text>() != null)
-            {
-                Canvas canvas = obj.GetComponentInParent<Canvas>();
-                if (canvas != null)
-                {
-                    Debug.Log($"Found planet label canvas: {canvas.name}");
-                    return canvas;
-                }
-            }
-        }
+        allStars.Clear();
+        int totalStarsLoaded = 0;
         
-        // Fallback: look for any canvas that might be used for labels
-        Canvas[] allCanvases = FindObjectsByType<Canvas>(FindObjectsSortMode.None);
-        foreach (Canvas canvas in allCanvases)
+        // Load all 6 CSV files
+        for (int fileIndex = 1; fileIndex <= CSV_FILE_COUNT; fileIndex++)
         {
-            // Skip world space canvases (likely not for UI labels)
-            if (canvas.renderMode == RenderMode.WorldSpace) continue;
+            string fileName = $"gaia_gdr1_homogen_subset_part{fileIndex:D3}.csv";
+            string filePath = Path.Combine(Application.streamingAssetsPath, "GDR1", fileName);
             
-            // Check if this canvas has any text components (likely a UI canvas)
-            if (canvas.GetComponentInChildren<UnityEngine.UI.Text>() != null)
+            if (!File.Exists(filePath))
             {
-                Debug.Log($"Using canvas for star patch label: {canvas.name}");
-                return canvas;
-            }
-        }
-        
-        Debug.LogWarning("Could not find suitable canvas for star patch label");
-        return null;
-    }
-    
-    private IEnumerator LoadStarsAsync()
-    {
-        string path = Path.Combine(Application.streamingAssetsPath, gaiaCsvFileName);
-        if (!File.Exists(path))
-        {
-            Debug.LogError($"GAIA CSV not found at {path}");
-            yield break;
-        }
-        
-        Debug.Log($"Loading GAIA stellar data from {path}...");
-        
-        int totalLines = 0;
-        int loadedStars = 0;
-        int maxStarsToLoad = showDebugInfo ? debugStarLimit : int.MaxValue;
-        
-        using (var reader = new StreamReader(path))
-        {
-            string line;
-            bool isFirstLine = true;
-            
-            while ((line = reader.ReadLine()) != null && loadedStars < maxStarsToLoad)
-            {
-                totalLines++;
-                
-                // Skip header if it exists (though GAIA data doesn't seem to have one)
-                if (isFirstLine && (line.StartsWith("Z,") || line.Contains("phi")))
-                {
-                    isFirstLine = false;
-                    continue;
-                }
-                isFirstLine = false;
-                
-                // Parse every 100th line to avoid frame drops
-                if (totalLines % 100 == 0)
-                {
-                    yield return null; // Allow other systems to update
-                }
-                
-                if (TryParseStellarData(line, loadedStars, out StarData star))
-                {
-                    // Filter by distance for performance
-                    if (star.distance <= maxRenderDistanceParsecs)
-                    {
-                        allStars.Add(star);
-                        loadedStars++;
-                    }
-                }
-            }
-        }
-        
-        Debug.Log($"Loaded {loadedStars} stars from {totalLines} total entries");
-        
-        // Debug: Show first few star directions and distances
-        if (showDebugInfo && allStars.Count > 0)
-        {
-            Debug.Log("=== STAR POSITIONING DEBUG ===");
-            for (int i = 0; i < Mathf.Min(10, allStars.Count); i++)
-            {
-                StarData star = allStars[i];
-                Vector3 direction = star.positionParsecs.normalized;
-                Debug.Log($"Star {i}: Raw=({star.positionParsecs.x:F3},{star.positionParsecs.y:F3},{star.positionParsecs.z:F3}), " +
-                         $"Direction=({direction.x:F3},{direction.y:F3},{direction.z:F3}), Distance={star.distance:F2}pc");
+                Debug.LogWarning($"GDR1 file not found: {fileName}");
+                continue;
             }
             
-            // Check if stars are too similar
-            if (allStars.Count >= 2)
-            {
-                Vector3 dir1 = allStars[0].positionParsecs.normalized;
-                Vector3 dir2 = allStars[1].positionParsecs.normalized;
-                float angleDiff = Vector3.Angle(dir1, dir2);
-                Debug.Log($"Angle between first two stars: {angleDiff:F2} degrees");
-                
-                if (angleDiff < 1f)
-                {
-                    Debug.LogWarning("Stars are very close together! Check coordinate parsing.");
-                }
-            }
+            yield return StartCoroutine(LoadCSVFile(filePath, fileIndex));
+            
+            // Yield periodically to prevent frame drops
+            if (fileIndex % 2 == 0)
+                yield return new WaitForEndOfFrame();
         }
+        
+        Debug.Log($"Total stars loaded: {allStars.Count}");
+        Debug.Log($"Distance range: {minStarDistance:F2} - {maxStarDistance:F2} parsecs");
         
         starsLoaded = true;
-        
-        // Initial star visibility update
         UpdateVisibleStars();
-        PreparePointSpriteData();
     }
     
-    private bool TryParseStellarData(string line, int index, out StarData star)
+    private IEnumerator LoadCSVFile(string filePath, int fileIndex)
+    {
+        Debug.Log($"Loading file {fileIndex}: {Path.GetFileName(filePath)}");
+        
+        using (StreamReader reader = new StreamReader(filePath))
+        {
+            // Skip header line
+            if (!reader.EndOfStream)
+                reader.ReadLine();
+            
+            int lineCount = 0;
+            string line;
+            
+            while ((line = reader.ReadLine()) != null)
+            {
+                if (TryParseGDR1Data(line, allStars.Count, out StarData star))
+                {
+                    allStars.Add(star);
+                    
+                    // Update distance range
+                    if (star.distance < minStarDistance) minStarDistance = star.distance;
+                    if (star.distance > maxStarDistance) maxStarDistance = star.distance;
+                }
+                
+                lineCount++;
+                
+                // Yield every 1000 lines to prevent frame drops
+                if (lineCount % 1000 == 0)
+                    yield return null;
+            }
+        }
+        
+        Debug.Log($"File {fileIndex} loaded: {allStars.Count} total stars so far");
+    }
+    
+    private bool TryParseGDR1Data(string line, int index, out StarData star)
     {
         star = new StarData();
         
@@ -296,258 +225,158 @@ public class StellarParallaxManager : MonoBehaviour
             return false;
         
         string[] parts = line.Split(',');
-        if (parts.Length < 5) // Z,X,Y,R,phi
+        if (parts.Length < 7) // source_id,ra_deg,dec_deg,parallax_mas,distance_pc,phot_g_mean_mag,abs_mag_g
             return false;
         
         try
         {
-            float z = float.Parse(parts[0], CultureInfo.InvariantCulture);
-            float x = float.Parse(parts[1], CultureInfo.InvariantCulture);
-            float y = float.Parse(parts[2], CultureInfo.InvariantCulture);
-            float r = float.Parse(parts[3], CultureInfo.InvariantCulture);
-            // phi (angle) is in parts[4] but we'll use the Cartesian coordinates
+            // Parse required fields
+            float ra_deg, dec_deg, distance_pc, magnitude;
             
-            // Convert from GAIA coordinate system to Unity coordinate system
-            // GAIA appears to use Galactic coordinates: Z (vertical), X, Y (galactic plane)
-            // Unity uses: Y (up), X (right), Z (forward)  
-            star.positionParsecs = new Vector3(x, z, y);
-            star.distance = r; // Use provided distance
+            if (!float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out ra_deg) ||
+                !float.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out dec_deg) ||
+                !float.TryParse(parts[4], NumberStyles.Float, CultureInfo.InvariantCulture, out distance_pc) ||
+                !float.TryParse(parts[5], NumberStyles.Float, CultureInfo.InvariantCulture, out magnitude))
+            {
+                return false;
+            }
+            
+            // Skip stars with invalid data
+            if (distance_pc <= 0 || float.IsNaN(distance_pc) || float.IsInfinity(distance_pc))
+                return false;
+            
+            // Convert spherical coordinates (RA, Dec) to Cartesian
+            // RA is in degrees (0-360), Dec is in degrees (-90 to +90)
+            float ra_rad = ra_deg * Mathf.Deg2Rad;
+            float dec_rad = dec_deg * Mathf.Deg2Rad;
+            
+            // Convert to cartesian coordinates (distance * unit vector)
+            float cos_dec = Mathf.Cos(dec_rad);
+            float x = distance_pc * cos_dec * Mathf.Cos(ra_rad);
+            float y = distance_pc * Mathf.Sin(dec_rad);
+            float z = distance_pc * cos_dec * Mathf.Sin(ra_rad);
+            
+            star.positionParsecs = new Vector3(x, y, z);
+            star.distance = distance_pc;
+            star.magnitude = magnitude;
             star.originalIndex = index;
-            
-            // Debug first few stars
-            if (showDebugInfo && index < 3)
-            {
-                Debug.Log($"Parsed star {index}: Raw({z},{x},{y},{r}) -> Unity({star.positionParsecs.x:F3},{star.positionParsecs.y:F3},{star.positionParsecs.z:F3}), dist={r:F2}");
-            }
-            
-            // Check if this is a very localized dataset
-            if (index == 0 && showDebugInfo)
-            {
-                Debug.Log($"First star data suggests localized dataset. All stars may be clustered in one sky region.");
-            }
             
             return true;
         }
-        catch (Exception e)
+        catch (Exception)
         {
-            if (showDebugInfo && index < 10) // Only log first few errors
-            {
-                Debug.LogWarning($"Failed to parse stellar data line {index}: {line}. Error: {e.Message}");
-            }
             return false;
         }
     }
     
-    private void Update()
-    {
-        if (!starsLoaded || solarSystemManager == null)
-            return;
-        
-        // Get player position from solar system manager (in AU)
-        Vector3 playerPosAu = GetPlayerPositionAU();
-        
-        // Convert to parsecs for stellar calculations
-        Vector3 playerPosParsecs = playerPosAu * AU_TO_PARSEC;
-        
-        // Update star positions for parallax if player moved significantly
-        if (Vector3.Distance(lastPlayerPosition, playerPosParsecs) > 0.001f) // 0.001 parsecs threshold
-        {
-            UpdateVisibleStars();
-            UpdatePointSpritePositions(playerPosParsecs);
-            lastPlayerPosition = playerPosParsecs;
-        }
-        
-        // Performance monitoring
-        if (Time.frameCount % 60 == 0 && showDebugInfo) // Every 60 frames
-        {
-            Debug.Log($"StellarParallaxManager Status: {visibleStars.Count} visible stars, " +
-                     $"Positions array: {(starPositions?.Length ?? 0)}, " +
-                     $"Matrices array: {(starMatrices?.Length ?? 0)}");
-        }
-        
-        // Render point sprites every frame
-        RenderPointSprites();
-    }
-    
-    private Vector3 GetPlayerPositionAU()
-    {
-        // Access the player position from the solar system manager
-        if (solarSystemManager != null)
-        {
-            return solarSystemManager.playerRealPosAu;
-        }
-        return Vector3.zero;
-    }
-    
     private void UpdateVisibleStars()
     {
-        if (!enableLOD)
-        {
-            visibleStars = allStars;
-            return;
-        }
+        if (!starsLoaded) return;
         
         visibleStars.Clear();
-        Vector3 playerPos = lastPlayerPosition;
         
-        // Sort stars by distance and apply LOD
-        var sortedStars = new List<StarData>(allStars);
-        sortedStars.Sort((a, b) => 
-            Vector3.Distance(a.positionParsecs, playerPos).CompareTo(
-            Vector3.Distance(b.positionParsecs, playerPos)));
+        // Calculate render distance limits
+        float maxDistance = Mathf.Lerp(minStarDistance, maxStarDistance, renderDistanceRange / 100f);
         
-        int starsToShow = Mathf.Min(maxStarsToRender, sortedStars.Count);
-        for (int i = 0; i < starsToShow; i++)
+        // Get camera frustum for culling
+        Vector3 cameraPos = playerCamera.transform.position;
+        Vector3 cameraForward = playerCamera.transform.forward;
+        Vector3 cameraUp = playerCamera.transform.up;
+        Vector3 cameraRight = playerCamera.transform.right;
+        float horizonRadius = solarSystemManager.HorizonRadius;
+        
+        // Calculate effective FOV with generous margin
+        float halfFOVWithMargin = playerCamera.fieldOfView * 0.5f + FOV_CULLING_MARGIN;
+        
+        int starsInRange = 0;
+        int starsInFOV = 0;
+        
+        foreach (StarData star in allStars)
         {
-            StarData star = sortedStars[i];
-            float distanceToPlayer = Vector3.Distance(star.positionParsecs, playerPos);
+            // Distance culling
+            if (star.distance > maxDistance)
+                continue;
             
-            // Apply distance-based culling
-            if (distanceToPlayer <= maxRenderDistanceParsecs)
-            {
-                visibleStars.Add(star);
-            }
+            starsInRange++;
+            
+            // Calculate world position on the virtual sphere
+            Vector3 direction = star.positionParsecs.normalized;
+            Vector3 worldPos = direction * horizonRadius;
+            
+            // Improved FOV culling with dot product for better performance
+            Vector3 toStar = (worldPos - cameraPos).normalized;
+            float dotProduct = Vector3.Dot(cameraForward, toStar);
+            float angleToCamera = Mathf.Acos(Mathf.Clamp(dotProduct, -1f, 1f)) * Mathf.Rad2Deg;
+            
+            // Use generous FOV margin for seamless experience
+            if (angleToCamera > halfFOVWithMargin)
+                continue;
+            
+            starsInFOV++;
+            visibleStars.Add(star);
+            
+            // Limit stars per frame for performance
+            if (visibleStars.Count >= maxStarsPerFrame)
+                break;
         }
         
-        if (showDebugInfo)
+        if (showCullingDebug)
         {
-            Debug.Log($"UpdateVisibleStars: {visibleStars.Count} visible stars from {allStars.Count} total (player at {playerPos})");
+            Debug.Log($"Camera FOV: {playerCamera.fieldOfView:F1}° + {FOV_CULLING_MARGIN:F0}° margin | Distance range: {maxDistance:F1}pc | Stars in range: {starsInRange}, FOV: {starsInFOV}, Visible: {visibleStars.Count}");
         }
     }
     
-    private void PreparePointSpriteData()
+    private void UpdateStarRendering()
     {
         int starCount = visibleStars.Count;
-        if (starCount == 0)
+        
+        // Initialize or resize arrays if needed
+        if (starPositions == null || starPositions.Length != starCount)
         {
-            starPositions = new Vector3[0];
-            starColors = new Color[0];
-            starMatrices = new Matrix4x4[0];
-            return;
+            starPositions = new Vector3[starCount];
+            starMatrices = new Matrix4x4[starCount];
         }
         
-        // Initialize arrays
-        starPositions = new Vector3[starCount];
-        starColors = new Color[starCount];
-        starMatrices = new Matrix4x4[starCount];
+        float horizonRadius = solarSystemManager.HorizonRadius;
         
-        // Get initial player position
-        Vector3 playerPos = GetPlayerPositionAU() * AU_TO_PARSEC;
-        
+        // Update positions and matrices
         for (int i = 0; i < starCount; i++)
         {
             StarData star = visibleStars[i];
+            Vector3 direction = star.positionParsecs.normalized;
+            Vector3 worldPos = direction * horizonRadius;
             
-            // Calculate position
-            Vector3 worldPos = CalculateStarWorldPosition(star, playerPos);
+            // Calculate star size based on magnitude (brighter = larger)
+            float starSize = baseStarSize * Mathf.Pow(10f, (15f - star.magnitude) * 0.1f);
+            starSize = Mathf.Clamp(starSize, 0.01f, 2f);
+            
             starPositions[i] = worldPos;
-            
-            // Set color and brightness
-            starColors[i] = starColor * starBrightness;
-            
-            // Create transformation matrix with scale
-            float scale = Mathf.Clamp(baseStarSize, 0.1f, 5f);
-            starMatrices[i] = Matrix4x4.TRS(worldPos, Quaternion.identity, Vector3.one * scale);
-            
-            if (showDebugInfo && star.originalIndex < 3)
-            {
-                Debug.Log($"Point sprite {star.originalIndex}: Position=({worldPos.x:F1},{worldPos.y:F1},{worldPos.z:F1}), Scale={scale:F2}");
-            }
-        }
-        
-        Debug.Log($"Prepared point sprite data for {starCount} stars");
-    }
-    
-
-    
-    private void UpdatePointSpritePositions(Vector3 playerPosParsecs)
-    {
-        if (starPositions == null || starPositions.Length != visibleStars.Count)
-        {
-            PreparePointSpriteData();
-            return;
-        }
-        
-        for (int i = 0; i < visibleStars.Count; i++)
-        {
-            StarData star = visibleStars[i];
-            Vector3 starWorldPos = CalculateStarWorldPosition(star, playerPosParsecs);
-            
-            starPositions[i] = starWorldPos;
-            
-            // Update transformation matrix
-            float scale = Mathf.Clamp(baseStarSize, 0.1f, 5f);
-            starMatrices[i] = Matrix4x4.TRS(starWorldPos, Quaternion.identity, Vector3.one * scale);
-            
-            // Debug first few star positions
-            if (showDebugInfo && star.originalIndex < 3)
-            {
-                Debug.Log($"Point sprite {star.originalIndex} updated position: {starWorldPos}");
-            }
+            starMatrices[i] = Matrix4x4.TRS(worldPos, Quaternion.identity, Vector3.one * starSize);
         }
     }
     
-    private void RenderPointSprites()
+    private void RenderStars()
     {
-        if (starMatrices == null || starMatrices.Length == 0)
-        {
+        if (starMatrices == null || starMatrices.Length == 0 || starMaterial == null)
             return;
-        }
-        
-        // Use the StarPoint material if available, otherwise create a fallback
-        Material materialToUse = starMaterial;
-        if (materialToUse == null)
-        {
-            // Try to find the StarPoint shader first
-            Shader starShader = Shader.Find("Custom/StarPoint");
-            if (starShader != null)
-            {
-                materialToUse = new Material(starShader);
-                if (showDebugInfo)
-                {
-                    Debug.Log("Created StarPoint material from shader");
-                }
-            }
-            else
-            {
-                // Fallback to Unlit/Color for simple rendering
-                materialToUse = new Material(Shader.Find("Unlit/Color"));
-                if (showDebugInfo)
-                {
-                    Debug.Log("Using Unlit/Color fallback shader");
-                }
-            }
-        }
-        
-        if (starMesh == null)
-        {
-            Debug.LogError("Star mesh is null! Re-initializing...");
-            InitializePointSpriteSystem();
-            return;
-        }
         
         // Set material properties
-        materialPropertyBlock.SetColor("_Color", starColor * starBrightness);
-        materialPropertyBlock.SetFloat("_Brightness", starBrightness);
-        materialPropertyBlock.SetFloat("_Size", baseStarSize);
+        materialPropertyBlock.SetColor("_Color", starColor);
         
-        // Render stars in batches
-        int batchSize = 1023; // Unity's instancing limit
-        int totalStars = starMatrices.Length;
+        // Render stars in batches (Unity has limits on instanced rendering)
+        const int BATCH_SIZE = 1023; // Unity's limit for Graphics.DrawMeshInstanced
         
-        for (int startIndex = 0; startIndex < totalStars; startIndex += batchSize)
+        for (int startIndex = 0; startIndex < starMatrices.Length; startIndex += BATCH_SIZE)
         {
-            int count = Mathf.Min(batchSize, totalStars - startIndex);
-            
-            // Create batch array
+            int count = Mathf.Min(BATCH_SIZE, starMatrices.Length - startIndex);
             Matrix4x4[] batch = new Matrix4x4[count];
-            System.Array.Copy(starMatrices, startIndex, batch, 0, count);
             
-            // Render batch of star quads
+            Array.Copy(starMatrices, startIndex, batch, 0, count);
+            
             Graphics.DrawMeshInstanced(
                 starMesh,
                 0,
-                materialToUse,
+                starMaterial,
                 batch,
                 count,
                 materialPropertyBlock
@@ -555,121 +384,42 @@ public class StellarParallaxManager : MonoBehaviour
         }
     }
     
-    private void UpdateStarPatchLabel()
+    private void OnValidate()
     {
-        // Debug text removed - clean UI
-    }
-    
-    private Vector3 CalculateStarWorldPosition(StarData star, Vector3 playerPosParsecs)
-    {
-        // Get the star's original direction from the Sun (normalized)
-        Vector3 originalDirection = star.positionParsecs.normalized;
+        // Clamp render distance to valid range
+        renderDistanceRange = Mathf.Clamp(renderDistanceRange, 0f, 100f);
         
-        float horizonRadius = solarSystemManager.HorizonRadius;
-        
-        // Apply artificial spreading if stars are too clustered (for visualization)
-        Vector3 workingDirection = originalDirection;
-        if (spreadClusteredStars)
-        {
-            // Add some artificial spread based on the star's index to separate clustered stars
-            float spreadX = Mathf.Sin(star.originalIndex * 0.1f) * spreadFactor * 0.001f;
-            float spreadY = Mathf.Cos(star.originalIndex * 0.15f) * spreadFactor * 0.001f;
-            float spreadZ = Mathf.Sin(star.originalIndex * 0.13f) * spreadFactor * 0.001f;
-            
-            workingDirection = originalDirection + new Vector3(spreadX, spreadY, spreadZ);
-            workingDirection = workingDirection.normalized;
-        }
-        
-        if (showDebugInfo && star.originalIndex < 3)
-        {
-            Debug.Log($"Star {star.originalIndex}: Horizon radius = {horizonRadius}");
-            Debug.Log($"Original direction = {originalDirection}, Working direction = {workingDirection}");
-        }
-        
-        if (showParallaxMotion)
-        {
-            // Calculate parallax shift: apparent position changes based on observer position
-            // Parallax angle = baseline / distance (in radians)
-            Vector3 baseline = playerPosParsecs; // Observer position relative to Sun
-            float distance = Mathf.Max(star.distance, 0.1f); // Avoid division by zero
-            
-            // Calculate the parallax offset in angular space
-            Vector3 parallaxOffset = baseline / distance;
-            
-            if (!useRealParallax)
-            {
-                // Exaggerate parallax for educational visibility
-                parallaxOffset *= parallaxExaggeration;
-            }
-            
-            // Apply the angular shift to the star's direction (subtract for correct parallax)
-            Vector3 shiftedDirection = (workingDirection - parallaxOffset).normalized;
-            
-            // Project onto the horizon sphere
-            Vector3 finalPos = shiftedDirection * horizonRadius;
-            
-            if (showDebugInfo && star.originalIndex < 3)
-            {
-                Debug.Log($"Star {star.originalIndex}: Parallax enabled, final position = {finalPos}, distance from origin = {finalPos.magnitude}");
-            }
-            
-            return finalPos;
-        }
-        else
-        {
-            // No parallax - just place on horizon sphere at working direction
-            Vector3 finalPos = workingDirection * horizonRadius;
-            
-            if (showDebugInfo && star.originalIndex < 3)
-            {
-                Debug.Log($"Star {star.originalIndex}: No parallax, final position = {finalPos}, distance from origin = {finalPos.magnitude}");
-            }
-            
-            return finalPos;
-        }
-    }
-    
-    private void OnDrawGizmosSelected()
-    {
-        if (!showDebugInfo || !starsLoaded)
-            return;
-        
-        Gizmos.color = Color.cyan;
-        
-        // Draw a few nearby stars for debugging
-        int count = Mathf.Min(10, visibleStars.Count);
-        for (int i = 0; i < count; i++)
-        {
-            Vector3 pos = visibleStars[i].positionParsecs * PARSEC_TO_AU;
-            Gizmos.DrawWireSphere(pos, 1000f); // 1000 AU radius for visibility
-        }
+        // Clamp max stars per frame
+        maxStarsPerFrame = Mathf.Clamp(maxStarsPerFrame, 100, 50000);
     }
     
     private void OnDestroy()
     {
-        if (loadingCoroutine != null)
+        if (starMesh != null)
         {
-            StopCoroutine(loadingCoroutine);
+            DestroyImmediate(starMesh);
         }
-        
-        // UI cleanup no longer needed
     }
     
-    // Public methods for integration with SolarSystemParallaxManager
-    public int GetLoadedStarCount() => allStars.Count;
-    public int GetVisibleStarCount() => visibleStars.Count;
-    public bool IsDataLoaded() => starsLoaded;
-    
-    // Method to be called by SolarSystemParallaxManager when player position changes
-    public void OnPlayerPositionChanged(Vector3 playerRealPosAu)
+    // Public interface methods for compatibility with SolarSystemParallaxManager
+    public void OnPlayerPositionChanged(Vector3 newPosition)
     {
-        Vector3 playerPosParsecs = playerRealPosAu * AU_TO_PARSEC;
-        
-        if (Vector3.Distance(lastPlayerPosition, playerPosParsecs) > 0.001f)
-        {
-            UpdateVisibleStars();
-            UpdatePointSpritePositions(playerPosParsecs);
-            lastPlayerPosition = playerPosParsecs;
-        }
+        // The Update method already handles position changes automatically
+        // This method is kept for compatibility but doesn't need to do anything
+    }
+    
+    public int GetLoadedStarCount()
+    {
+        return allStars?.Count ?? 0;
+    }
+    
+    public int GetVisibleStarCount()
+    {
+        return visibleStars?.Count ?? 0;
+    }
+    
+    public bool IsDataLoaded()
+    {
+        return starsLoaded;
     }
 }
