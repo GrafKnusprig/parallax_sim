@@ -20,7 +20,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
     [Header("Horizon bubble")]
     [Tooltip("Radius of the virtual horizon sphere (Unity units)")]
-    [SerializeField] private float horizonRadius = 1000f;
+    [SerializeField] private float horizonRadius = 4000f;
     [SerializeField] private Material horizonMaterial;
     [SerializeField] private bool showHorizonSphere = false;  // Make sure this is FALSE
     
@@ -32,7 +32,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [Tooltip("Minimum planet proxy radius (Unity units)")]
     [SerializeField] private float minProxyRadius = 1f;
     [Tooltip("Maximum planet proxy radius (Unity units)")]
-    [SerializeField] private float maxProxyRadius = 2000f;
+    [SerializeField] private float maxProxyRadius = 4000f;
     [SerializeField] private bool useHighQualitySpheres = true;
     [Tooltip("Higher = more detailed (0-4 recommended)")]
     [SerializeField] private int sphereSubdivisions = 3;  // Higher = more detailed (0-4 recommended)
@@ -71,20 +71,30 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [SerializeField] private float interstellarSpeed = 1000.0f;   // For traveling between star systems
     [Tooltip("Distance to activate interstellar speed (AU)")]
     [SerializeField] private float interstellarSpeedTransitionDistanceAu = 1000.0f;  // Far beyond planets
+    [Tooltip("Extragalactic speed multiplier (AU/s)")]
+    [SerializeField] private float extragalacticSpeed = 100000.0f;   // For traveling within galaxy clusters
+    [Tooltip("Distance to activate extragalactic speed (AU)")]
+    [SerializeField] private float extragalacticSpeedTransitionDistanceAu = 100000.0f;  // Beyond star systems
     [Tooltip("Intergalactic speed multiplier (AU/s)")]
     [SerializeField] private float intergalacticSpeed = 1000000.0f;   // For traveling between galaxies
     [Tooltip("Distance to activate intergalactic speed (AU)")]
-    [SerializeField] private float intergalacticSpeedTransitionDistanceAu = 100000.0f;  // Extremely far
+    [SerializeField] private float intergalacticSpeedTransitionDistanceAu = 1000000.0f;  // Extremely far
+    [Tooltip("Hypergalactic speed multiplier (AU/s)")]
+    [SerializeField] private float hypergalacticSpeed = 10000000.0f;   // For traveling across galactic superclusters
+    [Tooltip("Distance to activate hypergalactic speed (AU)")]
+    [SerializeField] private float hypergalacticSpeedTransitionDistanceAu = 10000000.0f;  // Ultimate distances
+    [Tooltip("Hypergalactic turbospeed multiplier (AU/s)")]
+    [SerializeField] private float hypergalacticTurbospeed = 100000000.0f;   // For traversing cosmic voids at maximum velocity
+    [Tooltip("Distance to activate hypergalactic turbospeed (AU)")]
+    [SerializeField] private float hypergalacticTurbospeedTransitionDistanceAu = 100000000.0f;  // Beyond all known structures
     
     [Header("Super Near Zone - Breathtaking Flybys")]
     [Tooltip("Ultra-slow speed for dramatic flybys (AU/s)")]
-    [SerializeField] private float superNearSpeed = 0.00002f;  // Ultra-slow for dramatic flybys
+    [SerializeField] private float superNearSpeed = 0.000000001f;  // Ultra-slow for dramatic flybys
     [Tooltip("Massive planet scale effect (0.0001x = huge planets)")]
-    [SerializeField] private float superNearScale = 0.0001f;   // Massive planet effect
-    [Tooltip("Fallback transition distance for very small bodies (AU)")]
-    [SerializeField] private float superNearTransitionDistanceAu = 0.0005f;  // Fallback for very small bodies
+    [SerializeField] private float superNearScale = 0.000000001f;   // Massive planet effect
     [Tooltip("Super near zone multiplier (2x = zone is 2× planet radius)")]
-    [SerializeField] private float superNearRadiusMultiplier = 2.0f;  // Super near zone = planet radius * this multiplier
+    [SerializeField] private float superNearRadiusMultiplier = 10.0f;  // Super near zone = planet radius * this multiplier
     [Tooltip("Whether to adapt super near zone to planet size")]
     [SerializeField] private bool adaptToplanetSize = true;  // Whether to adapt super near zone to planet size
     
@@ -698,8 +708,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         // Calculate adaptive super near zone distance based on planet size
         float adaptiveSuperNearDistance = adaptToplanetSize ? 
-            Mathf.Max(superNearTransitionDistanceAu, planetRadiusAu * superNearRadiusMultiplier) : 
-            superNearTransitionDistanceAu;
+            planetRadiusAu * superNearRadiusMultiplier : 
+            planetRadiusAu * 0.1f; // Small default multiplier if adaptation is disabled
         
         // Calculate scale based on distance with adaptive super near zone for breathtaking flybys
         float targetScale;
@@ -718,7 +728,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
             targetScale = Mathf.Lerp(minScale, maxScale, scaleFactor);
         }
         
-        // Calculate speed based on distance with six zones: super near, close, normal, hyperspeed, interstellar, and intergalactic
+        // Calculate speed based on distance with nine zones: super near, close, normal, hyperspeed, interstellar, extragalactic, intergalactic, hypergalactic, and hypergalactic turbospeed
         float targetSpeed;
         
         if (distanceToNearestPlanet < adaptiveSuperNearDistance)
@@ -752,18 +762,42 @@ public class SolarSystemParallaxManager : MonoBehaviour
             float smoothFactor = normalizedDistance * normalizedDistance * (3.0f - 2.0f * normalizedDistance);
             targetSpeed = Mathf.Lerp(hyperSpeed, interstellarSpeed, smoothFactor);
         }
-        else if (distanceToNearestPlanet < intergalacticSpeedTransitionDistanceAu)
+        else if (distanceToNearestPlanet < extragalacticSpeedTransitionDistanceAu)
         {
-            // Interstellar zone: transition from interstellarSpeed to intergalacticSpeed
-            float normalizedDistance = (distanceToNearestPlanet - interstellarSpeedTransitionDistanceAu) / (intergalacticSpeedTransitionDistanceAu - interstellarSpeedTransitionDistanceAu);
+            // Interstellar zone: transition from interstellarSpeed to extragalacticSpeed
+            float normalizedDistance = (distanceToNearestPlanet - interstellarSpeedTransitionDistanceAu) / (extragalacticSpeedTransitionDistanceAu - interstellarSpeedTransitionDistanceAu);
             normalizedDistance = Mathf.Clamp01(normalizedDistance);
             float smoothFactor = normalizedDistance * normalizedDistance * (3.0f - 2.0f * normalizedDistance);
-            targetSpeed = Mathf.Lerp(interstellarSpeed, intergalacticSpeed, smoothFactor);
+            targetSpeed = Mathf.Lerp(interstellarSpeed, extragalacticSpeed, smoothFactor);
+        }
+        else if (distanceToNearestPlanet < intergalacticSpeedTransitionDistanceAu)
+        {
+            // Extragalactic zone: transition from extragalacticSpeed to intergalacticSpeed
+            float normalizedDistance = (distanceToNearestPlanet - extragalacticSpeedTransitionDistanceAu) / (intergalacticSpeedTransitionDistanceAu - extragalacticSpeedTransitionDistanceAu);
+            normalizedDistance = Mathf.Clamp01(normalizedDistance);
+            float smoothFactor = normalizedDistance * normalizedDistance * (3.0f - 2.0f * normalizedDistance);
+            targetSpeed = Mathf.Lerp(extragalacticSpeed, intergalacticSpeed, smoothFactor);
+        }
+        else if (distanceToNearestPlanet < hypergalacticSpeedTransitionDistanceAu)
+        {
+            // Intergalactic zone: transition from intergalacticSpeed to hypergalacticSpeed
+            float normalizedDistance = (distanceToNearestPlanet - intergalacticSpeedTransitionDistanceAu) / (hypergalacticSpeedTransitionDistanceAu - intergalacticSpeedTransitionDistanceAu);
+            normalizedDistance = Mathf.Clamp01(normalizedDistance);
+            float smoothFactor = normalizedDistance * normalizedDistance * (3.0f - 2.0f * normalizedDistance);
+            targetSpeed = Mathf.Lerp(intergalacticSpeed, hypergalacticSpeed, smoothFactor);
+        }
+        else if (distanceToNearestPlanet < hypergalacticTurbospeedTransitionDistanceAu)
+        {
+            // Hypergalactic zone: transition from hypergalacticSpeed to hypergalacticTurbospeed
+            float normalizedDistance = (distanceToNearestPlanet - hypergalacticSpeedTransitionDistanceAu) / (hypergalacticTurbospeedTransitionDistanceAu - hypergalacticSpeedTransitionDistanceAu);
+            normalizedDistance = Mathf.Clamp01(normalizedDistance);
+            float smoothFactor = normalizedDistance * normalizedDistance * (3.0f - 2.0f * normalizedDistance);
+            targetSpeed = Mathf.Lerp(hypergalacticSpeed, hypergalacticTurbospeed, smoothFactor);
         }
         else
         {
-            // Intergalactic zone: full intergalactic speed
-            targetSpeed = intergalacticSpeed;
+            // Hypergalactic turbospeed zone: full hypergalactic turbospeed
+            targetSpeed = hypergalacticTurbospeed;
         }
         
         // Ultra-responsive transitions with emergency braking for close approaches
@@ -800,7 +834,10 @@ public class SolarSystemParallaxManager : MonoBehaviour
                          distanceToNearestPlanet < speedTransitionDistanceAu ? "CLOSE" :
                          distanceToNearestPlanet < hyperSpeedTransitionDistanceAu ? "NORMAL" :
                          distanceToNearestPlanet < interstellarSpeedTransitionDistanceAu ? "HYPERSPEED" :
-                         distanceToNearestPlanet < intergalacticSpeedTransitionDistanceAu ? "INTERSTELLAR" : "INTERGALACTIC";
+                         distanceToNearestPlanet < extragalacticSpeedTransitionDistanceAu ? "INTERSTELLAR" :
+                         distanceToNearestPlanet < intergalacticSpeedTransitionDistanceAu ? "EXTRAGALACTIC" :
+                         distanceToNearestPlanet < hypergalacticSpeedTransitionDistanceAu ? "INTERGALACTIC" :
+                         distanceToNearestPlanet < hypergalacticTurbospeedTransitionDistanceAu ? "HYPERGALACTIC" : "HYPERGALACTIC TURBOSPEED";
             Debug.Log($"Zone: {zone}, Distance: {distanceToNearestPlanet:F6} AU, SuperNear: {adaptiveSuperNearDistance:F6} AU, Scale: {currentScale:F5}, Speed: {currentSpeed:F6} AU/s, Planet: {nearestPlanet.name}");
         }
     }
@@ -814,8 +851,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
         if (nearestPlanet != null)
         {
             float adaptiveSuperNearDistance = adaptToplanetSize ? 
-                Mathf.Max(superNearTransitionDistanceAu, (nearestPlanet.radiusKm / (float)AU_KM) * superNearRadiusMultiplier) : 
-                superNearTransitionDistanceAu;
+                (nearestPlanet.radiusKm / (float)AU_KM) * superNearRadiusMultiplier : 
+                (nearestPlanet.radiusKm / (float)AU_KM) * 0.1f; // Small default multiplier if adaptation is disabled
             
             if (distanceToNearestPlanet < adaptiveSuperNearDistance)
                 zone = "SUPER NEAR";
@@ -825,10 +862,16 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 zone = "NORMAL";
             else if (distanceToNearestPlanet < interstellarSpeedTransitionDistanceAu)
                 zone = "HYPERSPEED";
-            else if (distanceToNearestPlanet < intergalacticSpeedTransitionDistanceAu)
+            else if (distanceToNearestPlanet < extragalacticSpeedTransitionDistanceAu)
                 zone = "INTERSTELLAR";
-            else
+            else if (distanceToNearestPlanet < intergalacticSpeedTransitionDistanceAu)
+                zone = "EXTRAGALACTIC";
+            else if (distanceToNearestPlanet < hypergalacticSpeedTransitionDistanceAu)
                 zone = "INTERGALACTIC";
+            else if (distanceToNearestPlanet < hypergalacticTurbospeedTransitionDistanceAu)
+                zone = "HYPERGALACTIC";
+            else
+                zone = "HYPERGALACTIC TURBOSPEED";
         }
         
         // Convert speed from AU/s to km/s and km/h
