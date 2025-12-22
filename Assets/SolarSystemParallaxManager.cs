@@ -19,6 +19,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [SerializeField] private string targetDate = "2023-07-10";
 
     [Header("Horizon bubble")]
+    [Tooltip("Radius of the virtual horizon sphere (Unity units)")]
     [SerializeField] private float horizonRadius = 1000f;
     [SerializeField] private Material horizonMaterial;
     [SerializeField] private bool showHorizonSphere = false;  // Make sure this is FALSE
@@ -28,12 +29,16 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
     [Header("Planets / Bodies")]
     [SerializeField] private Material planetMaterial;
+    [Tooltip("Minimum planet proxy radius (Unity units)")]
     [SerializeField] private float minProxyRadius = 2f;
+    [Tooltip("Maximum planet proxy radius (Unity units)")]
     [SerializeField] private float maxProxyRadius = 200f;
     [SerializeField] private bool useHighQualitySpheres = true;
+    [Tooltip("Higher = more detailed (0-4 recommended)")]
     [SerializeField] private int sphereSubdivisions = 3;  // Higher = more detailed (0-4 recommended)
 
     [Header("Player (real space)")]
+    [Tooltip("Player movement speed (AU/s)")]
     [SerializeField] private float moveSpeedAuPerSecond = 0.01f;
     
     [Header("Camera")]
@@ -42,22 +47,37 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
     [Header("Dynamic Scaling & Speed")]
     [SerializeField] private bool enableDynamicBehavior = true;
+    [Tooltip("Base scale multiplier (1x = normal size)")]
     [SerializeField] private float baseScale = 1f;
+    [Tooltip("Minimum scale multiplier (0.001x = very small)")]
     [SerializeField] private float minScale = 0.001f;  // Much smaller for massive planet effect
+    [Tooltip("Maximum scale multiplier (5x = very large)")]
     [SerializeField] private float maxScale = 5f;
+    [Tooltip("Distance for scale transition (AU)")]
     [SerializeField] private float scaleTransitionDistanceAu = 0.1f;   // Larger transition zone
+    [Tooltip("Base movement speed multiplier (AU/s)")]
     [SerializeField] private float baseSpeed = 0.05f;
+    [Tooltip("Minimum movement speed (AU/s)")]
     [SerializeField] private float minSpeed = 0.0001f;  // Very slow for precise control
+    [Tooltip("Maximum normal movement speed (AU/s)")]
     [SerializeField] private float maxSpeed = 0.3f;     // More moderate normal speed
+    [Tooltip("Distance for speed transition (AU)")]
     [SerializeField] private float speedTransitionDistanceAu = 0.05f;  // Larger slow zone
+    [Tooltip("Hyper speed multiplier (AU/s)")]
     [SerializeField] private float hyperSpeed = 5.0f;   // More reasonable hyperspeed
+    [Tooltip("Distance to activate hyper speed (AU)")]
     [SerializeField] private float hyperSpeedTransitionDistanceAu = 2.0f;  // Further hyperspeed activation
     
     [Header("Super Near Zone - Breathtaking Flybys")]
+    [Tooltip("Ultra-slow speed for dramatic flybys (AU/s)")]
     [SerializeField] private float superNearSpeed = 0.00001f;  // Ultra-slow for dramatic flybys
+    [Tooltip("Massive planet scale effect (0.0001x = huge planets)")]
     [SerializeField] private float superNearScale = 0.0001f;   // Massive planet effect
+    [Tooltip("Fallback transition distance for very small bodies (AU)")]
     [SerializeField] private float superNearTransitionDistanceAu = 0.01f;  // Fallback for very small bodies
+    [Tooltip("Super near zone multiplier (2x = zone is 2× planet radius)")]
     [SerializeField] private float superNearRadiusMultiplier = 2.0f;  // Super near zone = planet radius * this multiplier
+    [Tooltip("Whether to adapt super near zone to planet size")]
     [SerializeField] private bool adaptToplanetSize = true;  // Whether to adapt super near zone to planet size
     
     [Tooltip("New Input System: 2D move (x: strafe, y: forward).")]
@@ -70,12 +90,15 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [SerializeField] private bool enableLabels = true;
     [SerializeField] private Canvas labelCanvas;
     [SerializeField] private Font labelFont;
+    [Tooltip("Font size for planet labels (pt)")]
     [SerializeField] private int labelFontSize = 14;
     [SerializeField] private Color labelColor = Color.white;
+    [Tooltip("Offset from planet center (pixels)")]
     [SerializeField] private float labelOffsetPixels = 20f; // offset from planet center in pixels
     
     [Header("HUD (Heads-Up Display)")]
     [SerializeField] private bool enableHUD = true;
+    [Tooltip("Font size for HUD text (pt)")]
     [SerializeField] private int hudFontSize = 16;
     [SerializeField] private Color hudColor = Color.cyan;
     [SerializeField] private Vector2 hudPosition = new Vector2(20f, -20f); // offset from top-left corner
