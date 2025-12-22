@@ -12,6 +12,12 @@ public class StellarParallaxManager : MonoBehaviour
     [Tooltip("Virtual render distance from nearest to farthest star")]
     [SerializeField] private float renderDistanceRange = 50f;  // Distance in parsecs
     
+    [Header("Parallax Settings")]
+    [Tooltip("Exaggerate parallax effect for visibility (1 = real parallax, >1 = exaggerated)")]
+    [SerializeField] private float parallaxExaggeration = 100f;
+    [Tooltip("Show parallax motion based on player position")]
+    [SerializeField] private bool enableParallax = true;
+    
     [Header("Star Rendering")]
     [SerializeField] private Material starMaterial;
     [SerializeField] private float baseStarSize = 0.1f;
@@ -22,7 +28,8 @@ public class StellarParallaxManager : MonoBehaviour
     [SerializeField] private bool showCullingDebug = true;
     
     // Constants
-    private const float PARSEC_TO_AU = 206264.806f;
+    private const float PARSEC_TO_AU = 206264.806f;  // 1 parsec = 206,264.806 AU
+    private const float AU_TO_PARSEC = 1f / PARSEC_TO_AU;  // 1 AU = 1/206,264.806 parsecs
     private const int CSV_FILE_COUNT = 6;
     
     // Star data structure for GDR1 format
@@ -94,7 +101,8 @@ public class StellarParallaxManager : MonoBehaviour
         // Update only if camera moved significantly or render distance changed
         bool shouldUpdate = Vector3.Distance(currentCameraPos, lastCameraPosition) > 0.5f ||
                            Vector3.Angle(currentCameraForward, lastCameraForward) > 2f ||
-                           Mathf.Abs(renderDistanceRange - lastRenderDistance) > 0.1f;
+                           Mathf.Abs(renderDistanceRange - lastRenderDistance) > 0.1f ||
+                           (enableParallax && Vector3.Distance(solarSystemManager.playerRealPosAu, Vector3.zero) > 0.001f); // Update for parallax
         
         if (shouldUpdate)
         {
@@ -299,9 +307,9 @@ public class StellarParallaxManager : MonoBehaviour
             
             starsInRange++;
             
-            // Calculate world position on the virtual sphere
+            // Calculate world position on the virtual sphere WITH PARALLAX
             Vector3 direction = star.positionParsecs.normalized;
-            Vector3 worldPos = direction * horizonRadius;
+            Vector3 worldPos = CalculateStarWorldPosition(star, direction, horizonRadius);
             
             // Improved FOV culling with dot product for better performance
             Vector3 toStar = (worldPos - cameraPos).normalized;
@@ -344,7 +352,7 @@ public class StellarParallaxManager : MonoBehaviour
         {
             StarData star = visibleStars[i];
             Vector3 direction = star.positionParsecs.normalized;
-            Vector3 worldPos = direction * horizonRadius;
+            Vector3 worldPos = CalculateStarWorldPosition(star, direction, horizonRadius);
             
             // Calculate star size based on magnitude (brighter = larger)
             float starSize = baseStarSize * Mathf.Pow(10f, (15f - star.magnitude) * 0.1f);
@@ -353,6 +361,38 @@ public class StellarParallaxManager : MonoBehaviour
             starPositions[i] = worldPos;
             starMatrices[i] = Matrix4x4.TRS(worldPos, Quaternion.identity, Vector3.one * starSize);
         }
+    }
+    
+    private Vector3 CalculateStarWorldPosition(StarData star, Vector3 originalDirection, float horizonRadius)
+    {
+        if (!enableParallax)
+        {
+            // No parallax - just place on sphere
+            return originalDirection * horizonRadius;
+        }
+        
+        // Get player position from solar system manager (in AU, convert to parsecs)
+        Vector3 playerPosAu = solarSystemManager.playerRealPosAu;
+        Vector3 playerPosParsecs = playerPosAu * AU_TO_PARSEC;
+        
+        // Calculate parallax shift
+        // Parallax angle = baseline / distance (in radians)
+        float distance = Mathf.Max(star.distance, 0.1f); // Distance in parsecs
+        
+        // Calculate the parallax offset in angular space (both in parsecs now)
+        Vector3 parallaxOffset = playerPosParsecs / distance;
+        
+        // Apply exaggeration for visibility
+        parallaxOffset *= parallaxExaggeration;
+        
+        // Convert parallax offset to apparent direction change
+        // Subtract offset because parallax shifts stars opposite to player movement
+        Vector3 apparentDirection = originalDirection - parallaxOffset;
+        
+        // Normalize to keep on unit sphere, then scale to horizon radius
+        apparentDirection = apparentDirection.normalized;
+        
+        return apparentDirection * horizonRadius;
     }
     
     private void RenderStars()
@@ -388,6 +428,9 @@ public class StellarParallaxManager : MonoBehaviour
     {
         // Clamp render distance to valid range
         renderDistanceRange = Mathf.Clamp(renderDistanceRange, 0f, 100f);
+        
+        // Clamp parallax exaggeration to reasonable range
+        parallaxExaggeration = Mathf.Clamp(parallaxExaggeration, 1f, 1000f);
         
         // Clamp max stars per frame
         maxStarsPerFrame = Mathf.Clamp(maxStarsPerFrame, 100, 50000);
