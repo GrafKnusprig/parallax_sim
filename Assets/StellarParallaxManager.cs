@@ -354,12 +354,8 @@ public class StellarParallaxManager : MonoBehaviour
             Vector3 direction = star.positionParsecs.normalized;
             Vector3 worldPos = CalculateStarWorldPosition(star, direction, horizonRadius);
             
-            // Calculate star size based on magnitude (brighter = larger)
-            float starSize = baseStarSize * Mathf.Pow(10f, (15f - star.magnitude) * 0.1f);
-            starSize = Mathf.Clamp(starSize, 0.01f, 2f);
-            
             starPositions[i] = worldPos;
-            starMatrices[i] = Matrix4x4.TRS(worldPos, Quaternion.identity, Vector3.one * starSize);
+            starMatrices[i] = Matrix4x4.TRS(worldPos, Quaternion.identity, Vector3.one);
         }
     }
     
@@ -402,6 +398,7 @@ public class StellarParallaxManager : MonoBehaviour
         
         // Set material properties
         materialPropertyBlock.SetColor("_Color", starColor);
+        materialPropertyBlock.SetFloat("_Size", baseStarSize);
         
         // Render stars in batches (Unity has limits on instanced rendering)
         const int BATCH_SIZE = 1023; // Unity's limit for Graphics.DrawMeshInstanced
