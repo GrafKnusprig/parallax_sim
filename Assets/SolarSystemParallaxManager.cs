@@ -38,8 +38,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [SerializeField] private int sphereSubdivisions = 3;  // Higher = more detailed (0-4 recommended)
 
     [Header("Player (real space)")]
-    [Tooltip("Player movement speed (AU/s)")]
-    [SerializeField] private float moveSpeedAuPerSecond = 0.01f;
+    [Tooltip("Player movement speed (c = lightspeed)")]
+    [SerializeField] private float moveSpeedAuPerSecond = 5.0f;
     
     [Header("Camera")]
     [Tooltip("The camera to use for rendering and movement calculations. If not set, will use Camera.main.")]
@@ -55,22 +55,30 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [SerializeField] private float maxScale = 5f;
     [Tooltip("Distance for scale transition (AU)")]
     [SerializeField] private float scaleTransitionDistanceAu = 0.1f;   // Larger transition zone
-    [Tooltip("Base movement speed multiplier (AU/s)")]
-    [SerializeField] private float baseSpeed = 0.05f;
-    [Tooltip("Minimum movement speed (AU/s)")]
-    [SerializeField] private float minSpeed = 0.0001f;  // Very slow for precise control
-    [Tooltip("Maximum normal movement speed (AU/s)")]
-    [SerializeField] private float maxSpeed = 0.3f;     // More moderate normal speed
+    [Tooltip("Base movement speed multiplier (c = lightspeed)")]
+    [SerializeField] private float baseSpeed = 25.0f;
+    [Tooltip("Minimum movement speed (c = lightspeed)")]
+    [SerializeField] private float minSpeed = 0.05f;  // Very slow for precise control
+    [Tooltip("Maximum normal movement speed (c = lightspeed)")]
+    [SerializeField] private float maxSpeed = 150.0f;     // More moderate normal speed
     [Tooltip("Distance for speed transition (AU)")]
     [SerializeField] private float speedTransitionDistanceAu = 0.05f;  // Larger slow zone
-    [Tooltip("Hyper speed multiplier (AU/s)")]
-    [SerializeField] private float hyperSpeed = 5.0f;   // More reasonable hyperspeed
+    [Tooltip("Hyper speed multiplier (c = lightspeed)")]
+    [SerializeField] private float hyperSpeed = 2500.0f;   // More reasonable hyperspeed
     [Tooltip("Distance to activate hyper speed (AU)")]
     [SerializeField] private float hyperSpeedTransitionDistanceAu = 2.0f;  // Further hyperspeed activation
+    [Tooltip("Interstellar travel speed (c = lightspeed)")]
+    [SerializeField] private float interstellarSpeed = 25000.0f;   // For travel between star systems
+    [Tooltip("Distance to activate interstellar speed (AU)")]
+    [SerializeField] private float interstellarSpeedTransitionDistanceAu = 20.0f;  // Far from solar system
+    [Tooltip("Intergalactic travel speed (c = lightspeed)")]
+    [SerializeField] private float intergalacticSpeed = 250000.0f;   // For travel between galaxies
+    [Tooltip("Distance to activate intergalactic speed (AU)")]
+    [SerializeField] private float intergalacticSpeedTransitionDistanceAu = 200.0f;  // Very far from solar system
     
     [Header("Super Near Zone - Breathtaking Flybys")]
-    [Tooltip("Ultra-slow speed for dramatic flybys (AU/s)")]
-    [SerializeField] private float superNearSpeed = 0.00001f;  // Ultra-slow for dramatic flybys
+    [Tooltip("Ultra-slow speed for dramatic flybys (c = lightspeed)")]
+    [SerializeField] private float superNearSpeed = 0.005f;  // Ultra-slow for dramatic flybys
     [Tooltip("Massive planet scale effect (0.0001x = huge planets)")]
     [SerializeField] private float superNearScale = 0.0001f;   // Massive planet effect
     [Tooltip("Fallback transition distance for very small bodies (AU)")]
@@ -105,6 +113,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
     private const double AU_KM = 149_597_870.7;
     private const double SPEED_OF_LIGHT_KM_S = 299_792.458; // km/s
+    private const float SPEED_OF_LIGHT_AU_S = (float)(SPEED_OF_LIGHT_KM_S / AU_KM); // ~0.002003 AU/s
 
     [System.NonSerialized]
     public Vector3 playerRealPosAu; // player position in AU (real space) - public for StellarParallaxManager
@@ -710,22 +719,30 @@ public class SolarSystemParallaxManager : MonoBehaviour
             targetScale = Mathf.Lerp(minScale, maxScale, scaleFactor);
         }
         
-        // Calculate speed based on distance with four zones: super near, close, normal, and hyperspeed
+        // Calculate speed based on distance with six zones: super near, close, normal, hyper, interstellar, and intergalactic
         float targetSpeed;
+        
+        // Convert lightspeed values to AU/s for internal calculations
+        float superNearSpeedAuS = superNearSpeed * SPEED_OF_LIGHT_AU_S;
+        float minSpeedAuS = minSpeed * SPEED_OF_LIGHT_AU_S;
+        float maxSpeedAuS = maxSpeed * SPEED_OF_LIGHT_AU_S;
+        float hyperSpeedAuS = hyperSpeed * SPEED_OF_LIGHT_AU_S;
+        float interstellarSpeedAuS = interstellarSpeed * SPEED_OF_LIGHT_AU_S;
+        float intergalacticSpeedAuS = intergalacticSpeed * SPEED_OF_LIGHT_AU_S;
         
         if (distanceToNearestPlanet < adaptiveSuperNearDistance)
         {
             // Super near zone: transition from superNearSpeed to minSpeed for breathtaking flybys
             float superNearFactor = distanceToNearestPlanet / adaptiveSuperNearDistance;
             superNearFactor = superNearFactor * superNearFactor * superNearFactor; // Cubic for ultra-dramatic slowdown
-            targetSpeed = Mathf.Lerp(superNearSpeed, minSpeed, superNearFactor);
+            targetSpeed = Mathf.Lerp(superNearSpeedAuS, minSpeedAuS, superNearFactor);
         }
         else if (distanceToNearestPlanet < speedTransitionDistanceAu)
         {
             // Close zone: exponential curve from minSpeed to maxSpeed
             float speedFactor = (distanceToNearestPlanet - adaptiveSuperNearDistance) / (speedTransitionDistanceAu - adaptiveSuperNearDistance);
             speedFactor = speedFactor * speedFactor; // Square for exponential curve
-            targetSpeed = Mathf.Lerp(minSpeed, maxSpeed, speedFactor);
+            targetSpeed = Mathf.Lerp(minSpeedAuS, maxSpeedAuS, speedFactor);
         }
         else if (distanceToNearestPlanet < hyperSpeedTransitionDistanceAu)
         {
@@ -734,12 +751,28 @@ public class SolarSystemParallaxManager : MonoBehaviour
             normalizedDistance = Mathf.Clamp01(normalizedDistance);
             // Use smoothstep for even smoother transition
             float smoothFactor = normalizedDistance * normalizedDistance * (3.0f - 2.0f * normalizedDistance);
-            targetSpeed = Mathf.Lerp(maxSpeed, hyperSpeed, smoothFactor);
+            targetSpeed = Mathf.Lerp(maxSpeedAuS, hyperSpeedAuS, smoothFactor);
+        }
+        else if (distanceToNearestPlanet < interstellarSpeedTransitionDistanceAu)
+        {
+            // Hyper zone: transition from hyperSpeed to interstellarSpeed
+            float normalizedDistance = (distanceToNearestPlanet - hyperSpeedTransitionDistanceAu) / (interstellarSpeedTransitionDistanceAu - hyperSpeedTransitionDistanceAu);
+            normalizedDistance = Mathf.Clamp01(normalizedDistance);
+            float smoothFactor = normalizedDistance * normalizedDistance * (3.0f - 2.0f * normalizedDistance);
+            targetSpeed = Mathf.Lerp(hyperSpeedAuS, interstellarSpeedAuS, smoothFactor);
+        }
+        else if (distanceToNearestPlanet < intergalacticSpeedTransitionDistanceAu)
+        {
+            // Interstellar zone: transition from interstellarSpeed to intergalacticSpeed
+            float normalizedDistance = (distanceToNearestPlanet - interstellarSpeedTransitionDistanceAu) / (intergalacticSpeedTransitionDistanceAu - interstellarSpeedTransitionDistanceAu);
+            normalizedDistance = Mathf.Clamp01(normalizedDistance);
+            float smoothFactor = normalizedDistance * normalizedDistance * (3.0f - 2.0f * normalizedDistance);
+            targetSpeed = Mathf.Lerp(interstellarSpeedAuS, intergalacticSpeedAuS, smoothFactor);
         }
         else
         {
-            // Far zone: full hyperspeed
-            targetSpeed = hyperSpeed;
+            // Intergalactic zone: full intergalactic speed
+            targetSpeed = intergalacticSpeedAuS;
         }
         
         // Ultra-responsive transitions with emergency braking for close approaches
@@ -774,7 +807,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
         {
             string zone = distanceToNearestPlanet < adaptiveSuperNearDistance ? "SUPER NEAR" :
                          distanceToNearestPlanet < speedTransitionDistanceAu ? "CLOSE" :
-                         distanceToNearestPlanet < hyperSpeedTransitionDistanceAu ? "NORMAL" : "HYPERSPEED";
+                         distanceToNearestPlanet < hyperSpeedTransitionDistanceAu ? "NORMAL" :
+                         distanceToNearestPlanet < interstellarSpeedTransitionDistanceAu ? "HYPERSPEED" :
+                         distanceToNearestPlanet < intergalacticSpeedTransitionDistanceAu ? "INTERSTELLAR" : "INTERGALACTIC";
             Debug.Log($"Zone: {zone}, Distance: {distanceToNearestPlanet:F6} AU, SuperNear: {adaptiveSuperNearDistance:F6} AU, Scale: {currentScale:F5}, Speed: {currentSpeed:F6} AU/s, Planet: {nearestPlanet.name}");
         }
     }
@@ -797,8 +832,12 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 zone = "CLOSE";
             else if (distanceToNearestPlanet < hyperSpeedTransitionDistanceAu)
                 zone = "NORMAL";
-            else
+            else if (distanceToNearestPlanet < interstellarSpeedTransitionDistanceAu)
                 zone = "HYPERSPEED";
+            else if (distanceToNearestPlanet < intergalacticSpeedTransitionDistanceAu)
+                zone = "INTERSTELLAR";
+            else
+                zone = "INTERGALACTIC";
         }
         
         // Convert speed from AU/s to km/s and km/h
@@ -902,7 +941,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         }
 
         moveDir.Normalize();
-        float effectiveSpeed = enableDynamicBehavior ? currentSpeed : moveSpeedAuPerSecond;
+        float effectiveSpeed = enableDynamicBehavior ? currentSpeed : moveSpeedAuPerSecond * SPEED_OF_LIGHT_AU_S;
         playerRealPosAu += moveDir * (effectiveSpeed * Time.deltaTime);
         
         // Track actual movement speed
