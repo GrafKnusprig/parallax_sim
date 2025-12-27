@@ -13,10 +13,11 @@ public class StellarParallaxManager : MonoBehaviour
     [SerializeField] private float renderDistanceRange = 50f;  // Distance in parsecs
     
     [Header("Parallax Settings")]
-    [Tooltip("Exaggerate parallax effect for visibility (1x = real parallax, >1x = exaggerated)")]
-    [SerializeField] private float parallaxExaggeration = 100f;
-    [Tooltip("Show parallax motion based on player position")]
+    [Tooltip("Show parallax motion based on player position (real-world parallax only)")]
     [SerializeField] private bool enableParallax = true;
+    
+    // Fixed to real-world parallax - no exaggeration for realistic stellar parallax
+    private const float PARALLAX_EXAGGERATION = 1.0f;
     
     [Header("Star Rendering")]
     [SerializeField] private Material starMaterial;
@@ -290,15 +291,10 @@ public class StellarParallaxManager : MonoBehaviour
         // Get camera frustum for culling
         Vector3 cameraPos = playerCamera.transform.position;
         Vector3 cameraForward = playerCamera.transform.forward;
-        Vector3 cameraUp = playerCamera.transform.up;
-        Vector3 cameraRight = playerCamera.transform.right;
         float horizonRadius = solarSystemManager.HorizonRadius;
         
         // Calculate effective FOV with generous margin
         float halfFOVWithMargin = playerCamera.fieldOfView * 0.5f + FOV_CULLING_MARGIN;
-        
-        int starsInRange = 0;
-        int starsInFOV = 0;
         
         foreach (StarData star in allStars)
         {
@@ -306,11 +302,17 @@ public class StellarParallaxManager : MonoBehaviour
             if (star.distance > maxDistance)
                 continue;
             
-            starsInRange++;
-            
             // Calculate world position on the virtual sphere WITH PARALLAX
             Vector3 direction = star.positionParsecs.normalized;
-            Vector3 worldPos = CalculateStarWorldPosition(star, direction, horizonRadius);
+            Vector3 playerPosParsecs = solarSystemManager.playerRealPosAu * AU_TO_PARSEC;
+            Vector3 worldPos = CalculateStarWorldPosition(star, direction, horizonRadius, playerPosParsecs);
+            
+            // Skip stars with invalid world positions
+            if (float.IsNaN(worldPos.x) || float.IsNaN(worldPos.y) || float.IsNaN(worldPos.z) ||
+                float.IsInfinity(worldPos.x) || float.IsInfinity(worldPos.y) || float.IsInfinity(worldPos.z))
+            {
+                continue;
+            }
             
             // Improved FOV culling with dot product for better performance
             Vector3 toStar = (worldPos - cameraPos).normalized;
@@ -321,7 +323,6 @@ public class StellarParallaxManager : MonoBehaviour
             if (angleToCamera > halfFOVWithMargin)
                 continue;
             
-            starsInFOV++;
             visibleStars.Add(star);
             
             // Limit stars per frame for performance
@@ -342,20 +343,21 @@ public class StellarParallaxManager : MonoBehaviour
         }
         
         float horizonRadius = solarSystemManager.HorizonRadius;
+        Vector3 playerPosParsecs = solarSystemManager.playerRealPosAu * AU_TO_PARSEC;
         
         // Update positions and matrices
         for (int i = 0; i < starCount; i++)
         {
             StarData star = visibleStars[i];
             Vector3 direction = star.positionParsecs.normalized;
-            Vector3 worldPos = CalculateStarWorldPosition(star, direction, horizonRadius);
+            Vector3 worldPos = CalculateStarWorldPosition(star, direction, horizonRadius, playerPosParsecs);
             
             starPositions[i] = worldPos;
             starMatrices[i] = Matrix4x4.TRS(worldPos, Quaternion.identity, Vector3.one);
         }
     }
     
-    private Vector3 CalculateStarWorldPosition(StarData star, Vector3 originalDirection, float horizonRadius)
+    private Vector3 CalculateStarWorldPosition(StarData star, Vector3 originalDirection, float horizonRadius, Vector3 playerPosParsecs)
     {
         if (!enableParallax)
         {
@@ -363,26 +365,47 @@ public class StellarParallaxManager : MonoBehaviour
             return originalDirection * horizonRadius;
         }
         
-        // Get player position from solar system manager (in AU, convert to parsecs)
-        Vector3 playerPosAu = solarSystemManager.playerRealPosAu;
-        Vector3 playerPosParsecs = playerPosAu * AU_TO_PARSEC;
+        // Use double precision for accurate parallax calculations
+        double distance = System.Math.Max(star.distance, 0.1); // Distance in parsecs
         
-        // Calculate parallax shift
-        // Parallax angle = baseline / distance (in radians)
-        float distance = Mathf.Max(star.distance, 0.1f); // Distance in parsecs
+        // Convert to double precision for calculations
+        Vector3d playerPos64 = new Vector3d(playerPosParsecs.x, playerPosParsecs.y, playerPosParsecs.z);
+        Vector3d originalDir64 = new Vector3d(originalDirection.x, originalDirection.y, originalDirection.z);
         
-        // Calculate the parallax offset in angular space (both in parsecs now)
-        Vector3 parallaxOffset = playerPosParsecs / distance;
+        // Calculate the parallax offset in angular space (radians)
+        Vector3d parallaxOffset = playerPos64 / distance;
         
-        // Apply exaggeration for visibility
-        parallaxOffset *= parallaxExaggeration;
+        // Apply realistic parallax only (no exaggeration)
+        parallaxOffset *= PARALLAX_EXAGGERATION;
         
         // Convert parallax offset to apparent direction change
         // Subtract offset because parallax shifts stars opposite to player movement
-        Vector3 apparentDirection = originalDirection - parallaxOffset;
+        Vector3d apparentDir64 = originalDir64 - parallaxOffset;
         
-        // Normalize to keep on unit sphere, then scale to horizon radius
-        apparentDirection = apparentDirection.normalized;
+        // Bounds checking for extreme values
+        if (apparentDir64.magnitude < 0.001)
+        {
+            // If direction becomes too small, fallback to original direction
+            apparentDir64 = originalDir64;
+        }
+        
+        // Normalize to keep on unit sphere
+        apparentDir64 = apparentDir64.normalized;
+        
+        // Convert back to Vector3 with precision check
+        Vector3 apparentDirection = new Vector3(
+            (float)apparentDir64.x,
+            (float)apparentDir64.y,
+            (float)apparentDir64.z
+        );
+        
+        // Final bounds check for NaN/Infinity
+        if (float.IsNaN(apparentDirection.x) || float.IsNaN(apparentDirection.y) || float.IsNaN(apparentDirection.z) ||
+            float.IsInfinity(apparentDirection.x) || float.IsInfinity(apparentDirection.y) || float.IsInfinity(apparentDirection.z))
+        {
+            // Fallback to original direction if calculation failed
+            apparentDirection = originalDirection;
+        }
         
         return apparentDirection * horizonRadius;
     }
@@ -423,9 +446,6 @@ public class StellarParallaxManager : MonoBehaviour
         // Clamp render distance to valid range
         renderDistanceRange = Mathf.Clamp(renderDistanceRange, 0f, 100f);
         
-        // Clamp parallax exaggeration to reasonable range
-        parallaxExaggeration = Mathf.Clamp(parallaxExaggeration, 1f, 1000f);
-        
         // Clamp brightness setting
         starBrightness = Mathf.Clamp(starBrightness, 0.1f, 5f);
         
@@ -461,5 +481,45 @@ public class StellarParallaxManager : MonoBehaviour
     public bool IsDataLoaded()
     {
         return starsLoaded;
+    }
+}
+
+// High-precision vector struct for accurate parallax calculations
+struct Vector3d
+{
+    public double x, y, z;
+    
+    public Vector3d(double x, double y, double z)
+    {
+        this.x = x;
+        this.y = y;
+        this.z = z;
+    }
+    
+    public double magnitude => System.Math.Sqrt(x * x + y * y + z * z);
+    
+    public Vector3d normalized
+    {
+        get
+        {
+            double mag = magnitude;
+            if (mag < 1e-15) return new Vector3d(1, 0, 0); // Avoid division by zero
+            return new Vector3d(x / mag, y / mag, z / mag);
+        }
+    }
+    
+    public static Vector3d operator -(Vector3d a, Vector3d b)
+    {
+        return new Vector3d(a.x - b.x, a.y - b.y, a.z - b.z);
+    }
+    
+    public static Vector3d operator *(Vector3d a, double scalar)
+    {
+        return new Vector3d(a.x * scalar, a.y * scalar, a.z * scalar);
+    }
+    
+    public static Vector3d operator /(Vector3d a, double scalar)
+    {
+        return new Vector3d(a.x / scalar, a.y / scalar, a.z / scalar);
     }
 }
