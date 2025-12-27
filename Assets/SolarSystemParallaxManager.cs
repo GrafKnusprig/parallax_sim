@@ -122,7 +122,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [SerializeField] private Vector2 hudPosition = new Vector2(20f, -20f); // offset from top-left corner
 
     private const double AU_KM = 149_597_870.7;
-    private const double SPEED_OF_LIGHT_KM_S = 299_792.458; // km/s
+    private const double SPEED_OF_LIGHT_KM_S = 299_792_458.0; // km/s (exact value)
+    private const double LIGHTYEAR_KM = 9_460_730_472_580.8; // km in 1 lightyear
 
     [System.NonSerialized]
     public Vector3 playerRealPosAu; // player position in AU (real space) - public for StellarParallaxManager
@@ -278,8 +279,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
         rectTransform.anchorMin = new Vector2(0, 1);
         rectTransform.anchorMax = new Vector2(0, 1);
         rectTransform.pivot = new Vector2(0, 1);
-        rectTransform.anchoredPosition = hudPosition;
-        rectTransform.sizeDelta = new Vector2(300, 150);
+        rectTransform.anchoredPosition = new Vector2(20, -20); // 20px margin from top-left
+        rectTransform.sizeDelta = new Vector2(800, 400); // 200% bigger than previous
         
         // Add Text component
         hudText = hudUI.AddComponent<Text>();
@@ -291,7 +292,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         hudText.verticalOverflow = VerticalWrapMode.Overflow;
         
         // Initial text
-        hudText.text = "Speed: 0.00000 AU/s\nZone: NORMAL";
+        hudText.text = "Speed: 0 km/s (0% lightspeed)\nDistance from Sun: 0 km\nZone: NORMAL";
         
         Debug.Log("HUD created successfully");
     }
@@ -846,13 +847,67 @@ public class SolarSystemParallaxManager : MonoBehaviour
     {
         if (!enableHUD || hudText == null) return;
         
+        // Calculate speed in real units
+        double speedKmPerSecond = actualSpeed * AU_KM; // Convert AU/s to km/s
+        double lightSpeedPercentage = (speedKmPerSecond / SPEED_OF_LIGHT_KM_S) * 100.0;
+        
+        // Format speed display
+        string speedDisplay;
+        if (speedKmPerSecond >= 1_000_000) // Millions km/s
+            speedDisplay = $"{speedKmPerSecond / 1_000_000:F2}M km/s";
+        else if (speedKmPerSecond >= 1_000) // Thousands km/s
+            speedDisplay = $"{speedKmPerSecond / 1_000:F2}k km/s";
+        else if (speedKmPerSecond >= 1) 
+            speedDisplay = $"{speedKmPerSecond:F1} km/s";
+        else
+            speedDisplay = $"{speedKmPerSecond:F3} km/s";
+        
+        // Format lightspeed percentage
+        string lightSpeedDisplay;
+        if (lightSpeedPercentage >= 100)
+            lightSpeedDisplay = $"{lightSpeedPercentage:F1}% lightspeed";
+        else if (lightSpeedPercentage >= 1)
+            lightSpeedDisplay = $"{lightSpeedPercentage:F2}% lightspeed";
+        else if (lightSpeedPercentage >= 0.01)
+            lightSpeedDisplay = $"{lightSpeedPercentage:F4}% lightspeed";
+        else if (lightSpeedPercentage > 0)
+            lightSpeedDisplay = $"{lightSpeedPercentage:F6}% lightspeed";
+        else
+            lightSpeedDisplay = "0% lightspeed";
+        
+        // Calculate distance from Sun (origin)
+        double distanceFromSunAu = playerRealPosAu.magnitude;
+        double distanceFromSunKm = distanceFromSunAu * AU_KM;
+        
+        // Format distance display
+        string distanceDisplay;
+        if (distanceFromSunKm >= 1_000_000_000) // >= 1 billion km, switch to lightyears
+        {
+            double distanceLightyears = distanceFromSunKm / LIGHTYEAR_KM;
+            if (distanceLightyears >= 1000)
+                distanceDisplay = $"{distanceLightyears / 1000:F2}k lightyears";
+            else if (distanceLightyears >= 1)
+                distanceDisplay = $"{distanceLightyears:F2} lightyears";
+            else
+                distanceDisplay = $"{distanceLightyears:F4} lightyears";
+        }
+        else
+        {
+            if (distanceFromSunKm >= 1_000_000) // Millions km
+                distanceDisplay = $"{distanceFromSunKm / 1_000_000:F2}M km";
+            else if (distanceFromSunKm >= 1_000) // Thousands km
+                distanceDisplay = $"{distanceFromSunKm / 1_000:F1}k km";
+            else
+                distanceDisplay = $"{distanceFromSunKm:F0} km";
+        }
+        
         // Determine current zone
         string zone = "NORMAL";
         if (nearestPlanet != null)
         {
             float adaptiveSuperNearDistance = adaptToplanetSize ? 
                 (nearestPlanet.radiusKm / (float)AU_KM) * superNearRadiusMultiplier : 
-                (nearestPlanet.radiusKm / (float)AU_KM) * 0.1f; // Small default multiplier if adaptation is disabled
+                (nearestPlanet.radiusKm / (float)AU_KM) * 0.1f;
             
             if (distanceToNearestPlanet < adaptiveSuperNearDistance)
                 zone = "SUPER NEAR";
@@ -874,40 +929,10 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 zone = "HYPERGALACTIC TURBOSPEED";
         }
         
-        // Convert speed from AU/s to km/s and km/h
-        double speedKmPerSecond = actualSpeed * AU_KM; // Use actualSpeed instead of currentSpeed
-        double speedKmPerHour = speedKmPerSecond * 3600.0;
-        
-        // Calculate percentage of light speed
-        double lightSpeedPercentage = (speedKmPerSecond / SPEED_OF_LIGHT_KM_S) * 100.0;
-        
-        // Format speed display based on magnitude (no scientific notation)
-        string speedKmhDisplay;
-        if (speedKmPerHour >= 1_000_000_000) // Billions
-            speedKmhDisplay = $"{speedKmPerHour / 1_000_000_000:F2}B km/h";
-        else if (speedKmPerHour >= 1_000_000) // Millions
-            speedKmhDisplay = $"{speedKmPerHour / 1_000_000:F2}M km/h";
-        else if (speedKmPerHour >= 1_000) // Thousands
-            speedKmhDisplay = $"{speedKmPerHour:N0} km/h";
-        else
-            speedKmhDisplay = $"{speedKmPerHour:F2} km/h";
-        
-        // Format light speed as percentage
-        string lightSpeedDisplay;
-        if (lightSpeedPercentage >= 100)
-            lightSpeedDisplay = $"{lightSpeedPercentage:F2}%"; // Over 100% (faster than light!)
-        else if (lightSpeedPercentage >= 1)
-            lightSpeedDisplay = $"{lightSpeedPercentage:F2}%";
-        else if (lightSpeedPercentage >= 0.01)
-            lightSpeedDisplay = $"{lightSpeedPercentage:F4}%";
-        else
-            lightSpeedDisplay = $"{lightSpeedPercentage:F6}%";
-        
-        // Update HUD text
-        hudText.text = $"Speed: {speedKmhDisplay}\n" +
-                      $"Light Speed: {lightSpeedDisplay}\n" +
-                      $"Zone: {zone}\n" +
-                      $"Scale: {currentScale:F4}";
+        // Build HUD text
+        hudText.text = $"Speed: {speedDisplay} ({lightSpeedDisplay})\n" +
+                      $"Distance from Sun: {distanceDisplay}\n" +
+                      $"Zone: {zone}";
         
         if (nearestPlanet != null)
         {
@@ -918,9 +943,11 @@ public class SolarSystemParallaxManager : MonoBehaviour
         // Add stellar manager info
         if (stellarManager != null)
         {
-            hudText.text += $"\nStars Loaded: {stellarManager.GetLoadedStarCount()}\n" +
-                           $"Stars Visible: {stellarManager.GetVisibleStarCount()}\n" +
-                           $"Stars Ready: {(stellarManager.IsDataLoaded() ? "Yes" : "Loading...")}";
+            hudText.text += $"\nStars Visible: {stellarManager.GetVisibleStarCount()}";
+            if (!stellarManager.IsDataLoaded())
+            {
+                hudText.text += " (Loading...)";
+            }
         }
     }
     
