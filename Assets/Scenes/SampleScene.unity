@@ -597,8 +597,8 @@ MonoBehaviour:
   hypergalacticTurbospeedTransitionDistanceAu: 100000000
   superNearSpeed: 0.000000001
   superNearScale: 0.000000001
-  superNearRadiusMultiplier: 10
-  adaptToplanetSize: 1
+  superNearRadiusMultiplier: 5
+  adaptToplanetSize: 0
   moveAction: {fileID: -1680190386980627800, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   verticalAction: {fileID: 0}
   enableLabels: 1
@@ -639,13 +639,12 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::StellarParallaxManager
   renderDistanceRange: 100
-  parallaxExaggeration: 1
   enableParallax: 1
   starMaterial: {fileID: 2100000, guid: a7b6c8d9e4f3a2b1c8d7e6f5a4b3c9d2, type: 2}
   baseStarSize: 15
   starColor: {r: 1, g: 1, b: 1, a: 1}
   starBrightness: 1
-  maxStarsPerFrame: 25000
+  maxStarsPerFrame: 50000
 --- !u!1 &832575517
 GameObject:
   m_ObjectHideFlags: 0
@@ -709,7 +708,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8135023674665499069, guid: 58d0a4ac86f2348deb02f3880c71378e, type: 3}
       propertyPath: m_IsActive
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8518324294302271954, guid: 58d0a4ac86f2348deb02f3880c71378e, type: 3}
       propertyPath: m_LocalPosition.x
