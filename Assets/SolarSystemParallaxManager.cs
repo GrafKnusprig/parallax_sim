@@ -38,43 +38,10 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [SerializeField] private int sphereSubdivisions = 3;  // Higher = more detailed (0-4 recommended)
 
     [Header("Player (real space)")]
-    [Tooltip("Player movement speed (AU/s)")]
-    [SerializeField] private float moveSpeedAuPerSecond = 0.1f;
     
     [Header("Camera")]
     [Tooltip("The camera to use for rendering and movement calculations. If not set, will use Camera.main.")]
     [SerializeField] private Camera targetCamera;
-
-    [Header("Dynamic Scaling & Speed")]
-    [SerializeField] private bool enableDynamicBehavior = true;
-    [Tooltip("Base scale multiplier (1x = normal size)")]
-    [SerializeField] private float baseScale = 1f;
-    [Tooltip("Minimum scale multiplier (0.001x = very small)")]
-    [SerializeField] private float minScale = 0.0001f;  // Much smaller for massive planet effect
-    [Tooltip("Maximum scale multiplier (5x = very large)")]
-    [SerializeField] private float maxScale = 20f;
-    [Tooltip("Distance for scale transition (AU)")]
-    [SerializeField] private float scaleTransitionDistanceAu = 0.1f;   // Larger transition zone
-    [Tooltip("Base movement speed multiplier (AU/s)")]
-    [SerializeField] private float baseSpeed = 0.1f;
-    [Tooltip("Minimum movement speed (AU/s)")]
-    [SerializeField] private float minSpeed = 0.001f;  // Very slow for precise control
-    [Tooltip("Maximum normal movement speed (AU/s)")]
-    [SerializeField] private float maxSpeed = 1f;     // More moderate normal speed
-    [Tooltip("Distance for speed transition (AU)")]
-    [SerializeField] private float speedTransitionDistanceAu = 0.1f;  // Larger slow zone
-    [Tooltip("Distance to activate distance-based speed (AU)")]
-    [SerializeField] private float distanceBasedSpeedThreshold = 10.0f;  // Starting at 10 AU, speed = distance
-    
-    [Header("Super Near Zone - Breathtaking Flybys")]
-    [Tooltip("Ultra-slow speed for dramatic flybys (AU/s)")]
-    [SerializeField] private float superNearSpeed = 0.000000001f;  // Ultra-slow for dramatic flybys
-    [Tooltip("Massive planet scale effect (0.0001x = huge planets)")]
-    [SerializeField] private float superNearScale = 0.000000001f;   // Massive planet effect
-    [Tooltip("Super near zone multiplier (2x = zone is 2× planet radius)")]
-    [SerializeField] private float superNearRadiusMultiplier = 10.0f;  // Super near zone = planet radius * this multiplier
-    [Tooltip("Whether to adapt super near zone to planet size")]
-    [SerializeField] private bool adaptToplanetSize = true;  // Whether to adapt super near zone to planet size
     
     [Tooltip("New Input System: 2D move (x: strafe, y: forward).")]
     [SerializeField] private InputActionReference moveAction;
@@ -196,8 +163,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
         }
         
         // Initialize dynamic behavior
-        currentScale = baseScale;
-        currentSpeed = baseSpeed;
+        currentScale = 1f; // Use hardcoded base scale
+        currentSpeed = 0.001f; // Start with minimal speed
 
         // Set initial camera scale
         Camera cam = GetActiveCamera();
@@ -270,17 +237,14 @@ public class SolarSystemParallaxManager : MonoBehaviour
         hudText.verticalOverflow = VerticalWrapMode.Overflow;
         
         // Initial text
-        hudText.text = "Speed: 0 km/s (0% lightspeed)\nDistance from Sun: 0 km\nZone: NORMAL";
+        hudText.text = "Speed: 0 km/s (0% lightspeed)\nDistance from Sun: 0 km\nMode: DISTANCE-BASED";
         
         Debug.Log("HUD created successfully");
     }
 
     private void Update()
     {
-        if (enableDynamicBehavior)
-        {
-            UpdateDynamicBehavior();
-        }
+        UpdateDynamicBehavior();
         UpdatePlayerMovement();
         UpdateBodyProxies();
         
@@ -683,76 +647,119 @@ public class SolarSystemParallaxManager : MonoBehaviour
         float planetRadiusAu = nearestPlanet.radiusKm / (float)AU_KM;
         
         // Distance to planet surface (not center) - prevent negative distance
-        distanceToNearestPlanet = Mathf.Max(0.00001f, distanceAu - planetRadiusAu);
+        distanceToNearestPlanet = Mathf.Max(0.000000001f, distanceAu - planetRadiusAu);
         
-        // Calculate adaptive super near zone distance based on planet size
-        float adaptiveSuperNearDistance = adaptToplanetSize ? 
-            planetRadiusAu * superNearRadiusMultiplier : 
-            planetRadiusAu * 0.1f; // Small default multiplier if adaptation is disabled
+        // IMPROVED SCALING AND SPEED SYSTEM:
+        // Fixed issues with flying through planets and speed decreasing when flying away
         
-        // Calculate scale based on distance with adaptive super near zone for breathtaking flybys
+        float scalingZoneDistance = planetRadiusAu * 100f; // 10x planet radius  
+        float proximityZoneDistance = planetRadiusAu * 50f; // 2x planet radius
+        
+        // Hardcoded scale values for consistent behavior
+        float baseScale = 1f;      // Normal scale
+        float minScale = 0.00001f;  // Minimum scale for dramatic zoom
+        
+        // === SCALING CALCULATION ===
         float targetScale;
         
-        if (distanceToNearestPlanet < adaptiveSuperNearDistance)
+        if (distanceToNearestPlanet < proximityZoneDistance)
         {
-            // Super near zone: transition from superNearScale to minScale
-            float superNearFactor = distanceToNearestPlanet / adaptiveSuperNearDistance;
-            superNearFactor = superNearFactor * superNearFactor; // Exponential for dramatic effect
-            targetScale = Mathf.Lerp(superNearScale, minScale, superNearFactor);
+            // Close proximity: much more dramatic scaling that increases as you get closer
+            float proximityFactor = Mathf.Clamp01(distanceToNearestPlanet / proximityZoneDistance);
+            // Heavier scaling: closer = much smaller scale for extreme zoom out effect
+            targetScale = Mathf.Lerp(minScale, baseScale * 0.05f, proximityFactor); // 5% instead of 20%
+        }
+        else if (distanceToNearestPlanet < scalingZoneDistance)
+        {
+            // Scaling zone: smooth transition to normal scale with heavier intermediate scaling
+            float zoneProgress = (distanceToNearestPlanet - proximityZoneDistance) / (scalingZoneDistance - proximityZoneDistance);
+            targetScale = Mathf.Lerp(baseScale * 0.05f, baseScale, zoneProgress * zoneProgress); // Squared for more dramatic curve
         }
         else
         {
-            // Normal scale transition from minScale to maxScale
-            float scaleFactor = Mathf.Clamp01((distanceToNearestPlanet - adaptiveSuperNearDistance) / (scaleTransitionDistanceAu - adaptiveSuperNearDistance));
-            targetScale = Mathf.Lerp(minScale, maxScale, scaleFactor);
+            // Beyond scaling zone: normal scale
+            targetScale = baseScale;
         }
         
-        // Calculate speed based on distance with simplified zones
+        // === SPEED CALCULATION ===
+        // Flying away is faster than flying towards for intuitive escape mechanics
         float targetSpeed;
         
-        if (distanceToNearestPlanet < adaptiveSuperNearDistance)
+        // Determine movement direction relative to planet
+        Vector3 toPlanet = (nearestPlanet.realPosAu - playerRealPosAu).normalized;
+        Vector3 lastMovement = Vector3.zero;
+        
+        // Get current movement direction from input
+        if (moveAction != null)
         {
-            // Super near zone: transition from superNearSpeed to minSpeed for breathtaking flybys
-            float superNearFactor = distanceToNearestPlanet / adaptiveSuperNearDistance;
-            superNearFactor = superNearFactor * superNearFactor * superNearFactor; // Cubic for ultra-dramatic slowdown
-            targetSpeed = Mathf.Lerp(superNearSpeed, minSpeed, superNearFactor);
+            Vector2 move = moveAction.action.ReadValue<Vector2>();
+            float vertical = verticalAction != null ? verticalAction.action.ReadValue<float>() : 0f;
+            
+            if (move.sqrMagnitude > 0.01f || Mathf.Abs(vertical) > 0.01f)
+            {
+                Camera inputCamera = GetActiveCamera();
+                if (inputCamera != null)
+                {
+                    lastMovement = (inputCamera.transform.right * move.x + inputCamera.transform.forward * move.y + inputCamera.transform.up * vertical).normalized;
+                }
+            }
         }
-        else if (distanceToNearestPlanet < speedTransitionDistanceAu)
+        
+        // Calculate if moving towards or away from planet
+        float movementDot = Vector3.Dot(lastMovement, toPlanet);
+        bool movingTowardsPlanet = movementDot > 0.1f;
+        bool movingAwayFromPlanet = movementDot < -0.1f;
+        
+        if (distanceToNearestPlanet < proximityZoneDistance)
         {
-            // Close zone: exponential curve from minSpeed to maxSpeed
-            float speedFactor = (distanceToNearestPlanet - adaptiveSuperNearDistance) / (speedTransitionDistanceAu - adaptiveSuperNearDistance);
-            speedFactor = speedFactor * speedFactor; // Square for exponential curve
-            targetSpeed = Mathf.Lerp(minSpeed, maxSpeed, speedFactor);
+            // Close proximity: starts fast, gets progressively slower near surface
+            float normalizedDistance = distanceToNearestPlanet / proximityZoneDistance; // 0 to 1
+            // Use a moderate curve: reasonable start speed, strong slowdown near surface
+            float speedMultiplier = Mathf.Pow(normalizedDistance, 1.8f); // Moderate exponent for balanced curve
+            float baseSpeed = proximityZoneDistance * 1.2f; // Higher base speed for faster start
+            targetSpeed = Mathf.Max(0.000001f, baseSpeed * speedMultiplier);
         }
-        else if (distanceToNearestPlanet < distanceBasedSpeedThreshold)
+        else if (distanceToNearestPlanet < scalingZoneDistance)
         {
-            // Normal zone: transition from maxSpeed to distance-based speed
-            float normalizedDistance = (distanceToNearestPlanet - speedTransitionDistanceAu) / (distanceBasedSpeedThreshold - speedTransitionDistanceAu);
-            normalizedDistance = Mathf.Clamp01(normalizedDistance);
-            // Use smoothstep for smoother transition
-            float smoothFactor = normalizedDistance * normalizedDistance * (3.0f - 2.0f * normalizedDistance);
-            targetSpeed = Mathf.Lerp(maxSpeed, distanceBasedSpeedThreshold, smoothFactor);
+            // Scaling zone: directional speed with smooth transitions
+            float baseScalingSpeed = distanceToNearestPlanet; // Direct distance speed in AU/s
+            
+            if (movingAwayFromPlanet)
+            {
+                // Flying away: 2x faster
+                targetSpeed = baseScalingSpeed * 2f;
+            }
+            else if (movingTowardsPlanet)
+            {
+                // Flying towards: slightly slower
+                targetSpeed = baseScalingSpeed * 0.7f;
+            }
+            else
+            {
+                // Neutral movement: normal speed
+                targetSpeed = baseScalingSpeed;
+            }
         }
         else
         {
-            // Distance-based speed zone: speed equals distance in AU/s
-            // At 10 AU -> 10 AU/s, at 100 AU -> 100 AU/s, at 1000 AU -> 1000 AU/s, etc.
-            targetSpeed = distanceToNearestPlanet;
+            // Beyond scaling zone: normal distance-based speed with slight directional bias
+            float normalSpeed = distanceToNearestPlanet; // Direct distance speed in AU/s
+            
+            if (movingAwayFromPlanet)
+            {
+                // Flying away: 1.5x faster for space exploration
+                targetSpeed = Mathf.Max(normalSpeed * 1.5f, 0.01f);
+            }
+            else
+            {
+                // Normal or approaching: standard speed
+                targetSpeed = Mathf.Max(normalSpeed, 0.01f);
+            }
         }
         
-        // Ultra-responsive transitions with emergency braking for close approaches
+        // Smooth transitions
         float scaleLerpSpeed = 20f;
         float speedLerpSpeed = 25f;
-        
-        // Emergency braking: if we're moving too fast and getting close, brake harder
-        if (distanceToNearestPlanet < adaptiveSuperNearDistance * 3f && currentSpeed > targetSpeed)
-        {
-            speedLerpSpeed = 100f; // Ultra-fast braking for super near encounters
-        }
-        else if (distanceToNearestPlanet < speedTransitionDistanceAu * 2f && currentSpeed > targetSpeed)
-        {
-            speedLerpSpeed = 50f; // Fast braking for close encounters
-        }
         
         currentScale = Mathf.Lerp(currentScale, targetScale, Time.deltaTime * scaleLerpSpeed);
         currentSpeed = Mathf.Lerp(currentSpeed, targetSpeed, Time.deltaTime * speedLerpSpeed);
@@ -762,6 +769,12 @@ public class SolarSystemParallaxManager : MonoBehaviour
         if (cam != null)
         {
             cam.transform.localScale = Vector3.one * currentScale;
+            
+            // Extra debug for scale application
+            if (Time.frameCount % 60 == 0) // Every 60 frames (about 1 second)
+            {
+                Debug.Log($"SCALE DEBUG - Target: {targetScale:F5}, Current: {currentScale:F5}, Applied to: {cam.name}, LocalScale: {cam.transform.localScale}");
+            }
         }
         
         // Update HUD
@@ -770,10 +783,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         // Debug info (remove or comment out when not needed)
         if (Time.frameCount % 30 == 0) // Every 30 frames
         {
-            string zone = distanceToNearestPlanet < adaptiveSuperNearDistance ? "SUPER NEAR" :
-                         distanceToNearestPlanet < speedTransitionDistanceAu ? "CLOSE" :
-                         distanceToNearestPlanet < distanceBasedSpeedThreshold ? "NORMAL" : "DISTANCE-BASED";
-            Debug.Log($"Zone: {zone}, Distance: {distanceToNearestPlanet:F6} AU, SuperNear: {adaptiveSuperNearDistance:F6} AU, Scale: {currentScale:F5}, Speed: {currentSpeed:F6} AU/s, Planet: {nearestPlanet.name}");
+            Debug.Log($"Distance-Based Speed - Distance: {distanceToNearestPlanet:F6} AU, Scale: {currentScale:F5}, Speed: {currentSpeed:F6} AU/s, Planet: {nearestPlanet.name}");
         }
     }
     
@@ -835,28 +845,10 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 distanceDisplay = $"{distanceFromSunKm:F0} km";
         }
         
-        // Determine current zone
-        string zone = "NORMAL";
-        if (nearestPlanet != null)
-        {
-            float adaptiveSuperNearDistance = adaptToplanetSize ? 
-                (nearestPlanet.radiusKm / (float)AU_KM) * superNearRadiusMultiplier : 
-                (nearestPlanet.radiusKm / (float)AU_KM) * 0.1f;
-            
-            if (distanceToNearestPlanet < adaptiveSuperNearDistance)
-                zone = "SUPER NEAR";
-            else if (distanceToNearestPlanet < speedTransitionDistanceAu)
-                zone = "CLOSE";
-            else if (distanceToNearestPlanet < distanceBasedSpeedThreshold)
-                zone = "NORMAL";
-            else
-                zone = "DISTANCE-BASED";
-        }
-        
-        // Build HUD text
+        // Build HUD text - simplified for distance-based speed
         hudText.text = $"Speed: {speedDisplay} ({lightSpeedDisplay})\n" +
                       $"Distance from Sun: {distanceDisplay}\n" +
-                      $"Zone: {zone}";
+                      $"Mode: DISTANCE-BASED";
         
         if (nearestPlanet != null)
         {
@@ -926,11 +918,10 @@ public class SolarSystemParallaxManager : MonoBehaviour
         }
 
         moveDir.Normalize();
-        float effectiveSpeed = enableDynamicBehavior ? currentSpeed : moveSpeedAuPerSecond;
-        playerRealPosAu += moveDir * (effectiveSpeed * Time.deltaTime);
+        playerRealPosAu += moveDir * (currentSpeed * Time.deltaTime);
         
         // Track actual movement speed
-        actualSpeed = effectiveSpeed;
+        actualSpeed = currentSpeed;
     }
 
     private void UpdateBodyProxies()

@@ -462,6 +462,10 @@ public class StellarParallaxManager : MonoBehaviour
         if (starMatrices == null || starMatrices.Length == 0 || starMaterial == null)
             return;
         
+        // Ensure materialPropertyBlock is initialized
+        if (materialPropertyBlock == null)
+            materialPropertyBlock = new MaterialPropertyBlock();
+        
         // Set material properties
         materialPropertyBlock.SetColor("_Color", starColor);
         materialPropertyBlock.SetFloat("_Size", baseStarSize);
