@@ -569,36 +569,14 @@ MonoBehaviour:
   showHorizonSphere: 0
   planetMaterial: {fileID: 2100000, guid: 6034bd29d40f246c99d7b30eee17c99a, type: 2}
   minProxyRadius: 1
-  maxProxyRadius: 2000
+  maxProxyRadius: 1999
   useHighQualitySpheres: 1
   sphereSubdivisions: 4
   moveSpeedAuPerSecond: 0.1
   targetCamera: {fileID: 1528494429}
   enableDynamicBehavior: 1
-  baseScale: 1
+  baseScale: 0.0001
   minScale: 0.0001
-  maxScale: 20
-  scaleTransitionDistanceAu: 0.1
-  baseSpeed: 0.1
-  minSpeed: 0.001
-  maxSpeed: 1
-  speedTransitionDistanceAu: 0.1
-  hyperSpeed: 10
-  hyperSpeedTransitionDistanceAu: 10
-  interstellarSpeed: 1000
-  interstellarSpeedTransitionDistanceAu: 1000
-  extragalacticSpeed: 100000
-  extragalacticSpeedTransitionDistanceAu: 100000
-  intergalacticSpeed: 1000000
-  intergalacticSpeedTransitionDistanceAu: 1000000
-  hypergalacticSpeed: 10000000
-  hypergalacticSpeedTransitionDistanceAu: 10000000
-  hypergalacticTurbospeed: 100000000
-  hypergalacticTurbospeedTransitionDistanceAu: 100000000
-  superNearSpeed: 0.000000001
-  superNearScale: 0.000000001
-  superNearRadiusMultiplier: 5
-  adaptToplanetSize: 0
   moveAction: {fileID: -1680190386980627800, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   verticalAction: {fileID: 0}
   enableLabels: 1
