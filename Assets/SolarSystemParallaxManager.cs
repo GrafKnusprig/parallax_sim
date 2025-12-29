@@ -653,7 +653,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         // Fixed issues with flying through planets and speed decreasing when flying away
         
         float scalingZoneDistance = planetRadiusAu * 100f; // 10x planet radius  
-        float proximityZoneDistance = planetRadiusAu * 50f; // 2x planet radius
+        float proximityZoneDistance = planetRadiusAu * 100f; // 2x planet radius
         
         // Hardcoded scale values for consistent behavior
         float baseScale = 1f;      // Normal scale
@@ -712,49 +712,32 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         if (distanceToNearestPlanet < proximityZoneDistance)
         {
-            // Close proximity: starts fast, gets progressively slower near surface
+            // Close proximity: directional speed with asymptotic approach
             float normalizedDistance = distanceToNearestPlanet / proximityZoneDistance; // 0 to 1
-            // Use a moderate curve: reasonable start speed, strong slowdown near surface
             float speedMultiplier = Mathf.Pow(normalizedDistance, 1.8f); // Moderate exponent for balanced curve
             float baseSpeed = proximityZoneDistance * 1.2f; // Higher base speed for faster start
-            targetSpeed = Mathf.Max(0.000001f, baseSpeed * speedMultiplier);
+            float baseTargetSpeed = Mathf.Max(0.000001f, baseSpeed * speedMultiplier);
+            
+            if (movingAwayFromPlanet)
+            {
+                // Flying away: 3x faster for quick escape
+                targetSpeed = baseTargetSpeed * 3f;
+            }
+            else
+            {
+                // Flying towards or neutral: normal asymptotic speed
+                targetSpeed = baseTargetSpeed;
+            }
         }
         else if (distanceToNearestPlanet < scalingZoneDistance)
         {
-            // Scaling zone: directional speed with smooth transitions
-            float baseScalingSpeed = distanceToNearestPlanet; // Direct distance speed in AU/s
-            
-            if (movingAwayFromPlanet)
-            {
-                // Flying away: 2x faster
-                targetSpeed = baseScalingSpeed * 2f;
-            }
-            else if (movingTowardsPlanet)
-            {
-                // Flying towards: slightly slower
-                targetSpeed = baseScalingSpeed * 0.7f;
-            }
-            else
-            {
-                // Neutral movement: normal speed
-                targetSpeed = baseScalingSpeed;
-            }
+            // Scaling zone: normal distance-based speed
+            targetSpeed = distanceToNearestPlanet; // Direct distance speed in AU/s
         }
         else
         {
-            // Beyond scaling zone: normal distance-based speed with slight directional bias
-            float normalSpeed = distanceToNearestPlanet; // Direct distance speed in AU/s
-            
-            if (movingAwayFromPlanet)
-            {
-                // Flying away: 1.5x faster for space exploration
-                targetSpeed = Mathf.Max(normalSpeed * 1.5f, 0.01f);
-            }
-            else
-            {
-                // Normal or approaching: standard speed
-                targetSpeed = Mathf.Max(normalSpeed, 0.01f);
-            }
+            // Beyond scaling zone: normal distance-based speed
+            targetSpeed = Mathf.Max(distanceToNearestPlanet, 0.01f); // Direct distance speed in AU/s
         }
         
         // Smooth transitions
@@ -918,6 +901,39 @@ public class SolarSystemParallaxManager : MonoBehaviour
         }
 
         moveDir.Normalize();
+
+        // Check if nearest planet is at maximum size and prevent movement towards it
+        if (nearestPlanet != null)
+        {
+            // Calculate if nearest planet would be at maximum size
+            Vector3 offsetToNearestAu = nearestPlanet.realPosAu - playerRealPosAu;
+            float distAu = offsetToNearestAu.magnitude;
+            double distKm = distAu * AU_KM;
+            double angularRadius = Math.Atan(nearestPlanet.radiusKm / distKm);
+            double proxyRadius = Math.Tan(angularRadius) * horizonRadius;
+            bool planetAtMaxSize = proxyRadius >= maxProxyRadius;
+            
+            if (planetAtMaxSize)
+            {
+                // Check if movement is towards the planet
+                Vector3 toPlanet = offsetToNearestAu.normalized;
+                float movementDot = Vector3.Dot(moveDir, toPlanet);
+                
+                if (movementDot > 0.1f) // Moving towards planet
+                {
+                    // Block movement towards planet by projecting movement perpendicular to planet direction
+                    moveDir = Vector3.ProjectOnPlane(moveDir, toPlanet).normalized;
+                    
+                    // If the resulting movement is too small, don't move at all
+                    if (moveDir.sqrMagnitude < 0.1f)
+                    {
+                        actualSpeed = 0f;
+                        return;
+                    }
+                }
+            }
+        }
+
         playerRealPosAu += moveDir * (currentSpeed * Time.deltaTime);
         
         // Track actual movement speed
