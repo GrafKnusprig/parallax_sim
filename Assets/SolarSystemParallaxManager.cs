@@ -652,8 +652,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         // IMPROVED SCALING AND SPEED SYSTEM:
         // Fixed issues with flying through planets and speed decreasing when flying away
         
-        float scalingZoneDistance = planetRadiusAu * 100f; // 10x planet radius  
-        float proximityZoneDistance = planetRadiusAu * 100f; // 2x planet radius
+        float zoneDistance = planetRadiusAu * 100f; // Single zone distance
         
         // Hardcoded scale values for consistent behavior
         float baseScale = 1f;      // Normal scale
@@ -662,22 +661,16 @@ public class SolarSystemParallaxManager : MonoBehaviour
         // === SCALING CALCULATION ===
         float targetScale;
         
-        if (distanceToNearestPlanet < proximityZoneDistance)
+        if (distanceToNearestPlanet < zoneDistance)
         {
-            // Close proximity: much more dramatic scaling that increases as you get closer
-            float proximityFactor = Mathf.Clamp01(distanceToNearestPlanet / proximityZoneDistance);
-            // Heavier scaling: closer = much smaller scale for extreme zoom out effect
-            targetScale = Mathf.Lerp(minScale, baseScale * 0.05f, proximityFactor); // 5% instead of 20%
-        }
-        else if (distanceToNearestPlanet < scalingZoneDistance)
-        {
-            // Scaling zone: smooth transition to normal scale with heavier intermediate scaling
-            float zoneProgress = (distanceToNearestPlanet - proximityZoneDistance) / (scalingZoneDistance - proximityZoneDistance);
-            targetScale = Mathf.Lerp(baseScale * 0.05f, baseScale, zoneProgress * zoneProgress); // Squared for more dramatic curve
+            // Within zone: scaling based on distance to planet surface
+            float normalizedDistance = Mathf.Clamp01(distanceToNearestPlanet / zoneDistance);
+            // Use smooth curve from minimum scale to full scale
+            targetScale = Mathf.Lerp(minScale, baseScale, normalizedDistance * normalizedDistance);
         }
         else
         {
-            // Beyond scaling zone: normal scale
+            // Beyond zone: normal scale
             targetScale = baseScale;
         }
         
@@ -710,12 +703,12 @@ public class SolarSystemParallaxManager : MonoBehaviour
         bool movingTowardsPlanet = movementDot > 0.1f;
         bool movingAwayFromPlanet = movementDot < -0.1f;
         
-        if (distanceToNearestPlanet < proximityZoneDistance)
+        if (distanceToNearestPlanet < zoneDistance)
         {
-            // Close proximity: directional speed with asymptotic approach
-            float normalizedDistance = distanceToNearestPlanet / proximityZoneDistance; // 0 to 1
+            // Within zone: directional speed with asymptotic approach
+            float normalizedDistance = distanceToNearestPlanet / zoneDistance; // 0 to 1
             float speedMultiplier = Mathf.Pow(normalizedDistance, 1.8f); // Moderate exponent for balanced curve
-            float baseSpeed = proximityZoneDistance * 1.2f; // Higher base speed for faster start
+            float baseSpeed = zoneDistance * 1.2f; // Higher base speed for faster start
             float baseTargetSpeed = Mathf.Max(0.000001f, baseSpeed * speedMultiplier);
             
             if (movingAwayFromPlanet)
@@ -729,14 +722,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 targetSpeed = baseTargetSpeed;
             }
         }
-        else if (distanceToNearestPlanet < scalingZoneDistance)
-        {
-            // Scaling zone: normal distance-based speed
-            targetSpeed = distanceToNearestPlanet; // Direct distance speed in AU/s
-        }
         else
         {
-            // Beyond scaling zone: normal distance-based speed
+            // Beyond zone: normal distance-based speed
             targetSpeed = Mathf.Max(distanceToNearestPlanet, 0.01f); // Direct distance speed in AU/s
         }
         
