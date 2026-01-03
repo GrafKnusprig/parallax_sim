@@ -93,6 +93,17 @@ public class SolarSystemParallaxManager : MonoBehaviour
     
     // Stellar parallax integration
     private StellarParallaxManager stellarManager;
+    
+    // Autopilot system
+    private bool autopilotMenuOpen = false;
+    private bool autopilotActive = false;
+    private BodyInstance autopilotTarget = null;
+    private GameObject autopilotUI;
+    private List<Button> autopilotButtons = new List<Button>();
+    
+    // Static property for other scripts to check menu state
+    public static bool IsMenuOpen { get; private set; } = false;
+    public static bool IsAutopilotActive { get; private set; } = false;
 
     private class BodyInstance
     {
@@ -162,6 +173,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
             Debug.LogWarning("No bodies loaded for date " + targetDate);
         }
         
+        CreateAutopilotMenu();
+        
         // Initialize dynamic behavior
         currentScale = 1f; // Use hardcoded base scale
         currentSpeed = 0.001f; // Start with minimal speed
@@ -200,6 +213,15 @@ public class SolarSystemParallaxManager : MonoBehaviour
             
             labelCanvas = canvas;
             Debug.Log("Created automatic label canvas");
+        }
+        
+        // Ensure EventSystem exists for UI interaction
+        if (UnityEngine.EventSystems.EventSystem.current == null)
+        {
+            GameObject eventSystemGO = new GameObject("EventSystem");
+            eventSystemGO.AddComponent<UnityEngine.EventSystems.EventSystem>();
+            eventSystemGO.AddComponent<UnityEngine.InputSystem.UI.InputSystemUIInputModule>();
+            Debug.Log("Created EventSystem for UI interaction");
         }
     }
     
@@ -244,8 +266,24 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
     private void Update()
     {
+        // Handle autopilot toggle with X key
+        if (Keyboard.current != null && Keyboard.current.xKey.wasPressedThisFrame)
+        {
+            ToggleAutopilotMenu();
+        }
+        
         UpdateDynamicBehavior();
-        UpdatePlayerMovement();
+        
+        // Use autopilot or manual movement
+        if (autopilotActive)
+        {
+            UpdateAutopilot();
+        }
+        else if (!autopilotMenuOpen)
+        {
+            UpdatePlayerMovement();
+        }
+        
         UpdateBodyProxies();
         
         // Notify stellar manager of position change
@@ -836,6 +874,28 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 hudText.text += " (Loading...)";
             }
         }
+        
+        // Add autopilot status
+        if (autopilotActive && autopilotTarget != null)
+        {
+            Vector3 toTarget = autopilotTarget.realPosAu - playerRealPosAu;
+            float distanceAu = toTarget.magnitude;
+            double distKm = distanceAu * AU_KM;
+            
+            string autopilotDistDisplay;
+            if (distKm >= 1_000_000)
+                autopilotDistDisplay = $"{distKm / 1_000_000:F2}M km";
+            else if (distKm >= 1_000)
+                autopilotDistDisplay = $"{distKm / 1_000:F1}k km";
+            else
+                autopilotDistDisplay = $"{distKm:F0} km";
+            
+            hudText.text += $"\n\n[AUTOPILOT] → {autopilotTarget.name}\nDistance: {autopilotDistDisplay}\nPress X to cancel";
+        }
+        else if (!autopilotActive && !autopilotMenuOpen)
+        {
+            hudText.text += "\n\nPress X for Autopilot";
+        }
     }
     
     private void FindNearestPlanet()
@@ -1000,5 +1060,281 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 }
             }
         }
+    }
+    
+    // --- Autopilot System ---
+    
+    private void CreateAutopilotMenu()
+    {
+        if (labelCanvas == null)
+        {
+            Debug.LogWarning("Cannot create Autopilot Menu: Label Canvas not available.");
+            return;
+        }
+        
+        // Create main panel
+        autopilotUI = new GameObject("AutopilotMenu");
+        autopilotUI.transform.SetParent(labelCanvas.transform, false);
+        
+        RectTransform panelRect = autopilotUI.AddComponent<RectTransform>();
+        panelRect.anchorMin = new Vector2(0.5f, 0.5f);
+        panelRect.anchorMax = new Vector2(0.5f, 0.5f);
+        panelRect.pivot = new Vector2(0.5f, 0.5f);
+        panelRect.anchoredPosition = Vector2.zero;
+        panelRect.sizeDelta = new Vector2(300, 400);
+        
+        // Add semi-transparent background
+        Image panelImage = autopilotUI.AddComponent<Image>();
+        panelImage.color = new Color(0.1f, 0.1f, 0.2f, 0.9f);
+        
+        // Add title
+        GameObject titleGO = new GameObject("Title");
+        titleGO.transform.SetParent(autopilotUI.transform, false);
+        RectTransform titleRect = titleGO.AddComponent<RectTransform>();
+        titleRect.anchorMin = new Vector2(0, 1);
+        titleRect.anchorMax = new Vector2(1, 1);
+        titleRect.pivot = new Vector2(0.5f, 1);
+        titleRect.anchoredPosition = new Vector2(0, -10);
+        titleRect.sizeDelta = new Vector2(0, 40);
+        
+        Text titleText = titleGO.AddComponent<Text>();
+        titleText.text = "AUTOPILOT - Select Destination";
+        titleText.font = labelFont != null ? labelFont : Resources.GetBuiltinResource<Font>("Arial.ttf");
+        titleText.fontSize = 18;
+        titleText.color = Color.cyan;
+        titleText.alignment = TextAnchor.MiddleCenter;
+        
+        // Create scroll view for body list
+        GameObject scrollViewGO = new GameObject("ScrollView");
+        scrollViewGO.transform.SetParent(autopilotUI.transform, false);
+        RectTransform scrollRect = scrollViewGO.AddComponent<RectTransform>();
+        scrollRect.anchorMin = new Vector2(0, 0);
+        scrollRect.anchorMax = new Vector2(1, 1);
+        scrollRect.offsetMin = new Vector2(10, 60);
+        scrollRect.offsetMax = new Vector2(-10, -60);
+        
+        ScrollRect scroll = scrollViewGO.AddComponent<ScrollRect>();
+        scroll.horizontal = false;
+        scroll.vertical = true;
+        
+        // Viewport
+        GameObject viewportGO = new GameObject("Viewport");
+        viewportGO.transform.SetParent(scrollViewGO.transform, false);
+        RectTransform viewportRect = viewportGO.AddComponent<RectTransform>();
+        viewportRect.anchorMin = Vector2.zero;
+        viewportRect.anchorMax = Vector2.one;
+        viewportRect.sizeDelta = Vector2.zero;
+        viewportRect.offsetMin = Vector2.zero;
+        viewportRect.offsetMax = Vector2.zero;
+        
+        Image viewportMask = viewportGO.AddComponent<Image>();
+        viewportMask.color = new Color(1, 1, 1, 0.01f);
+        Mask mask = viewportGO.AddComponent<Mask>();
+        mask.showMaskGraphic = false;
+        
+        scroll.viewport = viewportRect;
+        
+        // Content container
+        GameObject contentGO = new GameObject("Content");
+        contentGO.transform.SetParent(viewportGO.transform, false);
+        RectTransform contentRect = contentGO.AddComponent<RectTransform>();
+        contentRect.anchorMin = new Vector2(0, 1);
+        contentRect.anchorMax = new Vector2(1, 1);
+        contentRect.pivot = new Vector2(0.5f, 1);
+        contentRect.anchoredPosition = Vector2.zero;
+        
+        scroll.content = contentRect;
+        
+        // Add buttons for each body
+        float buttonHeight = 35f;
+        float spacing = 5f;
+        int bodyCount = bodies.Count;
+        contentRect.sizeDelta = new Vector2(0, bodyCount * (buttonHeight + spacing));
+        
+        for (int i = 0; i < bodies.Count; i++)
+        {
+            BodyInstance body = bodies[i];
+            
+            GameObject buttonGO = new GameObject(body.name + "_Button");
+            buttonGO.transform.SetParent(contentGO.transform, false);
+            
+            RectTransform buttonRect = buttonGO.AddComponent<RectTransform>();
+            buttonRect.anchorMin = new Vector2(0, 1);
+            buttonRect.anchorMax = new Vector2(1, 1);
+            buttonRect.pivot = new Vector2(0.5f, 1);
+            buttonRect.anchoredPosition = new Vector2(0, -i * (buttonHeight + spacing));
+            buttonRect.sizeDelta = new Vector2(-20, buttonHeight);
+            
+            Image buttonImage = buttonGO.AddComponent<Image>();
+            buttonImage.color = new Color(0.15f, 0.25f, 0.4f, 1f);
+            
+            Button button = buttonGO.AddComponent<Button>();
+            button.targetGraphic = buttonImage;
+            ColorBlock colors = button.colors;
+            colors.normalColor = new Color(0.15f, 0.25f, 0.4f, 1f);
+            colors.highlightedColor = new Color(0.3f, 0.6f, 1f, 1f); // Bright blue on hover
+            colors.pressedColor = new Color(0.1f, 0.3f, 0.6f, 1f);
+            colors.selectedColor = new Color(0.25f, 0.45f, 0.7f, 1f);
+            colors.colorMultiplier = 1f;
+            colors.fadeDuration = 0.15f; // Smooth transition
+            button.colors = colors;
+            
+            // Capture body reference for closure
+            BodyInstance capturedBody = body;
+            button.onClick.AddListener(() => SelectAutopilotTarget(capturedBody));
+            
+            autopilotButtons.Add(button);
+            
+            // Button text
+            GameObject textGO = new GameObject("Text");
+            textGO.transform.SetParent(buttonGO.transform, false);
+            RectTransform textRect = textGO.AddComponent<RectTransform>();
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.sizeDelta = Vector2.zero;
+            textRect.offsetMin = Vector2.zero;
+            textRect.offsetMax = Vector2.zero;
+            
+            Text btnText = textGO.AddComponent<Text>();
+            btnText.text = body.name;
+            btnText.font = labelFont != null ? labelFont : Resources.GetBuiltinResource<Font>("Arial.ttf");
+            btnText.fontSize = 16;
+            btnText.color = Color.white;
+            btnText.alignment = TextAnchor.MiddleCenter;
+        }
+        
+        // Cancel button at bottom
+        GameObject cancelGO = new GameObject("CancelButton");
+        cancelGO.transform.SetParent(autopilotUI.transform, false);
+        RectTransform cancelRect = cancelGO.AddComponent<RectTransform>();
+        cancelRect.anchorMin = new Vector2(0.5f, 0);
+        cancelRect.anchorMax = new Vector2(0.5f, 0);
+        cancelRect.pivot = new Vector2(0.5f, 0);
+        cancelRect.anchoredPosition = new Vector2(0, 10);
+        cancelRect.sizeDelta = new Vector2(120, 40);
+        
+        Image cancelImage = cancelGO.AddComponent<Image>();
+        cancelImage.color = new Color(0.5f, 0.2f, 0.2f, 1f);
+        
+        Button cancelBtn = cancelGO.AddComponent<Button>();
+        cancelBtn.targetGraphic = cancelImage;
+        ColorBlock cancelColors = cancelBtn.colors;
+        cancelColors.normalColor = new Color(0.5f, 0.2f, 0.2f, 1f);
+        cancelColors.highlightedColor = new Color(0.8f, 0.3f, 0.3f, 1f); // Brighter red on hover
+        cancelColors.pressedColor = new Color(0.3f, 0.1f, 0.1f, 1f);
+        cancelColors.selectedColor = new Color(0.6f, 0.25f, 0.25f, 1f);
+        cancelColors.fadeDuration = 0.15f;
+        cancelBtn.colors = cancelColors;
+        cancelBtn.onClick.AddListener(() => ToggleAutopilotMenu());
+        
+        GameObject cancelTextGO = new GameObject("Text");
+        cancelTextGO.transform.SetParent(cancelGO.transform, false);
+        RectTransform cancelTextRect = cancelTextGO.AddComponent<RectTransform>();
+        cancelTextRect.anchorMin = Vector2.zero;
+        cancelTextRect.anchorMax = Vector2.one;
+        cancelTextRect.sizeDelta = Vector2.zero;
+        
+        Text cancelText = cancelTextGO.AddComponent<Text>();
+        cancelText.text = "Cancel";
+        cancelText.font = labelFont != null ? labelFont : Resources.GetBuiltinResource<Font>("Arial.ttf");
+        cancelText.fontSize = 16;
+        cancelText.color = Color.white;
+        cancelText.alignment = TextAnchor.MiddleCenter;
+        
+        // Start hidden
+        autopilotUI.SetActive(false);
+        
+        Debug.Log("Autopilot menu created successfully");
+    }
+    
+    private void ToggleAutopilotMenu()
+    {
+        if (autopilotUI == null) return;
+        
+        if (autopilotActive)
+        {
+            // If autopilot is traveling, pressing X cancels it
+            StopAutopilot();
+            return;
+        }
+        
+        autopilotMenuOpen = !autopilotMenuOpen;
+        autopilotUI.SetActive(autopilotMenuOpen);
+        IsMenuOpen = autopilotMenuOpen; // Update static property for other scripts
+    }
+    
+    private void SelectAutopilotTarget(BodyInstance body)
+    {
+        autopilotTarget = body;
+        autopilotActive = true;
+        IsAutopilotActive = true; // Static property for other scripts
+        
+        // Close the menu
+        autopilotMenuOpen = false;
+        IsMenuOpen = false; // Update static property
+        if (autopilotUI != null)
+            autopilotUI.SetActive(false);
+        
+        Debug.Log($"Autopilot: Traveling to {body.name}");
+    }
+    
+    private void UpdateAutopilot()
+    {
+        if (!autopilotActive || autopilotTarget == null) return;
+        
+        // Calculate direction and distance to target
+        Vector3 toTarget = autopilotTarget.realPosAu - playerRealPosAu;
+        float distanceAu = toTarget.magnitude;
+        
+        // Convert target radius to AU for stopping distance
+        float targetRadiusAu = autopilotTarget.radiusKm / (float)AU_KM;
+        float stopDistanceAu = targetRadiusAu * 10f; // Stop at 10x planet radius
+        
+        // Check if we've arrived
+        if (distanceAu <= stopDistanceAu)
+        {
+            Debug.Log($"Autopilot: Arrived at {autopilotTarget.name}");
+            StopAutopilot();
+            return;
+        }
+        
+        // Smooth camera rotation towards target
+        Camera cam = GetActiveCamera();
+        if (cam != null && autopilotTarget.proxy != null)
+        {
+            // Look at the target's proxy position (where it appears on the horizon sphere)
+            Vector3 targetDirection = autopilotTarget.proxy.position - cam.transform.position;
+            
+            if (targetDirection.sqrMagnitude > 0.001f)
+            {
+                Quaternion targetRotation = Quaternion.LookRotation(targetDirection);
+                float rotationSpeed = 2f; // Smooth rotation speed
+                cam.transform.rotation = Quaternion.Slerp(cam.transform.rotation, targetRotation, Time.deltaTime * rotationSpeed);
+            }
+        }
+        
+        // Calculate travel speed (use the dynamic currentSpeed from UpdateDynamicBehavior)
+        Vector3 moveDir = toTarget.normalized;
+        
+        // Move towards target
+        float moveAmount = currentSpeed * Time.deltaTime * 1.5f; // 1.5x normal speed for autopilot
+        
+        // Don't overshoot
+        if (moveAmount > distanceAu - stopDistanceAu)
+        {
+            moveAmount = distanceAu - stopDistanceAu;
+        }
+        
+        playerRealPosAu += moveDir * moveAmount;
+        actualSpeed = currentSpeed * 1.5f;
+    }
+    
+    private void StopAutopilot()
+    {
+        autopilotActive = false;
+        IsAutopilotActive = false; // Static property for other scripts
+        autopilotTarget = null;
+        actualSpeed = 0f;
+        Debug.Log("Autopilot: Stopped");
     }
 }
