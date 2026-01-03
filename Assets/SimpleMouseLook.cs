@@ -50,15 +50,48 @@ public class SimpleMouseLook : MonoBehaviour
         yaw = euler.y;
         pitch = euler.x;
 
-        if (lockCursor)
+        UpdateCursorState();
+    }
+    
+    private void UpdateCursorState()
+    {
+        // Check if a UI menu is open
+        bool menuOpen = SolarSystemParallaxManager.IsMenuOpen;
+        
+        if (lockCursor && !menuOpen)
         {
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
+        }
+        else if (menuOpen)
+        {
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
         }
     }
 
     private void Update()
     {
+        // Update cursor state based on menu
+        UpdateCursorState();
+        
+        // Skip mouse look when menu is open
+        if (SolarSystemParallaxManager.IsMenuOpen)
+        {
+            return;
+        }
+        
+        // Skip mouse look when autopilot is controlling the camera
+        if (SolarSystemParallaxManager.IsAutopilotActive)
+        {
+            // Sync yaw/pitch from current rotation so there's no jump when autopilot ends
+            Vector3 euler = transform.eulerAngles;
+            yaw = euler.y;
+            pitch = euler.x;
+            if (pitch > 180f) pitch -= 360f; // Normalize pitch
+            return;
+        }
+        
         // In VR mode, VR head tracking handles rotation, so we skip manual rotation
         if (vrMode)
         {
