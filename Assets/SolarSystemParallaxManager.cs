@@ -553,7 +553,6 @@ public class SolarSystemParallaxManager : MonoBehaviour
         // Create an icosphere (geodesic sphere) which has much better triangle distribution than UV sphere
         List<Vector3> vertices = new List<Vector3>();
         List<int> triangles = new List<int>();
-        List<Vector2> uvs = new List<Vector2>();
         
         // Golden ratio for icosahedron
         float phi = (1.0f + Mathf.Sqrt(5.0f)) / 2.0f;
@@ -608,23 +607,97 @@ public class SolarSystemParallaxManager : MonoBehaviour
             triangles = newTriangles;
         }
         
-        // Generate UVs
-        for (int i = 0; i < vertices.Count; i++)
+        // Generate UVs with proper seam handling
+        // We need to duplicate vertices at the seam where U wraps around
+        List<Vector3> finalVertices = new List<Vector3>();
+        List<Vector2> finalUvs = new List<Vector2>();
+        List<int> finalTriangles = new List<int>();
+        
+        // Process each triangle independently to handle seam correctly
+        for (int t = 0; t < triangles.Count; t += 3)
         {
-            Vector3 v = vertices[i];
-            float u = Mathf.Atan2(v.x, v.z) / (2 * Mathf.PI) + 0.5f;
-            float v_coord = Mathf.Asin(v.y) / Mathf.PI + 0.5f;
-            uvs.Add(new Vector2(u, v_coord));
+            int i0 = triangles[t];
+            int i1 = triangles[t + 1];
+            int i2 = triangles[t + 2];
+            
+            Vector3 p0 = vertices[i0];
+            Vector3 p1 = vertices[i1];
+            Vector3 p2 = vertices[i2];
+            
+            // Calculate UVs for each vertex
+            Vector2 uv0 = CalculateSphericalUV(p0);
+            Vector2 uv1 = CalculateSphericalUV(p1);
+            Vector2 uv2 = CalculateSphericalUV(p2);
+            
+            // Fix UV seam - if any UV.x difference is > 0.5, we have a seam crossing
+            FixUVSeam(ref uv0, ref uv1, ref uv2);
+            
+            // Add vertices (duplicated per triangle for correct UVs)
+            int baseIndex = finalVertices.Count;
+            finalVertices.Add(p0);
+            finalVertices.Add(p1);
+            finalVertices.Add(p2);
+            
+            finalUvs.Add(uv0);
+            finalUvs.Add(uv1);
+            finalUvs.Add(uv2);
+            
+            finalTriangles.Add(baseIndex);
+            finalTriangles.Add(baseIndex + 1);
+            finalTriangles.Add(baseIndex + 2);
         }
         
         Mesh mesh = new Mesh();
-        mesh.vertices = vertices.ToArray();
-        mesh.triangles = triangles.ToArray();
-        mesh.uv = uvs.ToArray();
-        mesh.RecalculateNormals();
+        mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32; // Support more than 65k vertices
+        mesh.vertices = finalVertices.ToArray();
+        mesh.triangles = finalTriangles.ToArray();
+        mesh.uv = finalUvs.ToArray();
+        
+        // For a unit sphere, the normal at each vertex IS the vertex position (normalized)
+        // This gives smooth shading even with duplicated vertices
+        Vector3[] normals = new Vector3[finalVertices.Count];
+        for (int i = 0; i < finalVertices.Count; i++)
+        {
+            normals[i] = finalVertices[i].normalized;
+        }
+        mesh.normals = normals;
+        
         mesh.RecalculateBounds();
         
         return mesh;
+    }
+    
+    private Vector2 CalculateSphericalUV(Vector3 p)
+    {
+        // Spherical to UV mapping
+        float u = Mathf.Atan2(p.x, p.z) / (2f * Mathf.PI) + 0.5f;
+        float v = Mathf.Asin(Mathf.Clamp(p.y, -1f, 1f)) / Mathf.PI + 0.5f;
+        return new Vector2(u, v);
+    }
+    
+    private void FixUVSeam(ref Vector2 uv0, ref Vector2 uv1, ref Vector2 uv2)
+    {
+        // Detect if this triangle crosses the UV seam (U wraps from ~0 to ~1)
+        // If any two vertices have U difference > 0.5, adjust the lower one by +1
+        
+        float threshold = 0.5f;
+        
+        // Check each pair and adjust
+        if (Mathf.Abs(uv0.x - uv1.x) > threshold)
+        {
+            if (uv0.x < uv1.x) uv0.x += 1f;
+            else uv1.x += 1f;
+        }
+        if (Mathf.Abs(uv1.x - uv2.x) > threshold)
+        {
+            if (uv1.x < uv2.x) uv1.x += 1f;
+            else uv2.x += 1f;
+        }
+        if (Mathf.Abs(uv0.x - uv2.x) > threshold)
+        {
+            if (uv0.x < uv2.x) uv0.x += 1f;
+            else uv2.x += 1f;
+        }
     }
     
     private int GetMidpoint(int v1, int v2, List<Vector3> vertices, Dictionary<string, int> cache)
