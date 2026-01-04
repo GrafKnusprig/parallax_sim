@@ -156,6 +156,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
         { 299, 6_051.8f },  // VENUS
         { 399, 6_371.0f },  // EARTH
         { 301, 1_737.4f },  // MOON
+        
+        { 4, 3_389.5f },    // MARS (barycenter - only barycenter ID 4 is in the CSV)
 
         // Jupiter: only barycenter available (5) in your CSV
         { 5, 69_911f },     // JUPITER (barycenter as proxy)
