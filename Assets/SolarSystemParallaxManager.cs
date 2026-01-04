@@ -104,6 +104,15 @@ public class SolarSystemParallaxManager : MonoBehaviour
     // Static property for other scripts to check menu state
     public static bool IsMenuOpen { get; private set; } = false;
     public static bool IsAutopilotActive { get; private set; } = false;
+    
+    // Planet info system
+    private Dictionary<string, PlanetData> planetInfoData = new Dictionary<string, PlanetData>();
+    private bool planetInfoVisible = false;
+    private GameObject planetInfoUI;
+    private Text planetInfoNameText;
+    private Text planetInfoDataText;
+    private float planetInfoAnimProgress = 0f;
+    private const float PLANET_INFO_ANIM_SPEED = 8f;
 
     private class BodyInstance
     {
@@ -115,6 +124,27 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
         // UI-based labels
         public GameObject labelUI;
+        
+        // Link to planet data
+        public PlanetData planetData;
+    }
+    
+    // Planet data from CSV dataset
+    private class PlanetData
+    {
+        public string Color;
+        public string Mass;
+        public string Diameter;
+        public string Density;
+        public string Gravity;
+        public string LengthOfDay;
+        public string DistanceFromSun;
+        public string MeanTemperature;
+        public string NumberOfMoons;
+        public string RingSystem;
+        public string AtmosphericComposition;
+        public string SurfaceFeatures;
+        public string Composition;
     }
 
     // Radii for main bodies (km), keyed by NAIF ID used in your file
@@ -173,7 +203,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
             Debug.LogWarning("No bodies loaded for date " + targetDate);
         }
         
+        LoadPlanetInfoData();
         CreateAutopilotMenu();
+        CreatePlanetInfoPanel();
         
         // Initialize dynamic behavior
         currentScale = 1f; // Use hardcoded base scale
@@ -272,6 +304,12 @@ public class SolarSystemParallaxManager : MonoBehaviour
             ToggleAutopilotMenu();
         }
         
+        // Handle planet info toggle with I key
+        if (Keyboard.current != null && Keyboard.current.iKey.wasPressedThisFrame)
+        {
+            TogglePlanetInfo();
+        }
+        
         UpdateDynamicBehavior();
         
         // Use autopilot or manual movement
@@ -279,12 +317,13 @@ public class SolarSystemParallaxManager : MonoBehaviour
         {
             UpdateAutopilot();
         }
-        else if (!autopilotMenuOpen)
+        else if (!autopilotMenuOpen && !planetInfoVisible)
         {
             UpdatePlayerMovement();
         }
         
         UpdateBodyProxies();
+        UpdatePlanetInfoPanel();
         
         // Notify stellar manager of position change
         if (stellarManager != null)
@@ -895,6 +934,10 @@ public class SolarSystemParallaxManager : MonoBehaviour
         else if (!autopilotActive && !autopilotMenuOpen)
         {
             hudText.text += "\n\nPress X for Autopilot";
+            if (nearestPlanet != null && nearestPlanet.planetData != null)
+            {
+                hudText.text += $" | Press I for info on {nearestPlanet.name}";
+            }
         }
     }
     
@@ -1336,5 +1379,284 @@ public class SolarSystemParallaxManager : MonoBehaviour
         autopilotTarget = null;
         actualSpeed = 0f;
         Debug.Log("Autopilot: Stopped");
+    }
+    
+    // --- Planet Info System ---
+    
+    private void LoadPlanetInfoData()
+    {
+        string path = Path.Combine(Application.streamingAssetsPath, "PlanetDataset/planets_updated.csv");
+        if (!File.Exists(path))
+        {
+            Debug.LogWarning($"Planet info CSV not found at {path}. Planet info feature disabled.");
+            return;
+        }
+        
+        try
+        {
+            var lines = File.ReadAllLines(path);
+            if (lines.Length <= 1)
+            {
+                Debug.LogWarning("Planet info CSV seems empty or header-only.");
+                return;
+            }
+            
+            // Parse header to get column indices
+            string[] headers = ParseCsvLine(lines[0]);
+            Dictionary<string, int> columnIndex = new Dictionary<string, int>();
+            for (int i = 0; i < headers.Length; i++)
+            {
+                columnIndex[headers[i].Trim()] = i;
+            }
+            
+            for (int i = 1; i < lines.Length; i++)
+            {
+                string line = lines[i].Trim();
+                if (string.IsNullOrEmpty(line)) continue;
+                
+                string[] parts = ParseCsvLine(line);
+                if (parts.Length < 2) continue;
+                
+                string planetName = parts[0].Trim();
+                
+                PlanetData data = new PlanetData
+                {
+                    Color = GetCsvValue(parts, columnIndex, "Color"),
+                    Mass = GetCsvValue(parts, columnIndex, "Mass (10^24kg)"),
+                    Diameter = GetCsvValue(parts, columnIndex, "Diameter (km)"),
+                    Density = GetCsvValue(parts, columnIndex, "Density (kg/m^3)"),
+                    Gravity = GetCsvValue(parts, columnIndex, "Surface Gravity(m/s^2)"),
+                    LengthOfDay = GetCsvValue(parts, columnIndex, "Length of Day (hours)"),
+                    DistanceFromSun = GetCsvValue(parts, columnIndex, "Distance from Sun (10^6 km)"),
+                    MeanTemperature = GetCsvValue(parts, columnIndex, "Mean Temperature (C)"),
+                    NumberOfMoons = GetCsvValue(parts, columnIndex, "Number of Moons"),
+                    RingSystem = GetCsvValue(parts, columnIndex, "Ring System?"),
+                    AtmosphericComposition = GetCsvValue(parts, columnIndex, "Atmospheric Composition"),
+                    SurfaceFeatures = GetCsvValue(parts, columnIndex, "Surface Features"),
+                    Composition = GetCsvValue(parts, columnIndex, "Composition")
+                };
+                
+                planetInfoData[planetName.ToLower()] = data;
+                Debug.Log($"Loaded planet info for: {planetName}");
+            }
+            
+            // Link planet data to bodies
+            foreach (var body in bodies)
+            {
+                string lookupName = body.name.ToLower();
+                if (planetInfoData.TryGetValue(lookupName, out PlanetData data))
+                {
+                    body.planetData = data;
+                    Debug.Log($"Linked planet data for {body.name}");
+                }
+            }
+            
+            Debug.Log($"Loaded {planetInfoData.Count} planet info entries.");
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"Error loading planet info CSV: {e.Message}");
+        }
+    }
+    
+    private string[] ParseCsvLine(string line)
+    {
+        // Handle CSV with quoted fields containing commas
+        List<string> result = new List<string>();
+        bool inQuotes = false;
+        string current = "";
+        
+        for (int i = 0; i < line.Length; i++)
+        {
+            char c = line[i];
+            if (c == '"')
+            {
+                inQuotes = !inQuotes;
+            }
+            else if (c == ',' && !inQuotes)
+            {
+                result.Add(current);
+                current = "";
+            }
+            else
+            {
+                current += c;
+            }
+        }
+        result.Add(current);
+        
+        return result.ToArray();
+    }
+    
+    private string GetCsvValue(string[] parts, Dictionary<string, int> columnIndex, string columnName)
+    {
+        if (columnIndex.TryGetValue(columnName, out int index) && index < parts.Length)
+        {
+            return parts[index].Trim();
+        }
+        return "Unknown";
+    }
+    
+    private void CreatePlanetInfoPanel()
+    {
+        if (labelCanvas == null)
+        {
+            Debug.LogWarning("Cannot create Planet Info Panel: Label Canvas not available.");
+            return;
+        }
+        
+        // Create main panel - positioned off-screen to the right initially
+        planetInfoUI = new GameObject("PlanetInfoPanel");
+        planetInfoUI.transform.SetParent(labelCanvas.transform, false);
+        
+        RectTransform panelRect = planetInfoUI.AddComponent<RectTransform>();
+        panelRect.anchorMin = new Vector2(1, 0.5f);
+        panelRect.anchorMax = new Vector2(1, 0.5f);
+        panelRect.pivot = new Vector2(0, 0.5f); // Pivot at left edge for slide-in
+        panelRect.anchoredPosition = new Vector2(20, 0); // Start off-screen
+        panelRect.sizeDelta = new Vector2(350, 500);
+        
+        // Add gradient-like background (semi-transparent dark blue/purple)
+        Image panelImage = planetInfoUI.AddComponent<Image>();
+        panelImage.color = new Color(0.08f, 0.08f, 0.18f, 0.92f);
+        
+        // Add left border accent
+        GameObject borderGO = new GameObject("LeftBorder");
+        borderGO.transform.SetParent(planetInfoUI.transform, false);
+        RectTransform borderRect = borderGO.AddComponent<RectTransform>();
+        borderRect.anchorMin = new Vector2(0, 0);
+        borderRect.anchorMax = new Vector2(0, 1);
+        borderRect.pivot = new Vector2(0, 0.5f);
+        borderRect.anchoredPosition = Vector2.zero;
+        borderRect.sizeDelta = new Vector2(4, 0);
+        Image borderImage = borderGO.AddComponent<Image>();
+        borderImage.color = new Color(0.3f, 0.8f, 1f, 0.9f); // Cyan accent
+        
+        // Create title/header section
+        GameObject headerGO = new GameObject("Header");
+        headerGO.transform.SetParent(planetInfoUI.transform, false);
+        RectTransform headerRect = headerGO.AddComponent<RectTransform>();
+        headerRect.anchorMin = new Vector2(0, 1);
+        headerRect.anchorMax = new Vector2(1, 1);
+        headerRect.pivot = new Vector2(0.5f, 1);
+        headerRect.anchoredPosition = new Vector2(0, -15);
+        headerRect.sizeDelta = new Vector2(-30, 50);
+        
+        planetInfoNameText = headerGO.AddComponent<Text>();
+        planetInfoNameText.text = "PLANET INFO";
+        planetInfoNameText.font = labelFont != null ? labelFont : Resources.GetBuiltinResource<Font>("Arial.ttf");
+        planetInfoNameText.fontSize = 28;
+        planetInfoNameText.fontStyle = FontStyle.Bold;
+        planetInfoNameText.color = new Color(0.3f, 0.9f, 1f, 1f); // Bright cyan
+        planetInfoNameText.alignment = TextAnchor.MiddleCenter;
+        
+        // Create data content section
+        GameObject contentGO = new GameObject("Content");
+        contentGO.transform.SetParent(planetInfoUI.transform, false);
+        RectTransform contentRect = contentGO.AddComponent<RectTransform>();
+        contentRect.anchorMin = new Vector2(0, 0);
+        contentRect.anchorMax = new Vector2(1, 1);
+        contentRect.offsetMin = new Vector2(20, 50);
+        contentRect.offsetMax = new Vector2(-15, -75);
+        
+        planetInfoDataText = contentGO.AddComponent<Text>();
+        planetInfoDataText.text = "";
+        planetInfoDataText.font = labelFont != null ? labelFont : Resources.GetBuiltinResource<Font>("Arial.ttf");
+        planetInfoDataText.fontSize = 16;
+        planetInfoDataText.color = new Color(0.85f, 0.9f, 1f, 1f); // Soft white-blue
+        planetInfoDataText.alignment = TextAnchor.UpperLeft;
+        planetInfoDataText.lineSpacing = 1.3f;
+        
+        // Add close hint at bottom
+        GameObject hintGO = new GameObject("CloseHint");
+        hintGO.transform.SetParent(planetInfoUI.transform, false);
+        RectTransform hintRect = hintGO.AddComponent<RectTransform>();
+        hintRect.anchorMin = new Vector2(0, 0);
+        hintRect.anchorMax = new Vector2(1, 0);
+        hintRect.pivot = new Vector2(0.5f, 0);
+        hintRect.anchoredPosition = new Vector2(0, 15);
+        hintRect.sizeDelta = new Vector2(0, 30);
+        
+        Text hintText = hintGO.AddComponent<Text>();
+        hintText.text = "Press I to close";
+        hintText.font = labelFont != null ? labelFont : Resources.GetBuiltinResource<Font>("Arial.ttf");
+        hintText.fontSize = 14;
+        hintText.fontStyle = FontStyle.Italic;
+        hintText.color = new Color(0.5f, 0.6f, 0.7f, 0.8f);
+        hintText.alignment = TextAnchor.MiddleCenter;
+        
+        // Start hidden (off-screen)
+        planetInfoAnimProgress = 0f;
+        UpdatePlanetInfoPanelPosition();
+        
+        Debug.Log("Planet info panel created successfully");
+    }
+    
+    private void TogglePlanetInfo()
+    {
+        if (autopilotMenuOpen) return; // Don't open while autopilot menu is open
+        
+        planetInfoVisible = !planetInfoVisible;
+        
+        if (planetInfoVisible && nearestPlanet != null)
+        {
+            PopulatePlanetInfo(nearestPlanet);
+            Debug.Log($"Showing planet info for: {nearestPlanet.name}");
+        }
+    }
+    
+    private void PopulatePlanetInfo(BodyInstance body)
+    {
+        if (planetInfoNameText == null || planetInfoDataText == null) return;
+        
+        planetInfoNameText.text = body.name.ToUpper();
+        
+        if (body.planetData != null)
+        {
+            PlanetData data = body.planetData;
+            planetInfoDataText.text = 
+                $"<color=#88CCFF>Color:</color>  {data.Color}\n\n" +
+                $"<color=#88CCFF>Diameter:</color>  {data.Diameter} km\n\n" +
+                $"<color=#88CCFF>Density:</color>  {data.Density} kg/m³\n\n" +
+                $"<color=#88CCFF>Surface Gravity:</color>  {data.Gravity} m/s²\n\n" +
+                $"<color=#88CCFF>Length of Day:</color>  {data.LengthOfDay} hours\n\n" +
+                $"<color=#88CCFF>Distance from Sun:</color>  {data.DistanceFromSun} M km\n\n" +
+                $"<color=#88CCFF>Mean Temperature:</color>  {data.MeanTemperature}°C\n\n" +
+                $"<color=#88CCFF>Moons:</color>  {data.NumberOfMoons}\n\n" +
+                $"<color=#88CCFF>Ring System:</color>  {data.RingSystem}\n\n" +
+                $"<color=#88CCFF>Atmosphere:</color>  {data.AtmosphericComposition}";
+        }
+        else
+        {
+            planetInfoDataText.text = "No detailed data available for this body.\n\n" +
+                $"<color=#88CCFF>Radius:</color>  {body.radiusKm:N0} km";
+        }
+    }
+    
+    private void UpdatePlanetInfoPanel()
+    {
+        if (planetInfoUI == null) return;
+        
+        // Animate panel position
+        float targetProgress = planetInfoVisible ? 1f : 0f;
+        planetInfoAnimProgress = Mathf.MoveTowards(planetInfoAnimProgress, targetProgress, Time.deltaTime * PLANET_INFO_ANIM_SPEED);
+        
+        UpdatePlanetInfoPanelPosition();
+    }
+    
+    private void UpdatePlanetInfoPanelPosition()
+    {
+        if (planetInfoUI == null) return;
+        
+        RectTransform panelRect = planetInfoUI.GetComponent<RectTransform>();
+        if (panelRect != null)
+        {
+            // Smooth easing curve
+            float easedProgress = 1f - Mathf.Pow(1f - planetInfoAnimProgress, 3f);
+            
+            // Slide in from right: 20 (off-screen) to -370 (visible with margin)
+            float xPos = Mathf.Lerp(20, -370, easedProgress);
+            panelRect.anchoredPosition = new Vector2(xPos, 0);
+        }
     }
 }
