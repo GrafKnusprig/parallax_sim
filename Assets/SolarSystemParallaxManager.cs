@@ -1107,6 +1107,10 @@ public class SolarSystemParallaxManager : MonoBehaviour
     
     // --- Autopilot System ---
     
+    private bool moonsExpanded = false;
+    private GameObject moonsContainer;
+    private RectTransform autopilotContentRect;
+    
     private void CreateAutopilotMenu()
     {
         if (labelCanvas == null)
@@ -1124,11 +1128,11 @@ public class SolarSystemParallaxManager : MonoBehaviour
         panelRect.anchorMax = new Vector2(0.5f, 0.5f);
         panelRect.pivot = new Vector2(0.5f, 0.5f);
         panelRect.anchoredPosition = Vector2.zero;
-        panelRect.sizeDelta = new Vector2(300, 400);
+        panelRect.sizeDelta = new Vector2(320, 450);
         
         // Add semi-transparent background
         Image panelImage = autopilotUI.AddComponent<Image>();
-        panelImage.color = new Color(0.1f, 0.1f, 0.2f, 0.9f);
+        panelImage.color = new Color(0.1f, 0.1f, 0.2f, 0.95f);
         
         // Add title
         GameObject titleGO = new GameObject("Title");
@@ -1147,28 +1151,28 @@ public class SolarSystemParallaxManager : MonoBehaviour
         titleText.color = Color.cyan;
         titleText.alignment = TextAnchor.MiddleCenter;
         
-        // Create scroll view for body list
+        // Create scroll view for body list - leave room for scrollbar
         GameObject scrollViewGO = new GameObject("ScrollView");
         scrollViewGO.transform.SetParent(autopilotUI.transform, false);
-        RectTransform scrollRect = scrollViewGO.AddComponent<RectTransform>();
-        scrollRect.anchorMin = new Vector2(0, 0);
-        scrollRect.anchorMax = new Vector2(1, 1);
-        scrollRect.offsetMin = new Vector2(10, 60);
-        scrollRect.offsetMax = new Vector2(-10, -60);
+        RectTransform scrollViewRect = scrollViewGO.AddComponent<RectTransform>();
+        scrollViewRect.anchorMin = new Vector2(0, 0);
+        scrollViewRect.anchorMax = new Vector2(1, 1);
+        scrollViewRect.offsetMin = new Vector2(10, 60);
+        scrollViewRect.offsetMax = new Vector2(-10, -55);
         
         ScrollRect scroll = scrollViewGO.AddComponent<ScrollRect>();
         scroll.horizontal = false;
         scroll.vertical = true;
+        scroll.scrollSensitivity = 30f;
         
-        // Viewport
+        // Viewport - leave room for scrollbar on right
         GameObject viewportGO = new GameObject("Viewport");
         viewportGO.transform.SetParent(scrollViewGO.transform, false);
         RectTransform viewportRect = viewportGO.AddComponent<RectTransform>();
         viewportRect.anchorMin = Vector2.zero;
         viewportRect.anchorMax = Vector2.one;
-        viewportRect.sizeDelta = Vector2.zero;
         viewportRect.offsetMin = Vector2.zero;
-        viewportRect.offsetMax = Vector2.zero;
+        viewportRect.offsetMax = new Vector2(-15, 0); // Room for scrollbar
         
         Image viewportMask = viewportGO.AddComponent<Image>();
         viewportMask.color = new Color(1, 1, 1, 0.01f);
@@ -1180,73 +1184,296 @@ public class SolarSystemParallaxManager : MonoBehaviour
         // Content container
         GameObject contentGO = new GameObject("Content");
         contentGO.transform.SetParent(viewportGO.transform, false);
-        RectTransform contentRect = contentGO.AddComponent<RectTransform>();
-        contentRect.anchorMin = new Vector2(0, 1);
-        contentRect.anchorMax = new Vector2(1, 1);
-        contentRect.pivot = new Vector2(0.5f, 1);
-        contentRect.anchoredPosition = Vector2.zero;
+        autopilotContentRect = contentGO.AddComponent<RectTransform>();
+        autopilotContentRect.anchorMin = new Vector2(0, 1);
+        autopilotContentRect.anchorMax = new Vector2(1, 1);
+        autopilotContentRect.pivot = new Vector2(0.5f, 1);
+        autopilotContentRect.anchoredPosition = Vector2.zero;
         
-        scroll.content = contentRect;
+        scroll.content = autopilotContentRect;
         
-        // Add buttons for each body
-        float buttonHeight = 35f;
-        float spacing = 5f;
-        int bodyCount = bodies.Count;
-        contentRect.sizeDelta = new Vector2(0, bodyCount * (buttonHeight + spacing));
+        // Create visible scrollbar
+        GameObject scrollbarGO = new GameObject("Scrollbar");
+        scrollbarGO.transform.SetParent(scrollViewGO.transform, false);
+        RectTransform scrollbarRect = scrollbarGO.AddComponent<RectTransform>();
+        scrollbarRect.anchorMin = new Vector2(1, 0);
+        scrollbarRect.anchorMax = new Vector2(1, 1);
+        scrollbarRect.pivot = new Vector2(1, 0.5f);
+        scrollbarRect.anchoredPosition = Vector2.zero;
+        scrollbarRect.sizeDelta = new Vector2(12, 0);
         
-        for (int i = 0; i < bodies.Count; i++)
+        Image scrollbarBg = scrollbarGO.AddComponent<Image>();
+        scrollbarBg.color = new Color(0.15f, 0.15f, 0.25f, 0.8f);
+        
+        Scrollbar scrollbar = scrollbarGO.AddComponent<Scrollbar>();
+        scrollbar.direction = Scrollbar.Direction.BottomToTop;
+        
+        // Scrollbar handle
+        GameObject handleAreaGO = new GameObject("Handle Slide Area");
+        handleAreaGO.transform.SetParent(scrollbarGO.transform, false);
+        RectTransform handleAreaRect = handleAreaGO.AddComponent<RectTransform>();
+        handleAreaRect.anchorMin = Vector2.zero;
+        handleAreaRect.anchorMax = Vector2.one;
+        handleAreaRect.offsetMin = new Vector2(2, 2);
+        handleAreaRect.offsetMax = new Vector2(-2, -2);
+        
+        GameObject handleGO = new GameObject("Handle");
+        handleGO.transform.SetParent(handleAreaGO.transform, false);
+        RectTransform handleRect = handleGO.AddComponent<RectTransform>();
+        handleRect.anchorMin = Vector2.zero;
+        handleRect.anchorMax = Vector2.one;
+        handleRect.sizeDelta = Vector2.zero;
+        
+        Image handleImage = handleGO.AddComponent<Image>();
+        handleImage.color = new Color(0.4f, 0.6f, 0.9f, 0.9f);
+        
+        scrollbar.handleRect = handleRect;
+        scrollbar.targetGraphic = handleImage;
+        
+        ColorBlock scrollColors = scrollbar.colors;
+        scrollColors.normalColor = new Color(0.4f, 0.6f, 0.9f, 0.9f);
+        scrollColors.highlightedColor = new Color(0.5f, 0.7f, 1f, 1f);
+        scrollColors.pressedColor = new Color(0.3f, 0.5f, 0.8f, 1f);
+        scrollbar.colors = scrollColors;
+        
+        scroll.verticalScrollbar = scrollbar;
+        scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
+        
+        // Separate bodies into planets/sun and moons
+        List<BodyInstance> mainBodies = new List<BodyInstance>();
+        List<BodyInstance> moons = new List<BodyInstance>();
+        
+        foreach (var body in bodies)
         {
-            BodyInstance body = bodies[i];
-            
-            GameObject buttonGO = new GameObject(body.name + "_Button");
-            buttonGO.transform.SetParent(contentGO.transform, false);
-            
-            RectTransform buttonRect = buttonGO.AddComponent<RectTransform>();
-            buttonRect.anchorMin = new Vector2(0, 1);
-            buttonRect.anchorMax = new Vector2(1, 1);
-            buttonRect.pivot = new Vector2(0.5f, 1);
-            buttonRect.anchoredPosition = new Vector2(0, -i * (buttonHeight + spacing));
-            buttonRect.sizeDelta = new Vector2(-20, buttonHeight);
-            
-            Image buttonImage = buttonGO.AddComponent<Image>();
-            buttonImage.color = new Color(0.15f, 0.25f, 0.4f, 1f);
-            
-            Button button = buttonGO.AddComponent<Button>();
-            button.targetGraphic = buttonImage;
-            ColorBlock colors = button.colors;
-            colors.normalColor = new Color(0.15f, 0.25f, 0.4f, 1f);
-            colors.highlightedColor = new Color(0.3f, 0.6f, 1f, 1f); // Bright blue on hover
-            colors.pressedColor = new Color(0.1f, 0.3f, 0.6f, 1f);
-            colors.selectedColor = new Color(0.25f, 0.45f, 0.7f, 1f);
-            colors.colorMultiplier = 1f;
-            colors.fadeDuration = 0.15f; // Smooth transition
-            button.colors = colors;
-            
-            // Capture body reference for closure
-            BodyInstance capturedBody = body;
-            button.onClick.AddListener(() => SelectAutopilotTarget(capturedBody));
-            
-            autopilotButtons.Add(button);
-            
-            // Button text
-            GameObject textGO = new GameObject("Text");
-            textGO.transform.SetParent(buttonGO.transform, false);
-            RectTransform textRect = textGO.AddComponent<RectTransform>();
-            textRect.anchorMin = Vector2.zero;
-            textRect.anchorMax = Vector2.one;
-            textRect.sizeDelta = Vector2.zero;
-            textRect.offsetMin = Vector2.zero;
-            textRect.offsetMax = Vector2.zero;
-            
-            Text btnText = textGO.AddComponent<Text>();
-            btnText.text = body.name;
-            btnText.font = labelFont != null ? labelFont : Resources.GetBuiltinResource<Font>("Arial.ttf");
-            btnText.fontSize = 16;
-            btnText.color = Color.white;
-            btnText.alignment = TextAnchor.MiddleCenter;
+            if (IsMoon(body.naifId))
+            {
+                moons.Add(body);
+            }
+            else
+            {
+                mainBodies.Add(body);
+            }
         }
         
+        // Add buttons for main bodies
+        float buttonHeight = 35f;
+        float spacing = 5f;
+        int itemIndex = 0;
+        
+        // Main bodies (Sun, planets)
+        foreach (var body in mainBodies)
+        {
+            CreateAutopilotButton(contentGO, body, itemIndex, buttonHeight, spacing, false);
+            itemIndex++;
+        }
+        
+        // Moons category header (only if there are moons)
+        if (moons.Count > 0)
+        {
+            CreateMoonsCategoryButton(contentGO, itemIndex, buttonHeight, spacing);
+            itemIndex++;
+            
+            // Create moons container (initially hidden)
+            moonsContainer = new GameObject("MoonsContainer");
+            moonsContainer.transform.SetParent(contentGO.transform, false);
+            RectTransform moonsContainerRect = moonsContainer.AddComponent<RectTransform>();
+            moonsContainerRect.anchorMin = new Vector2(0, 1);
+            moonsContainerRect.anchorMax = new Vector2(1, 1);
+            moonsContainerRect.pivot = new Vector2(0.5f, 1);
+            moonsContainerRect.anchoredPosition = new Vector2(0, -itemIndex * (buttonHeight + spacing));
+            moonsContainerRect.sizeDelta = new Vector2(0, moons.Count * (buttonHeight + spacing));
+            
+            int moonIndex = 0;
+            foreach (var moon in moons)
+            {
+                CreateAutopilotButton(moonsContainer, moon, moonIndex, buttonHeight, spacing, true);
+                moonIndex++;
+            }
+            
+            moonsContainer.SetActive(false);
+        }
+        
+        // Calculate initial content size (without moons expanded)
+        int visibleCount = mainBodies.Count + (moons.Count > 0 ? 1 : 0);
+        autopilotContentRect.sizeDelta = new Vector2(0, visibleCount * (buttonHeight + spacing));
+        
         // Cancel button at bottom
+        CreateCancelButton();
+        
+        // Start hidden
+        autopilotUI.SetActive(false);
+        
+        Debug.Log($"Autopilot menu created: {mainBodies.Count} planets, {moons.Count} moons");
+    }
+    
+    private bool IsMoon(int naifId)
+    {
+        // Moons have NAIF IDs: 3xx (Earth), 4xx (Mars), 5xx (Jupiter), 6xx (Saturn), 7xx (Uranus), 8xx (Neptune), 9xx (Pluto)
+        // But not the parent planets: 399 (Earth), 499 (Mars), 599 (Jupiter), 699 (Saturn), 799 (Uranus), 899 (Neptune), 999 (Pluto)
+        if (naifId >= 301 && naifId <= 399 && naifId != 399) return true; // Earth's moons
+        if (naifId >= 401 && naifId <= 499 && naifId != 499) return true; // Mars' moons
+        if (naifId >= 501 && naifId <= 599 && naifId != 599) return true; // Jupiter's moons
+        if (naifId >= 601 && naifId <= 699 && naifId != 699) return true; // Saturn's moons
+        if (naifId >= 701 && naifId <= 799 && naifId != 799) return true; // Uranus' moons
+        if (naifId >= 801 && naifId <= 899 && naifId != 899) return true; // Neptune's moons
+        if (naifId >= 901 && naifId <= 999 && naifId != 999) return true; // Pluto's moons
+        return false;
+    }
+    
+    private void CreateAutopilotButton(GameObject parent, BodyInstance body, int index, float buttonHeight, float spacing, bool isMoon)
+    {
+        GameObject buttonGO = new GameObject(body.name + "_Button");
+        buttonGO.transform.SetParent(parent.transform, false);
+        
+        RectTransform buttonRect = buttonGO.AddComponent<RectTransform>();
+        buttonRect.anchorMin = new Vector2(0, 1);
+        buttonRect.anchorMax = new Vector2(1, 1);
+        buttonRect.pivot = new Vector2(0.5f, 1);
+        buttonRect.anchoredPosition = new Vector2(0, -index * (buttonHeight + spacing));
+        buttonRect.sizeDelta = new Vector2(isMoon ? -40 : -20, buttonHeight); // Indent moons
+        
+        Image buttonImage = buttonGO.AddComponent<Image>();
+        Color btnColor = isMoon ? new Color(0.12f, 0.2f, 0.35f, 1f) : new Color(0.15f, 0.25f, 0.4f, 1f);
+        buttonImage.color = btnColor;
+        
+        Button button = buttonGO.AddComponent<Button>();
+        button.targetGraphic = buttonImage;
+        ColorBlock colors = button.colors;
+        colors.normalColor = btnColor;
+        colors.highlightedColor = new Color(0.3f, 0.6f, 1f, 1f);
+        colors.pressedColor = new Color(0.1f, 0.3f, 0.6f, 1f);
+        colors.selectedColor = new Color(0.25f, 0.45f, 0.7f, 1f);
+        colors.colorMultiplier = 1f;
+        colors.fadeDuration = 0.15f;
+        button.colors = colors;
+        
+        BodyInstance capturedBody = body;
+        button.onClick.AddListener(() => SelectAutopilotTarget(capturedBody));
+        
+        autopilotButtons.Add(button);
+        
+        // Button text
+        GameObject textGO = new GameObject("Text");
+        textGO.transform.SetParent(buttonGO.transform, false);
+        RectTransform textRect = textGO.AddComponent<RectTransform>();
+        textRect.anchorMin = Vector2.zero;
+        textRect.anchorMax = Vector2.one;
+        textRect.sizeDelta = Vector2.zero;
+        textRect.offsetMin = new Vector2(10, 0);
+        textRect.offsetMax = Vector2.zero;
+        
+        Text btnText = textGO.AddComponent<Text>();
+        btnText.text = (isMoon ? "  " : "") + body.name;
+        btnText.font = labelFont != null ? labelFont : Resources.GetBuiltinResource<Font>("Arial.ttf");
+        btnText.fontSize = isMoon ? 14 : 16;
+        btnText.color = isMoon ? new Color(0.8f, 0.9f, 1f, 1f) : Color.white;
+        btnText.alignment = TextAnchor.MiddleLeft;
+    }
+    
+    private void CreateMoonsCategoryButton(GameObject parent, int index, float buttonHeight, float spacing)
+    {
+        GameObject buttonGO = new GameObject("Moons_Category");
+        buttonGO.transform.SetParent(parent.transform, false);
+        
+        RectTransform buttonRect = buttonGO.AddComponent<RectTransform>();
+        buttonRect.anchorMin = new Vector2(0, 1);
+        buttonRect.anchorMax = new Vector2(1, 1);
+        buttonRect.pivot = new Vector2(0.5f, 1);
+        buttonRect.anchoredPosition = new Vector2(0, -index * (buttonHeight + spacing));
+        buttonRect.sizeDelta = new Vector2(-20, buttonHeight);
+        
+        Image buttonImage = buttonGO.AddComponent<Image>();
+        buttonImage.color = new Color(0.2f, 0.15f, 0.3f, 1f); // Purple tint for category
+        
+        Button button = buttonGO.AddComponent<Button>();
+        button.targetGraphic = buttonImage;
+        ColorBlock colors = button.colors;
+        colors.normalColor = new Color(0.2f, 0.15f, 0.3f, 1f);
+        colors.highlightedColor = new Color(0.35f, 0.25f, 0.5f, 1f);
+        colors.pressedColor = new Color(0.15f, 0.1f, 0.25f, 1f);
+        colors.selectedColor = new Color(0.25f, 0.2f, 0.4f, 1f);
+        colors.colorMultiplier = 1f;
+        colors.fadeDuration = 0.15f;
+        button.colors = colors;
+        
+        button.onClick.AddListener(ToggleMoonsCategory);
+        
+        // Button text with arrow indicator
+        GameObject textGO = new GameObject("Text");
+        textGO.transform.SetParent(buttonGO.transform, false);
+        RectTransform textRect = textGO.AddComponent<RectTransform>();
+        textRect.anchorMin = Vector2.zero;
+        textRect.anchorMax = Vector2.one;
+        textRect.sizeDelta = Vector2.zero;
+        textRect.offsetMin = new Vector2(10, 0);
+        textRect.offsetMax = Vector2.zero;
+        
+        Text btnText = textGO.AddComponent<Text>();
+        btnText.text = "▸ Moons";
+        btnText.font = labelFont != null ? labelFont : Resources.GetBuiltinResource<Font>("Arial.ttf");
+        btnText.fontSize = 16;
+        btnText.color = new Color(0.9f, 0.8f, 1f, 1f); // Light purple text
+        btnText.alignment = TextAnchor.MiddleLeft;
+    }
+    
+    private void ToggleMoonsCategory()
+    {
+        moonsExpanded = !moonsExpanded;
+        
+        if (moonsContainer != null)
+        {
+            moonsContainer.SetActive(moonsExpanded);
+            
+            // Update arrow in category button
+            Transform categoryBtn = autopilotUI.transform.Find("AutopilotMenu/ScrollView/Viewport/Content/Moons_Category");
+            if (categoryBtn == null)
+            {
+                // Try to find it differently
+                foreach (Transform child in autopilotContentRect)
+                {
+                    if (child.name == "Moons_Category")
+                    {
+                        Text txt = child.GetComponentInChildren<Text>();
+                        if (txt != null)
+                        {
+                            txt.text = moonsExpanded ? "▾ Moons" : "▸ Moons";
+                        }
+                        break;
+                    }
+                }
+            }
+            
+            // Recalculate content size
+            float buttonHeight = 35f;
+            float spacing = 5f;
+            
+            int mainCount = 0;
+            int moonCount = 0;
+            foreach (var body in bodies)
+            {
+                if (IsMoon(body.naifId)) moonCount++;
+                else mainCount++;
+            }
+            
+            int visibleCount = mainCount + 1; // +1 for moons category header
+            if (moonsExpanded)
+            {
+                visibleCount += moonCount;
+            }
+            
+            autopilotContentRect.sizeDelta = new Vector2(0, visibleCount * (buttonHeight + spacing));
+            
+            // Reposition moons container if expanded
+            if (moonsExpanded && moonsContainer != null)
+            {
+                RectTransform moonsRect = moonsContainer.GetComponent<RectTransform>();
+                moonsRect.anchoredPosition = new Vector2(0, -(mainCount + 1) * (buttonHeight + spacing));
+            }
+        }
+    }
+    
+    private void CreateCancelButton()
+    {
         GameObject cancelGO = new GameObject("CancelButton");
         cancelGO.transform.SetParent(autopilotUI.transform, false);
         RectTransform cancelRect = cancelGO.AddComponent<RectTransform>();
@@ -1263,7 +1490,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         cancelBtn.targetGraphic = cancelImage;
         ColorBlock cancelColors = cancelBtn.colors;
         cancelColors.normalColor = new Color(0.5f, 0.2f, 0.2f, 1f);
-        cancelColors.highlightedColor = new Color(0.8f, 0.3f, 0.3f, 1f); // Brighter red on hover
+        cancelColors.highlightedColor = new Color(0.8f, 0.3f, 0.3f, 1f);
         cancelColors.pressedColor = new Color(0.3f, 0.1f, 0.1f, 1f);
         cancelColors.selectedColor = new Color(0.6f, 0.25f, 0.25f, 1f);
         cancelColors.fadeDuration = 0.15f;
@@ -1283,11 +1510,6 @@ public class SolarSystemParallaxManager : MonoBehaviour
         cancelText.fontSize = 16;
         cancelText.color = Color.white;
         cancelText.alignment = TextAnchor.MiddleCenter;
-        
-        // Start hidden
-        autopilotUI.SetActive(false);
-        
-        Debug.Log("Autopilot menu created successfully");
     }
     
     private void ToggleAutopilotMenu()
