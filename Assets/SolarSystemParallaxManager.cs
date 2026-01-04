@@ -1035,6 +1035,13 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
     private void UpdateBodyProxies()
     {
+        Camera cam = GetActiveCamera();
+        RectTransform canvasRect = labelCanvas != null ? labelCanvas.GetComponent<RectTransform>() : null;
+        
+        // First pass: calculate positions and store label data for collision detection
+        List<(BodyInstance body, Vector2 screenPos, float distAu, Rect labelBounds)> visibleLabels = 
+            new List<(BodyInstance, Vector2, float, Rect)>();
+        
         foreach (var body in bodies)
         {
             Vector3 offsetAu = body.realPosAu - playerRealPosAu;
@@ -1071,38 +1078,118 @@ public class SolarSystemParallaxManager : MonoBehaviour
             float diameter = r * 2f;
             body.proxy.localScale = new Vector3(diameter, diameter, diameter);
 
-            // --- UI label update ---
-            if (enableLabels && body.labelUI != null)
+            // --- UI label position calculation ---
+            if (enableLabels && body.labelUI != null && cam != null && canvasRect != null)
             {
-                Camera cam = GetActiveCamera();
-                if (cam != null)
+                // Convert world position to screen position
+                Vector3 screenPos = cam.WorldToScreenPoint(body.proxy.position);
+                
+                // Check if object is in front of camera and on screen
+                bool isVisible = screenPos.z > 0 && 
+                               screenPos.x >= 0 && screenPos.x <= Screen.width &&
+                               screenPos.y >= 0 && screenPos.y <= Screen.height;
+                
+                if (isVisible)
                 {
-                    // Convert world position to screen position
-                    Vector3 screenPos = cam.WorldToScreenPoint(body.proxy.position);
+                    RectTransform labelRect = body.labelUI.GetComponent<RectTransform>();
                     
-                    // Check if object is in front of camera and on screen
-                    bool isVisible = screenPos.z > 0 && 
-                                   screenPos.x >= 0 && screenPos.x <= Screen.width &&
-                                   screenPos.y >= 0 && screenPos.y <= Screen.height;
+                    Vector2 canvasPos;
+                    RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                        canvasRect, screenPos, labelCanvas.worldCamera, out canvasPos);
                     
-                    body.labelUI.SetActive(isVisible);
+                    // Add offset to position label to the right of the planet
+                    canvasPos.x += labelOffsetPixels;
                     
-                    if (isVisible)
+                    // Calculate label bounds (approximate based on text size)
+                    float labelWidth = 100f; // Approximate label width
+                    float labelHeight = 25f; // Approximate label height
+                    Rect bounds = new Rect(canvasPos.x, canvasPos.y - labelHeight / 2, labelWidth, labelHeight);
+                    
+                    visibleLabels.Add((body, canvasPos, distAu, bounds));
+                }
+                else
+                {
+                    body.labelUI.SetActive(false);
+                }
+            }
+        }
+        
+        // Second pass: detect overlaps and hide overlapping labels
+        // Sort by distance (closest first) - closer labels have priority
+        visibleLabels.Sort((a, b) => a.distAu.CompareTo(b.distAu));
+        
+        List<Rect> occupiedRects = new List<Rect>();
+        
+        foreach (var labelData in visibleLabels)
+        {
+            bool hasOverlap = false;
+            
+            // Check against all already-placed labels
+            foreach (var occupied in occupiedRects)
+            {
+                if (labelData.labelBounds.Overlaps(occupied))
+                {
+                    hasOverlap = true;
+                    break;
+                }
+            }
+            
+            if (hasOverlap)
+            {
+                // Try to offset the label vertically
+                Vector2 offsetPos = labelData.screenPos;
+                Rect offsetBounds = labelData.labelBounds;
+                bool foundSpot = false;
+                
+                // Try offsetting up first, then down
+                float[] offsets = { 30f, -30f, 60f, -60f };
+                foreach (float yOffset in offsets)
+                {
+                    offsetBounds = new Rect(
+                        labelData.labelBounds.x, 
+                        labelData.labelBounds.y + yOffset, 
+                        labelData.labelBounds.width, 
+                        labelData.labelBounds.height);
+                    
+                    bool stillOverlaps = false;
+                    foreach (var occupied in occupiedRects)
                     {
-                        // Convert screen position to canvas position
-                        RectTransform canvasRect = labelCanvas.GetComponent<RectTransform>();
-                        RectTransform labelRect = body.labelUI.GetComponent<RectTransform>();
-                        
-                        Vector2 canvasPos;
-                        RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                            canvasRect, screenPos, labelCanvas.worldCamera, out canvasPos);
-                        
-                        // Add offset to position label to the right of the planet
-                        canvasPos.x += labelOffsetPixels;
-                        
-                        labelRect.localPosition = canvasPos;
+                        if (offsetBounds.Overlaps(occupied))
+                        {
+                            stillOverlaps = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!stillOverlaps)
+                    {
+                        offsetPos.y += yOffset;
+                        foundSpot = true;
+                        break;
                     }
                 }
+                
+                if (foundSpot)
+                {
+                    // Place with offset
+                    RectTransform labelRect = labelData.body.labelUI.GetComponent<RectTransform>();
+                    labelRect.localPosition = offsetPos;
+                    labelData.body.labelUI.SetActive(true);
+                    occupiedRects.Add(offsetBounds);
+                }
+                else
+                {
+                    // No spot found - hide this label
+                    labelData.body.labelUI.SetActive(false);
+                }
+            }
+            else
+            {
+                // No overlap - show label at original position
+                RectTransform labelRect = labelData.body.labelUI.GetComponent<RectTransform>();
+                labelRect.localPosition = labelData.screenPos;
+                labelData.body.labelUI.SetActive(true);
+                occupiedRects.Add(labelData.labelBounds);
             }
         }
     }
