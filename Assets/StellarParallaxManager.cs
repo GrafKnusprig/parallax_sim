@@ -164,6 +164,10 @@ public class StellarParallaxManager : MonoBehaviour
         Debug.Log("Loading Gaia GDR1 stellar data...");
         
         allStars.Clear();
+        
+        // Pre-allocate capacity for better performance (estimated ~2.4M stars)
+        allStars.Capacity = 2500000;
+        
         int totalStarsLoaded = 0;
         
         // Load all 6 CSV files
@@ -179,10 +183,6 @@ public class StellarParallaxManager : MonoBehaviour
             }
             
             yield return StartCoroutine(LoadCSVFile(filePath, fileIndex));
-            
-            // Yield periodically to prevent frame drops
-            if (fileIndex % 2 == 0)
-                yield return new WaitForEndOfFrame();
         }
         
         Debug.Log($"Total stars loaded: {allStars.Count}");
@@ -196,32 +196,29 @@ public class StellarParallaxManager : MonoBehaviour
     {
         Debug.Log($"Loading file {fileIndex}: {Path.GetFileName(filePath)}");
         
-        using (StreamReader reader = new StreamReader(filePath))
+        // Read all lines at once for faster processing
+        string[] lines = File.ReadAllLines(filePath);
+        
+        int lineCount = 0;
+        int batchSize = 10000; // Process 10x more lines per yield for faster loading
+        
+        // Skip header (start at index 1)
+        for (int i = 1; i < lines.Length; i++)
         {
-            // Skip header line
-            if (!reader.EndOfStream)
-                reader.ReadLine();
-            
-            int lineCount = 0;
-            string line;
-            
-            while ((line = reader.ReadLine()) != null)
+            if (TryParseGDR1Data(lines[i], allStars.Count, out StarData star))
             {
-                if (TryParseGDR1Data(line, allStars.Count, out StarData star))
-                {
-                    allStars.Add(star);
-                    
-                    // Update distance range
-                    if (star.distance < minStarDistance) minStarDistance = star.distance;
-                    if (star.distance > maxStarDistance) maxStarDistance = star.distance;
-                }
+                allStars.Add(star);
                 
-                lineCount++;
-                
-                // Yield every 1000 lines to prevent frame drops
-                if (lineCount % 1000 == 0)
-                    yield return null;
+                // Update distance range
+                if (star.distance < minStarDistance) minStarDistance = star.distance;
+                if (star.distance > maxStarDistance) maxStarDistance = star.distance;
             }
+            
+            lineCount++;
+            
+            // Yield every 10,000 lines (10x faster than before)
+            if (lineCount % batchSize == 0)
+                yield return null;
         }
         
         Debug.Log($"File {fileIndex} loaded: {allStars.Count} total stars so far");
