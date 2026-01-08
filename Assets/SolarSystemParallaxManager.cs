@@ -65,6 +65,10 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [SerializeField] private int hudFontSize = 16;
     [SerializeField] private Color hudColor = Color.cyan;
     [SerializeField] private Vector2 hudPosition = new Vector2(20f, -20f); // offset from top-left corner
+    
+    [Header("Loading Screen")]
+    [Tooltip("Show loading screen while stellar data is being loaded")]
+    [SerializeField] private bool enableLoadingScreen = true;
 
     private const double AU_KM = 149_597_870.7;
     private const double SPEED_OF_LIGHT_KM_S = 299_792_458.0; // km/s (exact value)
@@ -113,6 +117,18 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private Text planetInfoDataText;
     private float planetInfoAnimProgress = 0f;
     private const float PLANET_INFO_ANIM_SPEED = 8f;
+    
+    // Loading screen
+    private GameObject loadingScreenUI;
+    private Text loadingText;
+    private Image loadingBackground;
+    private Image progressBarBackground;
+    private Image progressBarFill;
+    private Text progressText;
+    private bool loadingComplete = false;
+    private float loadingFadeProgress = 0f;
+    private const float LOADING_FADE_SPEED = 2f;
+    private const int ESTIMATED_TOTAL_STARS = 2400000; // Approximate total stars in GDR1 dataset
 
     private class BodyInstance
     {
@@ -208,6 +224,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         LoadPlanetInfoData();
         CreateAutopilotMenu();
         CreatePlanetInfoPanel();
+        CreateLoadingScreen();
         
         // Initialize dynamic behavior
         currentScale = 1f; // Use hardcoded base scale
@@ -300,6 +317,15 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
     private void Update()
     {
+        // Handle loading screen
+        UpdateLoadingScreen();
+        
+        // Don't allow gameplay until loading is complete
+        if (!loadingComplete)
+        {
+            return;
+        }
+        
         // Handle autopilot toggle with X key
         if (Keyboard.current != null && Keyboard.current.xKey.wasPressedThisFrame)
         {
@@ -331,6 +357,234 @@ public class SolarSystemParallaxManager : MonoBehaviour
         if (stellarManager != null)
         {
             stellarManager.OnPlayerPositionChanged(playerRealPosAu);
+        }
+    }
+    
+    private void CreateLoadingScreen()
+    {
+        if (!enableLoadingScreen)
+        {
+            loadingComplete = true; // Mark as complete so gameplay isn't blocked
+            return;
+        }
+        
+        if (labelCanvas == null)
+        {
+            Debug.LogWarning("Cannot create loading screen: Label Canvas not available.");
+            loadingComplete = true;
+            return;
+        }
+        
+        // Create loading screen container
+        loadingScreenUI = new GameObject("LoadingScreen");
+        loadingScreenUI.transform.SetParent(labelCanvas.transform, false);
+        
+        // Set transform to cover full screen
+        RectTransform rectTransform = loadingScreenUI.AddComponent<RectTransform>();
+        rectTransform.anchorMin = Vector2.zero;
+        rectTransform.anchorMax = Vector2.one;
+        rectTransform.offsetMin = Vector2.zero;
+        rectTransform.offsetMax = Vector2.zero;
+        
+        // Add dark background
+        loadingBackground = loadingScreenUI.AddComponent<Image>();
+        loadingBackground.color = new Color(0.02f, 0.02f, 0.05f, 1f); // Very dark blue-black
+        
+        // Create center container for loading content
+        GameObject centerContainer = new GameObject("CenterContainer");
+        centerContainer.transform.SetParent(loadingScreenUI.transform, false);
+        RectTransform centerRect = centerContainer.AddComponent<RectTransform>();
+        centerRect.anchorMin = new Vector2(0.5f, 0.5f);
+        centerRect.anchorMax = new Vector2(0.5f, 0.5f);
+        centerRect.pivot = new Vector2(0.5f, 0.5f);
+        centerRect.anchoredPosition = Vector2.zero;
+        centerRect.sizeDelta = new Vector2(600, 250);
+        
+        // Create loading text
+        GameObject textGO = new GameObject("LoadingText");
+        textGO.transform.SetParent(centerContainer.transform, false);
+        RectTransform textRect = textGO.AddComponent<RectTransform>();
+        textRect.anchorMin = new Vector2(0, 0.6f);
+        textRect.anchorMax = new Vector2(1, 1f);
+        textRect.offsetMin = Vector2.zero;
+        textRect.offsetMax = Vector2.zero;
+        
+        loadingText = textGO.AddComponent<Text>();
+        loadingText.font = labelFont != null ? labelFont : Resources.GetBuiltinResource<Font>("Arial.ttf");
+        loadingText.fontSize = 32;
+        loadingText.color = new Color(0.8f, 0.9f, 1f, 1f); // Light blue-white
+        loadingText.alignment = TextAnchor.MiddleCenter;
+        loadingText.text = "Loading Stellar Data...";
+        
+        // Create progress bar container
+        GameObject progressContainer = new GameObject("ProgressBarContainer");
+        progressContainer.transform.SetParent(centerContainer.transform, false);
+        RectTransform progressContainerRect = progressContainer.AddComponent<RectTransform>();
+        progressContainerRect.anchorMin = new Vector2(0.1f, 0.35f);
+        progressContainerRect.anchorMax = new Vector2(0.9f, 0.45f);
+        progressContainerRect.offsetMin = Vector2.zero;
+        progressContainerRect.offsetMax = Vector2.zero;
+        
+        // Progress bar background (dark)
+        GameObject progressBgGO = new GameObject("ProgressBarBackground");
+        progressBgGO.transform.SetParent(progressContainer.transform, false);
+        RectTransform progressBgRect = progressBgGO.AddComponent<RectTransform>();
+        progressBgRect.anchorMin = Vector2.zero;
+        progressBgRect.anchorMax = Vector2.one;
+        progressBgRect.offsetMin = Vector2.zero;
+        progressBgRect.offsetMax = Vector2.zero;
+        
+        progressBarBackground = progressBgGO.AddComponent<Image>();
+        progressBarBackground.color = new Color(0.1f, 0.12f, 0.18f, 1f); // Dark blue-gray
+        
+        // Progress bar fill (bright gradient-like effect)
+        GameObject progressFillGO = new GameObject("ProgressBarFill");
+        progressFillGO.transform.SetParent(progressContainer.transform, false);
+        RectTransform progressFillRect = progressFillGO.AddComponent<RectTransform>();
+        progressFillRect.anchorMin = Vector2.zero;
+        progressFillRect.anchorMax = new Vector2(0f, 1f); // Start with 0 width
+        progressFillRect.pivot = new Vector2(0f, 0.5f);
+        progressFillRect.offsetMin = new Vector2(2, 2);
+        progressFillRect.offsetMax = new Vector2(-2, -2);
+        
+        progressBarFill = progressFillGO.AddComponent<Image>();
+        progressBarFill.color = new Color(0.3f, 0.6f, 1f, 1f); // Bright blue
+        
+        // Progress percentage text
+        GameObject progressTextGO = new GameObject("ProgressText");
+        progressTextGO.transform.SetParent(centerContainer.transform, false);
+        RectTransform progressTextRect = progressTextGO.AddComponent<RectTransform>();
+        progressTextRect.anchorMin = new Vector2(0, 0.15f);
+        progressTextRect.anchorMax = new Vector2(1, 0.32f);
+        progressTextRect.offsetMin = Vector2.zero;
+        progressTextRect.offsetMax = Vector2.zero;
+        
+        progressText = progressTextGO.AddComponent<Text>();
+        progressText.font = labelFont != null ? labelFont : Resources.GetBuiltinResource<Font>("Arial.ttf");
+        progressText.fontSize = 16;
+        progressText.color = new Color(0.6f, 0.7f, 0.8f, 0.9f);
+        progressText.alignment = TextAnchor.MiddleCenter;
+        progressText.text = "0% - 0 / 2,400,000 stars";
+        
+        // Sub-text hint
+        GameObject hintGO = new GameObject("LoadingHint");
+        hintGO.transform.SetParent(centerContainer.transform, false);
+        RectTransform hintRect = hintGO.AddComponent<RectTransform>();
+        hintRect.anchorMin = new Vector2(0, 0f);
+        hintRect.anchorMax = new Vector2(1, 0.15f);
+        hintRect.offsetMin = Vector2.zero;
+        hintRect.offsetMax = Vector2.zero;
+        
+        Text hintText = hintGO.AddComponent<Text>();
+        hintText.font = labelFont != null ? labelFont : Resources.GetBuiltinResource<Font>("Arial.ttf");
+        hintText.fontSize = 14;
+        hintText.color = new Color(0.4f, 0.5f, 0.6f, 0.7f);
+        hintText.alignment = TextAnchor.MiddleCenter;
+        hintText.text = "Processing Gaia GDR1 stellar catalog...";
+        
+        // Hide HUD during loading
+        if (hudUI != null)
+        {
+            hudUI.SetActive(false);
+        }
+        
+        Debug.Log("Loading screen created with progress bar");
+    }
+    
+    private void UpdateLoadingScreen()
+    {
+        if (loadingScreenUI == null) return;
+        
+        bool starsReady = stellarManager == null || stellarManager.IsDataLoaded();
+        int starCount = stellarManager != null ? stellarManager.GetLoadedStarCount() : 0;
+        float progress = Mathf.Clamp01((float)starCount / ESTIMATED_TOTAL_STARS);
+        
+        if (starsReady && !loadingComplete)
+        {
+            // Stars are ready, start fading out
+            loadingFadeProgress += Time.deltaTime * LOADING_FADE_SPEED;
+            
+            // Ensure progress bar shows 100% when complete
+            if (progressBarFill != null)
+            {
+                RectTransform fillRect = progressBarFill.GetComponent<RectTransform>();
+                fillRect.anchorMax = new Vector2(1f, 1f);
+            }
+            if (progressText != null)
+            {
+                progressText.text = $"100% - {starCount:N0} / {ESTIMATED_TOTAL_STARS:N0} stars";
+            }
+            
+            if (loadingFadeProgress >= 1f)
+            {
+                loadingComplete = true;
+                loadingScreenUI.SetActive(false);
+                
+                // Show HUD now that loading is complete
+                if (hudUI != null)
+                {
+                    hudUI.SetActive(true);
+                }
+                
+                Debug.Log("Loading complete - stars ready!");
+            }
+            else
+            {
+                // Fade out the loading screen
+                float alpha = 1f - loadingFadeProgress;
+                if (loadingBackground != null)
+                {
+                    loadingBackground.color = new Color(0.02f, 0.02f, 0.05f, alpha);
+                }
+                if (loadingText != null)
+                {
+                    loadingText.color = new Color(0.8f, 0.9f, 1f, alpha);
+                }
+                if (progressBarBackground != null)
+                {
+                    progressBarBackground.color = new Color(0.1f, 0.12f, 0.18f, alpha);
+                }
+                if (progressBarFill != null)
+                {
+                    progressBarFill.color = new Color(0.3f, 0.6f, 1f, alpha);
+                }
+                if (progressText != null)
+                {
+                    progressText.color = new Color(0.6f, 0.7f, 0.8f, alpha * 0.9f);
+                }
+            }
+        }
+        else if (!starsReady)
+        {
+            // Animate loading text with dots
+            int dotCount = (int)(Time.time * 2f) % 4;
+            string dots = new string('.', dotCount);
+            loadingText.text = $"Loading Stellar Data{dots}";
+            
+            // Update progress bar fill
+            if (progressBarFill != null)
+            {
+                RectTransform fillRect = progressBarFill.GetComponent<RectTransform>();
+                // Smoothly animate the progress bar
+                float currentProgress = fillRect.anchorMax.x;
+                float targetProgress = progress;
+                float smoothProgress = Mathf.Lerp(currentProgress, targetProgress, Time.deltaTime * 5f);
+                fillRect.anchorMax = new Vector2(smoothProgress, 1f);
+            }
+            
+            // Update progress text
+            if (progressText != null)
+            {
+                int percentage = Mathf.RoundToInt(progress * 100f);
+                progressText.text = $"{percentage}% - {starCount:N0} / {ESTIMATED_TOTAL_STARS:N0} stars";
+            }
+            
+            // Subtle pulsing effect on progress bar color
+            float pulse = 0.9f + 0.1f * Mathf.Sin(Time.time * 3f);
+            if (progressBarFill != null)
+            {
+                progressBarFill.color = new Color(0.3f * pulse, 0.6f * pulse, 1f, 1f);
+            }
         }
     }
 
