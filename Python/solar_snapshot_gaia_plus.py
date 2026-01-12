@@ -199,6 +199,9 @@ def _extract_float(pattern: str, text: str, flags: int = re.IGNORECASE) -> Optio
         return None
     # normalize weird spacing and exponent forms
     s = m.group(1).strip().replace("D", "E")
+    # Handle uncertainty notation like "69911+-6" - extract just the number before +-
+    if '+-' in s:
+        s = s.split('+-')[0].strip()
     try:
         return float(s)
     except Exception:
@@ -240,9 +243,10 @@ def parse_physical_properties(obj_text: str) -> dict[str, Optional[float]]:
         or _extract_float(r"Density\s*=\s*([0-9\.\+\-EeDd]+)\s*\(g/cm\^3\)", obj_text)
     )
 
-    # Mean radius often: "Mean radius (km) = 6371.008"
+    # Mean radius: can appear as "Vol. Mean Radius (km)" or "Mean radius (km)"
     mean_radius = (
-        _extract_float(r"Mean\s+radius\s*\(km\)\s*=\s*([0-9\.\+\-EeDd]+)", obj_text)
+        _extract_float(r"Vol\.\s+[Mm]ean\s+[Rr]adius\s*\(km\)\s*=\s*([0-9\.\+\-EeDd]+)", obj_text)
+        or _extract_float(r"Mean\s+radius\s*\(km\)\s*=\s*([0-9\.\+\-EeDd]+)", obj_text)
         or _extract_float(r"Radius\s*\(km\)\s*=\s*([0-9\.\+\-EeDd]+)", obj_text)
     )
 
