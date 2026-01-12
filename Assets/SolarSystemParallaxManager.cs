@@ -390,6 +390,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
         // Handle loading screen
         UpdateLoadingScreen();
         
+        // Always update VR canvas position (needed for loading screen visibility in VR)
+        UpdateVRCanvas();
+        
         // Don't allow gameplay until loading is complete
         if (!loadingComplete)
         {
@@ -420,7 +423,6 @@ public class SolarSystemParallaxManager : MonoBehaviour
             UpdatePlayerMovement();
         }
         
-        UpdateVRCanvas();
         UpdateBodyProxies();
         UpdatePlanetInfoPanel();
         
@@ -2267,7 +2269,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         panelRect.anchorMin = new Vector2(1, 0.5f);
         panelRect.anchorMax = new Vector2(1, 0.5f);
         panelRect.pivot = new Vector2(0, 0.5f); // Pivot at left edge for slide-in
-        panelRect.anchoredPosition = new Vector2(20, 0); // Start off-screen
+        panelRect.anchoredPosition = new Vector2(400, 0); // Start fully off-screen (past the canvas edge)
         panelRect.sizeDelta = new Vector2(350, 500);
         
         // Add gradient-like background (semi-transparent dark blue/purple)
@@ -2408,8 +2410,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
             // Smooth easing curve
             float easedProgress = 1f - Mathf.Pow(1f - planetInfoAnimProgress, 3f);
             
-            // Slide in from right: 20 (off-screen) to -370 (visible with margin)
-            float xPos = Mathf.Lerp(20, -370, easedProgress);
+            // Slide in from right: 400 (fully off-screen) to -370 (visible with margin)
+            float xPos = Mathf.Lerp(500, -370, easedProgress);
             panelRect.anchoredPosition = new Vector2(xPos, 0);
         }
     }
