@@ -86,11 +86,21 @@ def parse_horizons_csv_vectors(result_text: str) -> tuple[list[str], list[str]]:
         raise RuntimeError(f"Could not find $$SOE/$$EOE in Horizons output:\n{result_text[:900]}")
 
     table = [ln.strip() for ln in lines[i0 + 1 : i1] if ln.strip()]
-    if len(table) < 2:
-        raise RuntimeError(f"Not enough CSV rows between $$SOE/$$EOE:\n{table}")
+    if len(table) < 1:
+        raise RuntimeError(f"Not enough rows between $$SOE/$$EOE:\n{table}")
 
-    header = [c.strip() for c in table[0].split(",")]
-    row = [c.strip() for c in table[1].split(",")]
+    # The issue is we were confusing data for headers. Let's handle this properly.
+    # In Horizons output without column labels, each row is just data.
+    # Take the first data row and create proper column names
+    row = [c.strip() for c in table[0].split(",")]
+    
+    # Generate standard column names based on expected Horizons vector format:
+    # JD, Calendar_Date, X, Y, Z, VX, VY, VZ, [optional fields]
+    if len(row) >= 8:
+        header = ["JD", "Calendar_Date", "X", "Y", "Z", "VX", "VY", "VZ"] + [f"Col{i}" for i in range(8, len(row))]
+    else:
+        raise RuntimeError(f"Unexpected number of columns in Horizons output: {len(row)} columns in {row}")
+
     return header, row
 
 
@@ -99,6 +109,17 @@ def horizons_vectors_icrf(command: str, epoch_utc: str, center: str, step: str =
     Get XYZ and VX,VY,VZ from Horizons at one epoch (AU and AU/day).
     Returns dict with keys x,y,z,vx,vy,vz (floats).
     """
+    # Horizons needs start < stop, so we add 1 day to stop time even though we only want one point
+    import datetime as dt
+    try:
+        epoch_dt = dt.datetime.fromisoformat(epoch_utc.replace('Z', '+00:00'))
+        stop_dt = epoch_dt + dt.timedelta(days=1)
+        stop_utc = stop_dt.strftime('%Y-%m-%dT%H:%M:%S.%fZ')[:-3] + 'Z'  # Remove microseconds, keep milliseconds
+    except Exception:
+        # Fallback: just add text-based increment
+        stop_utc = epoch_utc.replace('T00:00:00Z', 'T00:00:01Z').replace('T12:00:00Z', 'T12:00:01Z')
+        if stop_utc == epoch_utc:  # If no replacement happened, add a second manually
+            stop_utc = epoch_utc[:-1] + '1Z' if epoch_utc.endswith('Z') else epoch_utc + '1'
     params = {
         "format": "json",
         "EPHEM_TYPE": "VECTORS",
@@ -116,12 +137,12 @@ def horizons_vectors_icrf(command: str, epoch_utc: str, center: str, step: str =
         "CSV_FORMAT": "YES",
 
         "START_TIME": f"'{epoch_utc}'",
-        "STOP_TIME": f"'{epoch_utc}'",
+        "STOP_TIME": f"'{stop_utc}'",
         "STEP_SIZE": f"'{step}'",
 
         # include velocity components in the CSV
         "VEC_TABLE": "2",
-        "VEC_LABELS": "NO",
+        "VEC_LABELS": "YES",  # Changed to YES to get column headers
     }
 
     data = http_get_json(HORIZONS_URL, params=params)
@@ -329,11 +350,12 @@ def default_planets_and_major_moons() -> list[Body]:
     ]
 
 
-def sbdb_top_asteroids(limit: int, offset: int = 0) -> list[Body]:
+def sbdb_top_asteroids(limit: int, offset: int = 0) -> tuple[list[Body], dict[str, dict[str, Optional[float]]]]:
     """
-    Fetch asteroids (largest by diameter where known) and carry SBDB physical fields via a sidecar dict.
-    We'll store SBDB diameter/albedo/H/rot_per later by looking them up in the SBDB rows we got.
+    Fetch asteroids (largest by diameter where known) and return both Body objects and physical data.
+    Returns tuple of (bodies, physical_properties_dict) to avoid redundant API calls.
     """
+    print(f"[INFO] Fetching {limit} largest asteroids from SBDB API (offset: {offset})...")
     params = {
         "fields": "spkid,full_name,diameter,albedo,H,rot_per",
         "sb-kind": "a",
@@ -341,23 +363,55 @@ def sbdb_top_asteroids(limit: int, offset: int = 0) -> list[Body]:
         "limit": str(limit),
         "limit-from": str(offset),
     }
+    print(f"[INFO] SBDB Query API call: {SBDB_QUERY_URL} with params: {params}")
     data = http_get_json(SBDB_QUERY_URL, params=params)
 
     fields = data.get("fields", [])
     rows = data.get("data", [])
     if not fields or not isinstance(rows, list):
         raise RuntimeError(f"Unexpected SBDB response: {data}")
+    
+    print(f"[INFO] SBDB returned {len(rows)} asteroids with fields: {fields}")
 
     bodies: list[Body] = []
-    for row in rows:
+    physical_data: dict[str, dict[str, Optional[float]]] = {}
+    
+    def safe_float(value) -> Optional[float]:
+        if value in (None, "", "null"):
+            return None
+        try:
+            return float(value)
+        except Exception:
+            return None
+    
+    for i, row in enumerate(rows):
         rm = dict(zip(fields, row))
         spkid = str(rm.get("spkid", "")).strip()
         name = str(rm.get("full_name", spkid)).strip()
         if not spkid:
             continue
+            
+        # Create Body object
         cmd = f"DES={spkid};"
         bodies.append(Body(name=name, command=cmd, source_id=spkid, kind="asteroid"))
-    return bodies
+        
+        # Extract physical properties directly from this call
+        physical_data[spkid] = {
+            "diameter_km": safe_float(rm.get("diameter")),
+            "albedo": safe_float(rm.get("albedo")),
+            "H": safe_float(rm.get("H")),
+            "rot_per_hr": safe_float(rm.get("rot_per")),
+        }
+        
+        if (i + 1) % 50 == 0:
+            print(f"[INFO] Processed {i + 1}/{len(rows)} asteroids from SBDB...")
+
+    # Count how many asteroids have physical data
+    asteroids_with_data = len([k for k, v in physical_data.items() if any(val is not None for val in v.values())])
+    print(f"[INFO] Successfully fetched {len(bodies)} asteroids from SBDB")
+    print(f"[INFO] Physical properties available for {asteroids_with_data}/{len(bodies)} asteroids")
+    
+    return bodies, physical_data
 
 
 def sbdb_lookup_fields(spkid_list: list[str]) -> dict[str, dict[str, Optional[float]]]:
@@ -371,15 +425,20 @@ def sbdb_lookup_fields(spkid_list: list[str]) -> dict[str, dict[str, Optional[fl
 
     If this feels too opinionated: keep asteroids count reasonable (<2000) and this works fine.
     """
+    print(f"[INFO] Looking up detailed physical properties for {len(spkid_list)} asteroids...")
     out: dict[str, dict[str, Optional[float]]] = {s: {} for s in spkid_list}
 
     # If very large, don't do any extra calls; user can extend later.
     if len(spkid_list) > 500:
+        print(f"[WARN] Skipping detailed lookups for {len(spkid_list)} asteroids (too many for individual queries)")
         return out
 
     # SBDB Query supports filtering by "spkid" parameter.
     # We do one request per spkid to keep it simple and reliable (still okay for a few hundred).
-    for spkid in spkid_list:
+    print(f"[INFO] Starting individual SBDB lookups for {len(spkid_list)} asteroids...")
+    for i, spkid in enumerate(spkid_list):
+        if (i + 1) % 20 == 0:
+            print(f"[INFO] SBDB lookup progress: {i + 1}/{len(spkid_list)} ({100*(i+1)/len(spkid_list):.1f}%)")
         try:
             params = {
                 "fields": "spkid,diameter,albedo,H,rot_per",
@@ -408,7 +467,8 @@ def sbdb_lookup_fields(spkid_list: list[str]) -> dict[str, dict[str, Optional[fl
             }
         except Exception:
             continue
-
+    
+    print(f"[INFO] Completed SBDB lookups for {len([k for k, v in out.items() if v])} asteroids with data")
     return out
 
 
@@ -459,17 +519,37 @@ def main() -> None:
 
     args = ap.parse_args()
     epoch = args.epoch or utc_now_iso()
+    
+    print(f"[INFO] ===== Solar System Snapshot Generator =====")
+    print(f"[INFO] Epoch: {epoch}")
+    print(f"[INFO] Center: {args.center}")
+    print(f"[INFO] Rate limit: {args.rate_limit}s between API calls")
+    print(f"[INFO] Asteroids to fetch: {args.asteroids}")
+    print(f"[INFO] Output file: {args.out}")
+    print(f"[INFO] Resume mode: {args.resume}")
+    print(f"[INFO] ============================================")
 
     # Load existing progress if resuming
     completed_ids: set[str] = set()
     if args.resume:
+        print(f"[INFO] Checking for existing progress in {args.out}...")
         completed_ids = load_existing_progress(args.out)
     
+    print(f"[INFO] Preparing celestial body list...")
     bodies = default_planets_and_major_moons()
+    print(f"[INFO] Added {len(bodies)} planets, moons, and dwarf planets")
+    
     asteroid_bodies: list[Body] = []
+    asteroid_phys: dict[str, dict[str, Optional[float]]] = {}
+    
     if args.asteroids > 0:
-        asteroid_bodies = sbdb_top_asteroids(args.asteroids, args.asteroid_offset)
+        print(f"[INFO] Fetching asteroid data from SBDB...")
+        asteroid_bodies, asteroid_phys = sbdb_top_asteroids(args.asteroids, args.asteroid_offset)
         bodies.extend(asteroid_bodies)
+        print(f"[INFO] Total bodies to process: {len(bodies)} ({len(asteroid_bodies)} asteroids + {len(bodies) - len(asteroid_bodies)} other bodies)")
+    else:
+        print(f"[INFO] Skipping asteroids (--asteroids=0)")
+        print(f"[INFO] Total bodies to process: {len(bodies)} (planets, moons, dwarf planets only)")
 
     # Filter out already completed bodies if resuming
     if args.resume:
@@ -482,8 +562,12 @@ def main() -> None:
         print("[INFO] All bodies already processed!")
         return
 
-    # Optional: enrich asteroid physical fields (diameter/albedo/H/rot)
-    asteroid_phys = sbdb_lookup_fields([b.source_id for b in asteroid_bodies]) if asteroid_bodies else {}
+    # Physical properties already loaded from first SBDB call - no need for individual lookups!
+    if asteroid_bodies:
+        enriched_count = len([k for k, v in asteroid_phys.items() if any(val is not None for val in v.values())])
+        print(f"[INFO] Physical properties loaded for {enriched_count}/{len(asteroid_bodies)} asteroids (no additional API calls needed)")
+    else:
+        print(f"[INFO] No asteroids to process - skipping physical property setup")
 
     # Open file in append mode if resuming, write mode if starting fresh
     file_mode = "a" if args.resume and os.path.exists(args.out) else "w"
@@ -520,8 +604,15 @@ def main() -> None:
         print(f"[INFO] Processing {len(bodies)} bodies, writing to {args.out} (mode: {file_mode})")
 
         processed_count = 0
+        print(f"[INFO] Starting main processing loop: {len(bodies)} bodies to process")
+        print(f"[INFO] Each body requires 2 Horizons API calls (vectors + physical properties)")
+        print(f"[INFO] ============================================")
+        
         for i, b in enumerate(bodies, 1):
+            print(f"[INFO] [{i}/{len(bodies)}] Processing {b.name} ({b.kind}, ID: {b.source_id})...")
+            
             # 1) snapshot vectors
+            print(f"[INFO]   -> Horizons vectors API call for {b.name}...")
             try:
                 vec = horizons_vectors_icrf(b.command, epoch, args.center)
                 x, y, z = vec["x"], vec["y"], vec["z"]
@@ -531,8 +622,9 @@ def main() -> None:
                 dist_pc = au_to_pc(r_au)
                 plx_mas = parallax_mas_from_pc(dist_pc)
                 sp_kms = speed_km_s(vx, vy, vz)
+                print(f"[INFO]   -> Horizons vectors: SUCCESS (RA={ra_deg:.3f}°, DEC={dec_deg:.3f}°, dist={r_au:.3f} AU)")
             except Exception as e:
-                print(f"[WARN] vectors failed for {b.name} ({b.command}): {e}")
+                print(f"[WARN]   -> Horizons vectors: FAILED for {b.name} ({b.command}): {e}")
                 # write a mostly empty row and continue
                 w.writerow([b.source_id, b.kind] + [""] * 18)
                 f.flush()  # Ensure data is written immediately
@@ -554,9 +646,14 @@ def main() -> None:
                 albedo = phys.get("albedo")
                 rot_hr = phys.get("rot_per_hr")
                 H_val = phys.get("H")
+                if any([size_km, albedo, rot_hr, H_val]):
+                    print(f"[INFO]   -> SBDB physical data: FOUND (size={size_km}, albedo={albedo}, H={H_val})")
+                else:
+                    print(f"[INFO]   -> SBDB physical data: NOT AVAILABLE")
 
             # still try Horizons physicals (for planets/moons, and sometimes asteroids)
             try:
+                print(f"[INFO]   -> Horizons physical properties API call for {b.name}...")
                 obj = horizons_obj_data(b.command)
                 props = parse_physical_properties(obj)
                 gm = props["gm_km3_s2"]
@@ -577,9 +674,12 @@ def main() -> None:
                     mass_kg = mass_direct
                 elif gm is not None:
                     mass_kg = gm_to_mass_kg(gm)
+                    
+                found_props = [k for k, v in props.items() if v is not None]
+                print(f"[INFO]   -> Horizons physical properties: SUCCESS (found: {', '.join(found_props)})")
             except Exception as e:
                 # non-fatal
-                print(f"[WARN] obj_data parse failed for {b.name} ({b.command}): {e}")
+                print(f"[INFO]   -> Horizons physical properties: FAILED ({str(e)[:50]}...)")
 
             w.writerow([
                 b.source_id,
@@ -606,10 +706,11 @@ def main() -> None:
             
             f.flush()  # Ensure data is written immediately
             processed_count += 1
+            print(f"[INFO]   -> CSV write: SUCCESS")
             
             # Progress reporting
             if processed_count % args.progress_interval == 0 or processed_count == len(bodies):
-                print(f"[INFO] Progress: {processed_count}/{len(bodies)} ({100*processed_count/len(bodies):.1f}%) - completed {b.name}")
+                print(f"[INFO] ===== Progress: {processed_count}/{len(bodies)} ({100*processed_count/len(bodies):.1f}%) =====\n")
 
             time.sleep(args.rate_limit)
 
