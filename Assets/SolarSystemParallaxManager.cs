@@ -5,6 +5,7 @@ using System.IO;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
+using TMPro;
 
 public class SolarSystemParallaxManager : MonoBehaviour
 {
@@ -49,9 +50,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [Header("Labels (optional)")]
     [SerializeField] private bool enableLabels = true;
     [SerializeField] private Canvas labelCanvas;
-    [SerializeField] private Font labelFont;
+    [SerializeField] private TMP_FontAsset labelFont;
     [Tooltip("Font size for planet labels (pt)")]
-    [SerializeField] private int labelFontSize = 14;
+    [SerializeField] private int labelFontSize = 24;
     [SerializeField] private Color labelColor = Color.white;
     [Tooltip("Offset from planet center (pixels)")]
     [SerializeField] private float labelOffsetPixels = 20f; // offset from planet center in pixels
@@ -59,9 +60,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [Header("HUD (Heads-Up Display)")]
     [SerializeField] private bool enableHUD = true;
     [Tooltip("Font size for HUD text (pt)")]
-    [SerializeField] private int hudFontSize = 16;
+    [SerializeField] private int hudFontSize = 28;
     [SerializeField] private Color hudColor = Color.cyan;
-    [SerializeField] private Vector2 hudPosition = new Vector2(20f, -20f); // offset from top-left corner
+    [SerializeField] private Vector2 hudPosition = new Vector2(300f, -100f); // offset from top-left corner
     
     [Header("VR Mode")]
     [Tooltip("Enable VR mode for headset display. When disabled, uses standard screen with mouse support.")]
@@ -95,7 +96,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     
     // HUD elements
     private GameObject hudUI;
-    private Text hudText;
+    private TextMeshProUGUI hudText;
     
     // Stellar parallax integration
     private StellarParallaxManager stellarManager;
@@ -115,18 +116,18 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private Dictionary<string, PlanetData> planetInfoData = new Dictionary<string, PlanetData>();
     private bool planetInfoVisible = false;
     private GameObject planetInfoUI;
-    private Text planetInfoNameText;
-    private Text planetInfoDataText;
+    private TextMeshProUGUI planetInfoNameText;
+    private TextMeshProUGUI planetInfoDataText;
     private float planetInfoAnimProgress = 0f;
     private const float PLANET_INFO_ANIM_SPEED = 8f;
     
     // Loading screen
     private GameObject loadingScreenUI;
-    private Text loadingText;
+    private TextMeshProUGUI loadingText;
     private Image loadingBackground;
     private Image progressBarBackground;
     private Image progressBarFill;
-    private Text progressText;
+    private TextMeshProUGUI progressText;
     private bool loadingComplete = false;
     private float loadingFadeProgress = 0f;
     private const float LOADING_FADE_SPEED = 2f;
@@ -365,17 +366,18 @@ public class SolarSystemParallaxManager : MonoBehaviour
         rectTransform.anchorMin = new Vector2(0, 1);
         rectTransform.anchorMax = new Vector2(0, 1);
         rectTransform.pivot = new Vector2(0, 1);
-        rectTransform.anchoredPosition = new Vector2(20, -20); // 20px margin from top-left
+        rectTransform.anchoredPosition = hudPosition; // Use configurable position
         rectTransform.sizeDelta = new Vector2(800, 400); // 200% bigger than previous
         
         // Add Text component
-        hudText = hudUI.AddComponent<Text>();
-        hudText.font = labelFont != null ? labelFont : Resources.GetBuiltinResource<Font>("Arial.ttf");
+        // Add Text component
+        hudText = hudUI.AddComponent<TextMeshProUGUI>();
+        if (labelFont != null) hudText.font = labelFont;
         hudText.fontSize = hudFontSize;
         hudText.color = hudColor;
-        hudText.alignment = TextAnchor.UpperLeft;
-        hudText.horizontalOverflow = HorizontalWrapMode.Overflow;
-        hudText.verticalOverflow = VerticalWrapMode.Overflow;
+        hudText.alignment = TextAlignmentOptions.TopLeft;
+        hudText.enableWordWrapping = false;
+        hudText.overflowMode = TextOverflowModes.Overflow;
         
         // Initial text
         hudText.text = "Speed: 0 km/s (0% lightspeed)\nDistance from Sun: 0 km\nMode: DISTANCE-BASED";
@@ -480,11 +482,11 @@ public class SolarSystemParallaxManager : MonoBehaviour
         textRect.offsetMin = Vector2.zero;
         textRect.offsetMax = Vector2.zero;
         
-        loadingText = textGO.AddComponent<Text>();
-        loadingText.font = labelFont != null ? labelFont : Resources.GetBuiltinResource<Font>("Arial.ttf");
+        loadingText = textGO.AddComponent<TextMeshProUGUI>();
+        if (labelFont != null) loadingText.font = labelFont;
         loadingText.fontSize = 32;
         loadingText.color = new Color(0.8f, 0.9f, 1f, 1f); // Light blue-white
-        loadingText.alignment = TextAnchor.MiddleCenter;
+        loadingText.alignment = TextAlignmentOptions.Center;
         loadingText.text = "Loading Stellar Data...";
         
         // Create progress bar container
@@ -530,11 +532,11 @@ public class SolarSystemParallaxManager : MonoBehaviour
         progressTextRect.offsetMin = Vector2.zero;
         progressTextRect.offsetMax = Vector2.zero;
         
-        progressText = progressTextGO.AddComponent<Text>();
-        progressText.font = labelFont != null ? labelFont : Resources.GetBuiltinResource<Font>("Arial.ttf");
+        progressText = progressTextGO.AddComponent<TextMeshProUGUI>();
+        if (labelFont != null) progressText.font = labelFont;
         progressText.fontSize = 16;
         progressText.color = new Color(0.6f, 0.7f, 0.8f, 0.9f);
-        progressText.alignment = TextAnchor.MiddleCenter;
+        progressText.alignment = TextAlignmentOptions.Center;
         progressText.text = "0% - 0 / 2,400,000 stars";
         
         // Sub-text hint
@@ -546,11 +548,11 @@ public class SolarSystemParallaxManager : MonoBehaviour
         hintRect.offsetMin = Vector2.zero;
         hintRect.offsetMax = Vector2.zero;
         
-        Text hintText = hintGO.AddComponent<Text>();
-        hintText.font = labelFont != null ? labelFont : Resources.GetBuiltinResource<Font>("Arial.ttf");
+        TextMeshProUGUI hintText = hintGO.AddComponent<TextMeshProUGUI>();
+        if (labelFont != null) hintText.font = labelFont;
         hintText.fontSize = 14;
         hintText.color = new Color(0.4f, 0.5f, 0.6f, 0.7f);
-        hintText.alignment = TextAnchor.MiddleCenter;
+        hintText.alignment = TextAlignmentOptions.Center;
         hintText.text = "Processing Gaia GDR1 stellar catalog...";
         
         // Hide HUD during loading
@@ -902,14 +904,15 @@ public class SolarSystemParallaxManager : MonoBehaviour
         rectTransform.sizeDelta = new Vector2(200, 30);
 
         // Add Text component
-        Text textComponent = labelGO.AddComponent<Text>();
+        // Add Text component
+        TextMeshProUGUI textComponent = labelGO.AddComponent<TextMeshProUGUI>();
         textComponent.text = body.name;
-        textComponent.font = labelFont != null ? labelFont : Resources.GetBuiltinResource<Font>("Arial.ttf");
+        if (labelFont != null) textComponent.font = labelFont;
         textComponent.fontSize = labelFontSize;
         textComponent.color = labelColor;
-        textComponent.alignment = TextAnchor.MiddleLeft;
-        textComponent.horizontalOverflow = HorizontalWrapMode.Overflow;
-        textComponent.verticalOverflow = VerticalWrapMode.Overflow;
+        textComponent.alignment = TextAlignmentOptions.Left;
+        textComponent.enableWordWrapping = false;
+        textComponent.overflowMode = TextOverflowModes.Overflow;
 
         // Store references
         body.labelUI = labelGO;
@@ -1740,7 +1743,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         panelRect.anchorMax = new Vector2(0.5f, 0.5f);
         panelRect.pivot = new Vector2(0.5f, 0.5f);
         panelRect.anchoredPosition = Vector2.zero;
-        panelRect.sizeDelta = new Vector2(320, 450);
+        panelRect.sizeDelta = new Vector2(500, 700);
         
         // Add semi-transparent background
         Image panelImage = autopilotUI.AddComponent<Image>();
@@ -1753,15 +1756,15 @@ public class SolarSystemParallaxManager : MonoBehaviour
         titleRect.anchorMin = new Vector2(0, 1);
         titleRect.anchorMax = new Vector2(1, 1);
         titleRect.pivot = new Vector2(0.5f, 1);
-        titleRect.anchoredPosition = new Vector2(0, -10);
-        titleRect.sizeDelta = new Vector2(0, 40);
+        titleRect.anchoredPosition = new Vector2(0, -15);
+        titleRect.sizeDelta = new Vector2(0, 60);
         
-        Text titleText = titleGO.AddComponent<Text>();
+        TextMeshProUGUI titleText = titleGO.AddComponent<TextMeshProUGUI>();
         titleText.text = "AUTOPILOT - Select Destination";
-        titleText.font = labelFont != null ? labelFont : Resources.GetBuiltinResource<Font>("Arial.ttf");
-        titleText.fontSize = 18;
+        if (labelFont != null) titleText.font = labelFont;
+        titleText.fontSize = 32;
         titleText.color = Color.cyan;
-        titleText.alignment = TextAnchor.MiddleCenter;
+        titleText.alignment = TextAlignmentOptions.Center;
         
         // Create scroll view for body list - leave room for scrollbar
         GameObject scrollViewGO = new GameObject("ScrollView");
@@ -1769,8 +1772,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
         RectTransform scrollViewRect = scrollViewGO.AddComponent<RectTransform>();
         scrollViewRect.anchorMin = new Vector2(0, 0);
         scrollViewRect.anchorMax = new Vector2(1, 1);
-        scrollViewRect.offsetMin = new Vector2(10, 60);
-        scrollViewRect.offsetMax = new Vector2(-10, -55);
+        scrollViewRect.offsetMin = new Vector2(15, 80);
+        scrollViewRect.offsetMax = new Vector2(-15, -70);
         
         ScrollRect scroll = scrollViewGO.AddComponent<ScrollRect>();
         scroll.horizontal = false;
@@ -1812,7 +1815,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         scrollbarRect.anchorMax = new Vector2(1, 1);
         scrollbarRect.pivot = new Vector2(1, 0.5f);
         scrollbarRect.anchoredPosition = Vector2.zero;
-        scrollbarRect.sizeDelta = new Vector2(12, 0);
+        scrollbarRect.sizeDelta = new Vector2(20, 0);
         
         Image scrollbarBg = scrollbarGO.AddComponent<Image>();
         scrollbarBg.color = new Color(0.15f, 0.15f, 0.25f, 0.8f);
@@ -1868,8 +1871,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
         }
         
         // Add buttons for main bodies
-        float buttonHeight = 35f;
-        float spacing = 5f;
+        float buttonHeight = 50f;
+        float spacing = 8f;
         int itemIndex = 0;
         
         // Main bodies (Sun, planets)
@@ -1974,12 +1977,12 @@ public class SolarSystemParallaxManager : MonoBehaviour
         textRect.offsetMin = new Vector2(10, 0);
         textRect.offsetMax = Vector2.zero;
         
-        Text btnText = textGO.AddComponent<Text>();
+        TextMeshProUGUI btnText = textGO.AddComponent<TextMeshProUGUI>();
         btnText.text = (isMoon ? "  " : "") + body.name;
-        btnText.font = labelFont != null ? labelFont : Resources.GetBuiltinResource<Font>("Arial.ttf");
-        btnText.fontSize = isMoon ? 14 : 16;
+        if (labelFont != null) btnText.font = labelFont;
+        btnText.fontSize = isMoon ? 20 : 24;
         btnText.color = isMoon ? new Color(0.8f, 0.9f, 1f, 1f) : Color.white;
-        btnText.alignment = TextAnchor.MiddleLeft;
+        btnText.alignment = TextAlignmentOptions.Left;
     }
     
     private void CreateMoonsCategoryButton(GameObject parent, int index, float buttonHeight, float spacing)
@@ -2020,12 +2023,12 @@ public class SolarSystemParallaxManager : MonoBehaviour
         textRect.offsetMin = new Vector2(10, 0);
         textRect.offsetMax = Vector2.zero;
         
-        Text btnText = textGO.AddComponent<Text>();
+        TextMeshProUGUI btnText = textGO.AddComponent<TextMeshProUGUI>();
         btnText.text = "▸ Moons";
-        btnText.font = labelFont != null ? labelFont : Resources.GetBuiltinResource<Font>("Arial.ttf");
-        btnText.fontSize = 16;
+        if (labelFont != null) btnText.font = labelFont;
+        btnText.fontSize = 24;
         btnText.color = new Color(0.9f, 0.8f, 1f, 1f); // Light purple text
-        btnText.alignment = TextAnchor.MiddleLeft;
+        btnText.alignment = TextAlignmentOptions.Left;
     }
     
     private void ToggleMoonsCategory()
@@ -2045,7 +2048,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 {
                     if (child.name == "Moons_Category")
                     {
-                        Text txt = child.GetComponentInChildren<Text>();
+                        TextMeshProUGUI txt = child.GetComponentInChildren<TextMeshProUGUI>();
                         if (txt != null)
                         {
                             txt.text = moonsExpanded ? "▾ Moons" : "▸ Moons";
@@ -2056,8 +2059,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
             }
             
             // Recalculate content size
-            float buttonHeight = 35f;
-            float spacing = 5f;
+            float buttonHeight = 50f;
+            float spacing = 8f;
             
             int mainCount = 0;
             int moonCount = 0;
@@ -2092,8 +2095,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
         cancelRect.anchorMin = new Vector2(0.5f, 0);
         cancelRect.anchorMax = new Vector2(0.5f, 0);
         cancelRect.pivot = new Vector2(0.5f, 0);
-        cancelRect.anchoredPosition = new Vector2(0, 10);
-        cancelRect.sizeDelta = new Vector2(120, 40);
+        cancelRect.anchoredPosition = new Vector2(0, 15);
+        cancelRect.sizeDelta = new Vector2(180, 50);
         
         Image cancelImage = cancelGO.AddComponent<Image>();
         cancelImage.color = new Color(0.5f, 0.2f, 0.2f, 1f);
@@ -2116,12 +2119,12 @@ public class SolarSystemParallaxManager : MonoBehaviour
         cancelTextRect.anchorMax = Vector2.one;
         cancelTextRect.sizeDelta = Vector2.zero;
         
-        Text cancelText = cancelTextGO.AddComponent<Text>();
+        TextMeshProUGUI cancelText = cancelTextGO.AddComponent<TextMeshProUGUI>();
         cancelText.text = "Cancel";
-        cancelText.font = labelFont != null ? labelFont : Resources.GetBuiltinResource<Font>("Arial.ttf");
-        cancelText.fontSize = 16;
+        if (labelFont != null) cancelText.font = labelFont;
+        cancelText.fontSize = 24;
         cancelText.color = Color.white;
-        cancelText.alignment = TextAnchor.MiddleCenter;
+        cancelText.alignment = TextAlignmentOptions.Center;
     }
     
     private void ToggleAutopilotMenu()
@@ -2133,6 +2136,12 @@ public class SolarSystemParallaxManager : MonoBehaviour
             // If autopilot is traveling, pressing X cancels it
             StopAutopilot();
             return;
+        }
+        // Mutual exclusion: Close Planet Info if open
+        if (planetInfoVisible)
+        {
+            planetInfoVisible = false;
+            UpdatePlanetInfoPanelPosition(); // Immediate hide or let update loop handle it
         }
         
         autopilotMenuOpen = !autopilotMenuOpen;
@@ -2344,11 +2353,11 @@ public class SolarSystemParallaxManager : MonoBehaviour
         planetInfoUI.transform.SetParent(labelCanvas.transform, false);
         
         RectTransform panelRect = planetInfoUI.AddComponent<RectTransform>();
-        panelRect.anchorMin = new Vector2(1, 0.5f);
-        panelRect.anchorMax = new Vector2(1, 0.5f);
-        panelRect.pivot = new Vector2(0, 0.5f); // Pivot at left edge for slide-in
-        panelRect.anchoredPosition = new Vector2(400, 0); // Start fully off-screen (past the canvas edge)
-        panelRect.sizeDelta = new Vector2(350, 500);
+        panelRect.anchorMin = new Vector2(0.5f, 0.5f);
+        panelRect.anchorMax = new Vector2(0.5f, 0.5f);
+        panelRect.pivot = new Vector2(0.5f, 0.5f);
+        panelRect.anchoredPosition = new Vector2(0, -1200); // Start off-screen (bottom)
+        panelRect.sizeDelta = new Vector2(600, 800);
         
         // Add gradient-like background (semi-transparent dark blue/purple)
         Image panelImage = planetInfoUI.AddComponent<Image>();
@@ -2376,13 +2385,13 @@ public class SolarSystemParallaxManager : MonoBehaviour
         headerRect.anchoredPosition = new Vector2(0, -15);
         headerRect.sizeDelta = new Vector2(-30, 50);
         
-        planetInfoNameText = headerGO.AddComponent<Text>();
+        planetInfoNameText = headerGO.AddComponent<TextMeshProUGUI>();
         planetInfoNameText.text = "PLANET INFO";
-        planetInfoNameText.font = labelFont != null ? labelFont : Resources.GetBuiltinResource<Font>("Arial.ttf");
-        planetInfoNameText.fontSize = 28;
-        planetInfoNameText.fontStyle = FontStyle.Bold;
+        if (labelFont != null) planetInfoNameText.font = labelFont;
+        planetInfoNameText.fontSize = 42;
+        planetInfoNameText.fontStyle = FontStyles.Bold;
         planetInfoNameText.color = new Color(0.3f, 0.9f, 1f, 1f); // Bright cyan
-        planetInfoNameText.alignment = TextAnchor.MiddleCenter;
+        planetInfoNameText.alignment = TextAlignmentOptions.Center;
         
         // Create data content section
         GameObject contentGO = new GameObject("Content");
@@ -2393,13 +2402,13 @@ public class SolarSystemParallaxManager : MonoBehaviour
         contentRect.offsetMin = new Vector2(20, 50);
         contentRect.offsetMax = new Vector2(-15, -75);
         
-        planetInfoDataText = contentGO.AddComponent<Text>();
+        planetInfoDataText = contentGO.AddComponent<TextMeshProUGUI>();
         planetInfoDataText.text = "";
-        planetInfoDataText.font = labelFont != null ? labelFont : Resources.GetBuiltinResource<Font>("Arial.ttf");
-        planetInfoDataText.fontSize = 16;
+        if (labelFont != null) planetInfoDataText.font = labelFont;
+        planetInfoDataText.fontSize = 24;
         planetInfoDataText.color = new Color(0.85f, 0.9f, 1f, 1f); // Soft white-blue
-        planetInfoDataText.alignment = TextAnchor.UpperLeft;
-        planetInfoDataText.lineSpacing = 1.3f;
+        planetInfoDataText.alignment = TextAlignmentOptions.TopLeft;
+
         
         // Add close hint at bottom
         GameObject hintGO = new GameObject("CloseHint");
@@ -2411,13 +2420,13 @@ public class SolarSystemParallaxManager : MonoBehaviour
         hintRect.anchoredPosition = new Vector2(0, 15);
         hintRect.sizeDelta = new Vector2(0, 30);
         
-        Text hintText = hintGO.AddComponent<Text>();
+        TextMeshProUGUI hintText = hintGO.AddComponent<TextMeshProUGUI>();
         hintText.text = "Press I to close";
-        hintText.font = labelFont != null ? labelFont : Resources.GetBuiltinResource<Font>("Arial.ttf");
+        if (labelFont != null) hintText.font = labelFont;
         hintText.fontSize = 14;
-        hintText.fontStyle = FontStyle.Italic;
+        hintText.fontStyle = FontStyles.Italic;
         hintText.color = new Color(0.5f, 0.6f, 0.7f, 0.8f);
-        hintText.alignment = TextAnchor.MiddleCenter;
+        hintText.alignment = TextAlignmentOptions.Center;
         
         // Start hidden (off-screen)
         planetInfoAnimProgress = 0f;
@@ -2428,12 +2437,19 @@ public class SolarSystemParallaxManager : MonoBehaviour
     
     private void TogglePlanetInfo()
     {
-        if (autopilotMenuOpen) return; // Don't open while autopilot menu is open
-        
+        // Mutual exclusion: Close Autopilot Menu if open
+        if (autopilotMenuOpen)
+        {
+            autopilotMenuOpen = false;
+            if (autopilotUI != null) autopilotUI.SetActive(false);
+            IsMenuOpen = false;
+        }
+
         planetInfoVisible = !planetInfoVisible;
         
         if (planetInfoVisible && nearestPlanet != null)
         {
+            if (planetInfoUI != null) planetInfoUI.SetActive(true);
             PopulatePlanetInfo(nearestPlanet);
             Debug.Log($"Showing planet info for: {nearestPlanet.name}");
         }
@@ -2476,6 +2492,13 @@ public class SolarSystemParallaxManager : MonoBehaviour
         planetInfoAnimProgress = Mathf.MoveTowards(planetInfoAnimProgress, targetProgress, Time.deltaTime * PLANET_INFO_ANIM_SPEED);
         
         UpdatePlanetInfoPanelPosition();
+        
+        // Hide GameObject if fully closed
+        if (!planetInfoVisible && planetInfoAnimProgress <= 0.01f)
+        {
+            if (planetInfoUI.activeSelf) 
+                planetInfoUI.SetActive(false);
+        }
     }
     
     private void UpdatePlanetInfoPanelPosition()
@@ -2488,9 +2511,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
             // Smooth easing curve
             float easedProgress = 1f - Mathf.Pow(1f - planetInfoAnimProgress, 3f);
             
-            // Slide in from right: 400 (fully off-screen) to -370 (visible with margin)
-            float xPos = Mathf.Lerp(500, -370, easedProgress);
-            panelRect.anchoredPosition = new Vector2(xPos, 0);
+            // Slide in from bottom: -1200 (off-screen) to 0 (center)
+            float yPos = Mathf.Lerp(-1200, 0, easedProgress);
+            panelRect.anchoredPosition = new Vector2(0, yPos);
         }
     }
 }
