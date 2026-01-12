@@ -12,8 +12,11 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [Tooltip("File name inside StreamingAssets/PlanetDatasetPlus")]
     [SerializeField] private string csvFileName = "solar_dataset_plus.csv";
     
-    [Tooltip("Planet materials CSV file inside StreamingAssets")]
-    [SerializeField] private string planetMaterialsCsvFileName = "planet_materials.csv";
+    [Tooltip("Planet materials JSON file inside StreamingAssets")]
+    [SerializeField] private string planetMaterialsJsonFileName = "planet_materials.json";
+    
+    [Tooltip("Object names JSON file inside StreamingAssets/PlanetDatasetPlus")]
+    [SerializeField] private string objectNamesJsonFileName = "stellar_object_names.json";
 
     [Header("Horizon bubble")]
     [Tooltip("Radius of the virtual horizon sphere (Unity units)")]
@@ -168,6 +171,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
         public string SurfaceFeatures;
         public string Composition;
     }
+    
+    // NAIF ID to name mapping loaded from JSON
+    private Dictionary<int, string> naifIdToName = new Dictionary<int, string>();
 
     // Radii for main bodies (km), keyed by NAIF ID used in your file
     private static readonly Dictionary<int, float> BodyRadiiKm = new Dictionary<int, float>
@@ -220,6 +226,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         CreateHorizonSphere();
         SetupLabelCanvas();
         CreateHUD();
+        LoadObjectNamesFromJson();
         LoadPlanetMaterials();
         LoadBodiesFromCsv();
         if (bodies.Count == 0)
@@ -920,38 +927,78 @@ public class SolarSystemParallaxManager : MonoBehaviour
         return float.Parse(s, CultureInfo.InvariantCulture);
     }
 
+    private void LoadObjectNamesFromJson()
+    {
+        string jsonPath = Path.Combine(Application.streamingAssetsPath, "PlanetDatasetPlus", objectNamesJsonFileName);
+        
+        if (!File.Exists(jsonPath))
+        {
+            Debug.LogWarning($"Object names JSON not found at {jsonPath}. Using fallback names.");
+            return;
+        }
+        
+        try
+        {
+            string jsonText = File.ReadAllText(jsonPath);
+            
+            // Parse JSON manually (Unity's JsonUtility doesn't support dictionaries directly)
+            // Simple JSON parser for string:string dictionary
+            jsonText = jsonText.Trim();
+            if (jsonText.StartsWith("{") && jsonText.EndsWith("}"))
+            {
+                jsonText = jsonText.Substring(1, jsonText.Length - 2); // Remove outer braces
+                string[] entries = jsonText.Split(',');
+                
+                foreach (string entry in entries)
+                {
+                    string trimmedEntry = entry.Trim();
+                    if (string.IsNullOrEmpty(trimmedEntry)) continue;
+                    
+                    // Split by first colon
+                    int colonIndex = trimmedEntry.IndexOf(':');
+                    if (colonIndex < 0) continue;
+                    
+                    string keyPart = trimmedEntry.Substring(0, colonIndex).Trim();
+                    string valuePart = trimmedEntry.Substring(colonIndex + 1).Trim();
+                    
+                    // Remove quotes
+                    keyPart = keyPart.Trim('"');
+                    valuePart = valuePart.Trim('"');
+                    
+                    // Parse key as int
+                    if (int.TryParse(keyPart, out int naifId))
+                    {
+                        naifIdToName[naifId] = valuePart;
+                    }
+                    else if (long.TryParse(keyPart, out long naifIdLong))
+                    {
+                        // Handle very large IDs (like Gaia source IDs) as int if possible
+                        if (naifIdLong <= int.MaxValue && naifIdLong >= int.MinValue)
+                        {
+                            naifIdToName[(int)naifIdLong] = valuePart;
+                        }
+                    }
+                }
+            }
+            
+            Debug.Log($"Loaded {naifIdToName.Count} object names from {objectNamesJsonFileName}");
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"Failed to load object names from JSON: {e.Message}");
+        }
+    }
+    
     private string GetBodyName(int naifId, string objectType)
     {
-        // Map NAIF IDs to common names
-        switch (naifId)
+        // First check if we have a name in the loaded JSON mapping
+        if (naifIdToName.ContainsKey(naifId))
         {
-            case 10: return "Sun";
-            case 199: return "Mercury";
-            case 299: return "Venus";
-            case 399: return "Earth";
-            case 301: return "Moon";
-            case 401: return "Phobos";
-            case 402: return "Deimos";
-            case 499: return "Mars";
-            case 501: return "Io";
-            case 502: return "Europa";
-            case 503: return "Ganymede";
-            case 504: return "Callisto";
-            case 599: return "Jupiter";
-            case 601: return "Mimas";
-            case 602: return "Enceladus";
-            case 603: return "Tethys";
-            case 604: return "Dione";
-            case 605: return "Rhea";
-            case 606: return "Titan";
-            case 699: return "Saturn";
-            case 799: return "Uranus";
-            case 899: return "Neptune";
-            case 999: return "Pluto";
-            default:
-                // For unknown IDs, use the object type and ID
-                return $"{objectType} {naifId}";
+            return naifIdToName[naifId];
         }
+        
+        // Fallback for unknown IDs
+        return $"{objectType} {naifId}";
     }
 
     private string CleanBodyName(string rawName)
@@ -1159,54 +1206,66 @@ public class SolarSystemParallaxManager : MonoBehaviour
     
     private void LoadPlanetMaterials()
     {
-        string path = Path.Combine(Application.streamingAssetsPath, planetMaterialsCsvFileName);
+        string path = Path.Combine(Application.streamingAssetsPath, planetMaterialsJsonFileName);
         if (!File.Exists(path))
         {
-            Debug.LogWarning($"Planet materials CSV not found at {path}. Using default materials.");
+            Debug.LogWarning($"Planet materials JSON not found at {path}. Using default materials.");
             return;
         }
         
         try
         {
-            var lines = File.ReadAllLines(path);
-            if (lines.Length <= 1)
-            {
-                Debug.LogWarning("Planet materials CSV seems empty or header-only.");
-                return;
-            }
+            string jsonText = File.ReadAllText(path);
             
-            for (int i = 1; i < lines.Length; i++)
+            // Parse JSON manually (Unity's JsonUtility doesn't support dictionaries directly)
+            jsonText = jsonText.Trim();
+            if (jsonText.StartsWith("{") && jsonText.EndsWith("}"))
             {
-                string line = lines[i].Trim();
-                if (string.IsNullOrEmpty(line)) continue;
+                jsonText = jsonText.Substring(1, jsonText.Length - 2); // Remove outer braces
+                string[] entries = jsonText.Split(',');
                 
-                string[] parts = line.Split(',');
-                if (parts.Length < 2) continue;
-                
-                if (int.TryParse(parts[0], out int naifId))
+                foreach (string entry in entries)
                 {
-                    string materialPath = parts[1].Trim();
+                    string trimmedEntry = entry.Trim();
+                    if (string.IsNullOrEmpty(trimmedEntry)) continue;
                     
-                    // Load material from asset path (works in editor and build)
-                    Material material = null;
+                    // Split by first colon
+                    int colonIndex = trimmedEntry.IndexOf(':');
+                    if (colonIndex < 0) continue;
                     
+                    string keyPart = trimmedEntry.Substring(0, colonIndex).Trim();
+                    string valuePart = trimmedEntry.Substring(colonIndex + 1).Trim();
+                    
+                    // Remove quotes
+                    keyPart = keyPart.Trim('"');
+                    valuePart = valuePart.Trim('"');
+                    
+                    // Parse key as int
+                    if (int.TryParse(keyPart, out int naifId))
+                    {
+                        string materialPath = valuePart;
+                        
+                        // Load material from asset path (works in editor and build)
+                        Material material = null;
+                        
 #if UNITY_EDITOR
-                    // In editor, use AssetDatabase
-                    material = UnityEditor.AssetDatabase.LoadAssetAtPath<Material>(materialPath);
+                        // In editor, use AssetDatabase
+                        material = UnityEditor.AssetDatabase.LoadAssetAtPath<Material>(materialPath);
 #else
-                    // In build, try to find material by converting path to Resources path
-                    string resourcesPath = materialPath.Replace("Assets/", "").Replace(".mat", "");
-                    material = Resources.Load<Material>(resourcesPath);
+                        // In build, try to find material by converting path to Resources path
+                        string resourcesPath = materialPath.Replace("Assets/", "").Replace(".mat", "");
+                        material = Resources.Load<Material>(resourcesPath);
 #endif
-                    
-                    if (material != null)
-                    {
-                        planetMaterials[naifId] = material;
-                        Debug.Log($"Loaded material for NAIF ID {naifId}: {materialPath}");
-                    }
-                    else
-                    {
-                        Debug.LogWarning($"Could not load material at path: {materialPath} for NAIF ID {naifId}");
+                        
+                        if (material != null)
+                        {
+                            planetMaterials[naifId] = material;
+                            Debug.Log($"Loaded material for NAIF ID {naifId}: {materialPath}");
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"Could not load material at path: {materialPath} for NAIF ID {naifId}");
+                        }
                     }
                 }
             }
@@ -1215,7 +1274,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         }
         catch (System.Exception e)
         {
-            Debug.LogError($"Error loading planet materials CSV: {e.Message}");
+            Debug.LogError($"Error loading planet materials JSON: {e.Message}");
         }
     }
 
