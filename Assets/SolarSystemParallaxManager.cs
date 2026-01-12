@@ -9,14 +9,11 @@ using UnityEngine.UI;
 public class SolarSystemParallaxManager : MonoBehaviour
 {
     [Header("CSV")]
-    [Tooltip("File name inside StreamingAssets")]
-    [SerializeField] private string csvFileName = "solar_system_positions_with_velocity.csv";
+    [Tooltip("File name inside StreamingAssets/PlanetDatasetPlus")]
+    [SerializeField] private string csvFileName = "solar_dataset_plus.csv";
     
     [Tooltip("Planet materials CSV file inside StreamingAssets")]
     [SerializeField] private string planetMaterialsCsvFileName = "planet_materials.csv";
-
-    [Tooltip("We use a single snapshot for this date (YYYY-MM-DD).")]
-    [SerializeField] private string targetDate = "2023-07-10";
 
     [Header("Horizon bubble")]
     [Tooltip("Radius of the virtual horizon sphere (Unity units)")]
@@ -77,6 +74,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private const double AU_KM = 149_597_870.7;
     private const double SPEED_OF_LIGHT_KM_S = 299_792_458.0; // km/s (exact value)
     private const double LIGHTYEAR_KM = 9_460_730_472_580.8; // km in 1 lightyear
+    private const float PARSEC_TO_AU = 206264.806f;  // 1 parsec = 206,264.806 AU
 
     [System.NonSerialized]
     public Vector3 playerRealPosAu; // player position in AU (real space) - public for StellarParallaxManager
@@ -226,7 +224,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         LoadBodiesFromCsv();
         if (bodies.Count == 0)
         {
-            Debug.LogWarning("No bodies loaded for date " + targetDate);
+            Debug.LogWarning("No bodies loaded from dataset");
         }
         
         LoadPlanetInfoData();
@@ -722,59 +720,109 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
     private void LoadBodiesFromCsv()
     {
-        string path = Path.Combine(Application.streamingAssetsPath, csvFileName);
+        bool earthFound = false;
+        
+        // Load solar system dataset
+        earthFound = LoadBodiesFromFile("solar_dataset_plus.csv", earthFound) || earthFound;
+        
+        // Load Alpha Centauri system dataset
+        LoadBodiesFromFile("centauri_system.csv", earthFound);
+        
+        if (!earthFound)
+        {
+            Debug.LogWarning("Earth (naifId 399) not found in dataset. Player starts at origin in real space.");
+            playerRealPosAu = Vector3.zero;
+        }
+    }
+    
+    private bool LoadBodiesFromFile(string fileName, bool earthFound)
+    {
+        string path = Path.Combine(Application.streamingAssetsPath, "PlanetDatasetPlus", fileName);
         if (!File.Exists(path))
         {
-            Debug.LogError("CSV not found at " + path);
-            return;
+            Debug.LogWarning($"CSV not found at {path}");
+            return earthFound;
         }
 
         var lines = File.ReadAllLines(path);
         if (lines.Length <= 1)
         {
-            Debug.LogError("CSV seems empty or header-only.");
-            return;
+            Debug.LogWarning($"CSV {fileName} seems empty or header-only.");
+            return earthFound;
         }
+        
+        Debug.Log($"Loading {fileName}: {lines.Length - 1} entries");
+        bool localEarthFound = earthFound;
 
-        bool earthFound = false;
-
+        // Parse new Gaia-format CSV: source_id,object_type,ra_deg,dec_deg,parallax_mas,distance_pc,phot_g_mean_mag,abs_mag_g,size_km,vx_au_d,vy_au_d,vz_au_d,speed_km_s,gm_km3_s2,mass_kg,density_g_cm3,mean_radius_km,albedo,rot_per_hr,H
         for (int i = 1; i < lines.Length; i++)
         {
             string line = lines[i].Trim();
             if (string.IsNullOrEmpty(line)) continue;
 
             string[] parts = line.Split(',');
-            if (parts.Length < 9) continue;
+            if (parts.Length < 17) continue; // Need at least up to mean_radius_km
 
-            string dateStr = parts[0];
-            if (dateStr != targetDate) continue; // only our snapshot day
-
-            string rawName = parts[1];
-            if (!int.TryParse(parts[2], out int naifId)) continue;
+            // Parse fields from new format
+            if (!int.TryParse(parts[0], out int naifId)) continue; // source_id is the NAIF ID
             
-            // Clean up the name by removing NAIF ID prefix and extra words
-            string name = CleanBodyName(rawName);
-
-            // We keep:
-            // - Sun (10)
-            // - Everything with ID >= 100 (planets, moons, some satellites)
-            // - Plus barycenter giants with IDs 1..9 if they have a radius defined
-            bool keep =
-                naifId == 10 ||
-                naifId >= 100 ||
-                BodyRadiiKm.ContainsKey(naifId);
-
-            if (!keep)
-                continue;
-
-            float xAu = ParseFloat(parts[3]);
-            float yAu = ParseFloat(parts[4]);
-            float zAu = ParseFloat(parts[5]);
-
-            Vector3 realPosAu = new Vector3(xAu, yAu, zAu);
-
-            // Radius look-up; fallback if not known
-            float radiusKm = BodyRadiiKm.TryGetValue(naifId, out float r) ? r : 1_000f;
+            string objectType = parts[1]; // object_type (sun, planet, moon, dwarf_planet, star)
+            
+            // Parse RA, Dec, Distance in parsecs
+            float ra_deg = 0, dec_deg = 0, distance_pc = 0;
+            bool hasPosition = true;
+            
+            if (!string.IsNullOrEmpty(parts[2]) && !float.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out ra_deg))
+                hasPosition = false;
+            if (!string.IsNullOrEmpty(parts[3]) && !float.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out dec_deg))
+                hasPosition = false;
+            if (!string.IsNullOrEmpty(parts[5]) && !float.TryParse(parts[5], NumberStyles.Float, CultureInfo.InvariantCulture, out distance_pc))
+                hasPosition = false;
+            
+            // For the Sun or bodies with empty position data, set to origin
+            Vector3 realPosAu;
+            if (naifId == 10 || !hasPosition) // Sun or invalid position
+            {
+                realPosAu = Vector3.zero;
+            }
+            else
+            {
+                // Convert RA/Dec/Distance from parsecs to Cartesian AU coordinates
+                float ra_rad = ra_deg * Mathf.Deg2Rad;
+                float dec_rad = dec_deg * Mathf.Deg2Rad;
+                
+                float cos_dec = Mathf.Cos(dec_rad);
+                float distance_au = distance_pc * PARSEC_TO_AU;
+                
+                float x = distance_au * cos_dec * Mathf.Cos(ra_rad);
+                float y = distance_au * Mathf.Sin(dec_rad);
+                float z = distance_au * cos_dec * Mathf.Sin(ra_rad);
+                
+                realPosAu = new Vector3(x, y, z);
+            }
+            
+            // Parse mean radius (field index 16)
+            float radiusKm = 1000f; // default fallback
+            if (parts.Length > 16 && !string.IsNullOrEmpty(parts[16]))
+            {
+                if (float.TryParse(parts[16], NumberStyles.Float, CultureInfo.InvariantCulture, out float radius))
+                {
+                    radiusKm = radius;
+                }
+                else
+                {
+                    // Fallback to BodyRadiiKm dictionary if parsing fails
+                    radiusKm = BodyRadiiKm.TryGetValue(naifId, out float r) ? r : 1_000f;
+                }
+            }
+            else
+            {
+                // Fallback to BodyRadiiKm dictionary if field is empty
+                radiusKm = BodyRadiiKm.TryGetValue(naifId, out float r) ? r : 1_000f;
+            }
+            
+            // Create name from NAIF ID
+            string name = GetBodyName(naifId, objectType);
 
             // Create proxy sphere
             GameObject proxy;
@@ -824,21 +872,17 @@ public class SolarSystemParallaxManager : MonoBehaviour
             bodies.Add(body);
 
             // Player positioned in front of Earth for good viewing
-            if (naifId == 399 && !earthFound)
+            if (naifId == 399 && !localEarthFound)
             {
                 // Position player at a good distance in front of Earth for viewing
                 Vector3 earthOffset = new Vector3(0, 0, -0.1f); // 0.1 AU in front of Earth along -Z axis
                 playerRealPosAu = realPosAu + earthOffset;
-                earthFound = true;
+                localEarthFound = true;
                 Debug.Log($"Player positioned in front of Earth at: {playerRealPosAu} AU");
             }
         }
 
-        if (!earthFound)
-        {
-            Debug.LogWarning("Earth (naifId 399) not found on " + targetDate + ". Player starts at origin in real space.");
-            playerRealPosAu = Vector3.zero;
-        }
+        return localEarthFound;
     }
 
     private void CreateLabelForBody(BodyInstance body)
@@ -874,6 +918,40 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private float ParseFloat(string s)
     {
         return float.Parse(s, CultureInfo.InvariantCulture);
+    }
+
+    private string GetBodyName(int naifId, string objectType)
+    {
+        // Map NAIF IDs to common names
+        switch (naifId)
+        {
+            case 10: return "Sun";
+            case 199: return "Mercury";
+            case 299: return "Venus";
+            case 399: return "Earth";
+            case 301: return "Moon";
+            case 401: return "Phobos";
+            case 402: return "Deimos";
+            case 499: return "Mars";
+            case 501: return "Io";
+            case 502: return "Europa";
+            case 503: return "Ganymede";
+            case 504: return "Callisto";
+            case 599: return "Jupiter";
+            case 601: return "Mimas";
+            case 602: return "Enceladus";
+            case 603: return "Tethys";
+            case 604: return "Dione";
+            case 605: return "Rhea";
+            case 606: return "Titan";
+            case 699: return "Saturn";
+            case 799: return "Uranus";
+            case 899: return "Neptune";
+            case 999: return "Pluto";
+            default:
+                // For unknown IDs, use the object type and ID
+                return $"{objectType} {naifId}";
+        }
     }
 
     private string CleanBodyName(string rawName)
