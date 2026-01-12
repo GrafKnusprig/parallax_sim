@@ -66,6 +66,10 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [SerializeField] private Color hudColor = Color.cyan;
     [SerializeField] private Vector2 hudPosition = new Vector2(20f, -20f); // offset from top-left corner
     
+    [Header("VR Mode")]
+    [Tooltip("Enable VR mode for headset display. When disabled, uses standard screen with mouse support.")]
+    [SerializeField] private bool enableVRMode = false;
+    
     [Header("Loading Screen")]
     [Tooltip("Show loading screen while stellar data is being loaded")]
     [SerializeField] private bool enableLoadingScreen = true;
@@ -129,6 +133,10 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private float loadingFadeProgress = 0f;
     private const float LOADING_FADE_SPEED = 2f;
     private const int ESTIMATED_TOTAL_STARS = 2400000; // Approximate total stars in GDR1 dataset
+    
+    // VR/Desktop adaptive mode
+    private bool isVRMode = false;
+    private bool wasVRMode = false; // Track if mode changed
 
     private class BodyInstance
     {
@@ -246,24 +254,42 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
     private void SetupLabelCanvas()
     {
+        // Use manual VR mode setting from Inspector
+        isVRMode = enableVRMode;
+        wasVRMode = isVRMode;
+        Debug.Log($"VR Mode enabled: {isVRMode}");
+        
         if (enableLabels && labelCanvas == null)
         {
             // Create a Canvas for labels if one isn't assigned
             GameObject canvasGO = new GameObject("LabelCanvas");
-            canvasGO.transform.SetParent(transform, false);
-            
             Canvas canvas = canvasGO.AddComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            canvas.sortingOrder = 100;
             
-            CanvasScaler scaler = canvasGO.AddComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1920, 1080);
+            // Configure based on VR mode
+            if (isVRMode)
+            {
+                ConfigureCanvasForVR(canvas);
+            }
+            else
+            {
+                ConfigureCanvasForDesktop(canvas);
+            }
             
             canvasGO.AddComponent<GraphicRaycaster>();
-            
             labelCanvas = canvas;
-            Debug.Log("Created automatic label canvas");
+            Debug.Log($"Created automatic label canvas ({(isVRMode ? "World Space for VR" : "Screen Space for Desktop")})");
+        }
+        else if (labelCanvas != null)
+        {
+            // Configure existing canvas based on VR mode
+            if (isVRMode)
+            {
+                ConfigureCanvasForVR(labelCanvas);
+            }
+            else
+            {
+                ConfigureCanvasForDesktop(labelCanvas);
+            }
         }
         
         // Ensure EventSystem exists for UI interaction
@@ -274,6 +300,50 @@ public class SolarSystemParallaxManager : MonoBehaviour
             eventSystemGO.AddComponent<UnityEngine.InputSystem.UI.InputSystemUIInputModule>();
             Debug.Log("Created EventSystem for UI interaction");
         }
+    }
+    
+    private void ConfigureCanvasForVR(Canvas canvas)
+    {
+        canvas.renderMode = RenderMode.WorldSpace;
+        canvas.sortingOrder = 100;
+        
+        RectTransform canvasRect = canvas.GetComponent<RectTransform>();
+        if (canvasRect != null)
+        {
+            canvasRect.sizeDelta = new Vector2(1920, 1080);
+        }
+        
+        // Scale down for world space (2 meters wide approximately)
+        canvas.transform.localScale = Vector3.one * 0.001f;
+        
+        CanvasScaler scaler = canvas.GetComponent<CanvasScaler>();
+        if (scaler == null)
+        {
+            scaler = canvas.gameObject.AddComponent<CanvasScaler>();
+        }
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
+        scaler.dynamicPixelsPerUnit = 10f;
+        
+        Debug.Log("Canvas configured for VR (World Space)");
+    }
+    
+    private void ConfigureCanvasForDesktop(Canvas canvas)
+    {
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 100;
+        
+        // Reset scale for screen space
+        canvas.transform.localScale = Vector3.one;
+        
+        CanvasScaler scaler = canvas.GetComponent<CanvasScaler>();
+        if (scaler == null)
+        {
+            scaler = canvas.gameObject.AddComponent<CanvasScaler>();
+        }
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1920, 1080);
+        
+        Debug.Log("Canvas configured for Desktop (Screen Space Overlay)");
     }
     
     private void CreateHUD()
@@ -350,6 +420,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
             UpdatePlayerMovement();
         }
         
+        UpdateVRCanvas();
         UpdateBodyProxies();
         UpdatePlanetInfoPanel();
         
@@ -585,6 +656,41 @@ public class SolarSystemParallaxManager : MonoBehaviour
             {
                 progressBarFill.color = new Color(0.3f * pulse, 0.6f * pulse, 1f, 1f);
             }
+        }
+    }
+    
+    /// <summary>
+    /// Updates the World Space canvas position to follow the VR camera.
+    /// This ensures UI elements are visible in VR headsets.
+    /// Only runs when in VR mode - desktop mode uses Screen Space Overlay.
+    /// </summary>
+    private void UpdateVRCanvas()
+    {
+        // Only update canvas position in VR mode
+        // In desktop mode, Screen Space Overlay handles positioning automatically
+        if (!isVRMode) return;
+        
+        if (labelCanvas == null) return;
+        
+        Camera cam = GetActiveCamera();
+        if (cam == null) return;
+        
+        // Position the canvas in front of the camera
+        // Distance of 2 meters is comfortable for VR viewing
+        float canvasDistance = 2f;
+        
+        Transform canvasTransform = labelCanvas.transform;
+        
+        // Position canvas in front of camera
+        canvasTransform.position = cam.transform.position + cam.transform.forward * canvasDistance;
+        
+        // Make canvas face the camera
+        canvasTransform.rotation = cam.transform.rotation;
+        
+        // Assign the world camera for proper raycasting in VR
+        if (labelCanvas.worldCamera != cam)
+        {
+            labelCanvas.worldCamera = cam;
         }
     }
 
@@ -1408,21 +1514,31 @@ public class SolarSystemParallaxManager : MonoBehaviour
             // --- UI label position calculation ---
             if (enableLabels && body.labelUI != null && cam != null && canvasRect != null)
             {
-                // Convert world position to screen position
-                Vector3 screenPos = cam.WorldToScreenPoint(body.proxy.position);
+                // Convert world position to viewport position (0-1 range, works better for VR)
+                Vector3 viewportPos = cam.WorldToViewportPoint(body.proxy.position);
                 
-                // Check if object is in front of camera and on screen
-                bool isVisible = screenPos.z > 0 && 
-                               screenPos.x >= 0 && screenPos.x <= Screen.width &&
-                               screenPos.y >= 0 && screenPos.y <= Screen.height;
+                // Check if object is in front of camera and within view (using viewport 0-1 range)
+                bool isVisible = viewportPos.z > 0 && 
+                               viewportPos.x >= 0 && viewportPos.x <= 1 &&
+                               viewportPos.y >= 0 && viewportPos.y <= 1;
                 
                 if (isVisible)
                 {
                     RectTransform labelRect = body.labelUI.GetComponent<RectTransform>();
                     
+                    // Convert viewport to screen position for the canvas calculation
+                    Vector3 screenPos = new Vector3(
+                        viewportPos.x * Screen.width,
+                        viewportPos.y * Screen.height,
+                        viewportPos.z);
+                    
+                    // For Screen Space Overlay (desktop), use null camera
+                    // For World Space (VR), use the active camera
+                    Camera canvasCam = isVRMode ? labelCanvas.worldCamera : null;
+                    
                     Vector2 canvasPos;
                     RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                        canvasRect, screenPos, labelCanvas.worldCamera, out canvasPos);
+                        canvasRect, screenPos, canvasCam, out canvasPos);
                     
                     // Add offset to position label to the right of the planet
                     canvasPos.x += labelOffsetPixels;
