@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -30,7 +31,6 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
     [Header("Planets / Bodies")]
     [SerializeField] private Material planetMaterial;
-    [SerializeField] private Material asteroidMaterial;
     [Tooltip("Minimum planet proxy radius (Unity units)")]
     [SerializeField] private float minProxyRadius = 1f;
     [Tooltip("Maximum planet proxy radius (Unity units)")]
@@ -39,6 +39,17 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [Tooltip("Higher = more detailed (0-4 recommended)")]
     [SerializeField] private int sphereSubdivisions = 3;  // Higher = more detailed (0-4 recommended)
 
+    [Header("Asteroids")]
+    [SerializeField] private bool enableAsteroids = true;
+    [SerializeField] private Material asteroidMaterial;
+    [Tooltip("Base size for all asteroids (Unity units)")]
+    [SerializeField] private float baseAsteroidSize = 0.08f;
+    [SerializeField] private Color asteroidColor = new Color(1f, 0.4f, 0.2f);
+    [Tooltip("Overall brightness for all asteroids (0-5x)")]
+    [SerializeField] private float asteroidBrightness = 1.2f;
+    [Tooltip("Maximum asteroids to render per frame (count)")]
+    [SerializeField] private int maxAsteroidsPerFrame = 100000;
+    
     [Header("Player (real space)")]
     
     [Header("Camera")]
@@ -88,6 +99,23 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
     private readonly List<BodyInstance> bodies = new List<BodyInstance>();
     
+    // Asteroid data
+    private struct AsteroidData
+    {
+        public Vector3 positionAU;  // 3D position in AU (solar system coordinates)
+        public float distance;      // Distance from Sun in AU
+        public float magnitude;     // H magnitude for brightness
+        public int originalIndex;   // Original index for debugging
+    }
+    
+    private List<AsteroidData> allAsteroids = new List<AsteroidData>();
+    private List<AsteroidData> visibleAsteroids = new List<AsteroidData>();
+    private Vector3[] asteroidPositions;
+    private Matrix4x4[] asteroidMatrices;
+    private MaterialPropertyBlock asteroidPropertyBlock;
+    private Mesh asteroidMesh;
+    private bool asteroidsLoaded = false;
+    
     // Dynamic scaling and speed
     private BodyInstance nearestPlanet;
     private float currentScale;
@@ -96,7 +124,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private float distanceToNearestPlanet;
     
     // Planet-specific materials
-    private Dictionary<int, Material> planetMaterials = new Dictionary<int, Material>();
+    private Dictionary<long, Material> planetMaterials = new Dictionary<long, Material>();
     
     // HUD elements
     private GameObject hudUI;
@@ -144,7 +172,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private class BodyInstance
     {
         public string name;
-        public int naifId;
+        public long naifId;
         public string objectType; // sun, planet, moon, dwarf_planet, star, asteroid
         public Vector3 realPosAu;
         public float radiusKm;
@@ -176,10 +204,10 @@ public class SolarSystemParallaxManager : MonoBehaviour
     }
     
     // NAIF ID to name mapping loaded from JSON
-    private Dictionary<int, string> naifIdToName = new Dictionary<int, string>();
+    private Dictionary<long, string> naifIdToName = new Dictionary<long, string>();
 
     // Radii for main bodies (km), keyed by NAIF ID used in your file
-    private static readonly Dictionary<int, float> BodyRadiiKm = new Dictionary<int, float>
+    private static readonly Dictionary<long, float> BodyRadiiKm = new Dictionary<long, float>
     {
         { 10, 696_340f },   // SUN
 
@@ -241,6 +269,13 @@ public class SolarSystemParallaxManager : MonoBehaviour
         CreateAutopilotMenu();
         CreatePlanetInfoPanel();
         CreateLoadingScreen();
+        
+        // Initialize asteroid rendering
+        if (asteroidPropertyBlock == null)
+            asteroidPropertyBlock = new MaterialPropertyBlock();
+        InitializeAsteroidMesh();
+        if (enableAsteroids)
+            StartCoroutine(LoadAsteroidDataAsync());
         
         // Initialize dynamic behavior
         currentScale = 1f; // Use hardcoded base scale
@@ -434,6 +469,14 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         UpdateBodyProxies();
         UpdatePlanetInfoPanel();
+        
+        // Update and render asteroids
+        if (asteroidsLoaded && enableAsteroids)
+        {
+            UpdateVisibleAsteroids();
+            UpdateAsteroidRendering();
+            RenderAsteroids();
+        }
         
         // Notify stellar manager of position change
         if (stellarManager != null)
@@ -775,7 +818,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
             if (parts.Length < 17) continue; // Need at least up to mean_radius_km
 
             // Parse fields from new format
-            if (!int.TryParse(parts[0], out int naifId)) continue; // source_id is the NAIF ID
+            if (!long.TryParse(parts[0], out long naifId)) continue; // source_id is the NAIF ID
             
             string objectType = parts[1]; // object_type (sun, planet, moon, dwarf_planet, star)
             
@@ -856,18 +899,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
             var renderer = proxy.GetComponent<MeshRenderer>();
             if (renderer != null)
             {
-                Material materialToUse;
-                
-                // Use asteroid material for asteroids
-                if (objectType == "asteroid")
-                {
-                    materialToUse = asteroidMaterial != null ? asteroidMaterial : planetMaterial;
-                }
-                else
-                {
-                    // Try to use planet-specific material first, fall back to generic material
-                    materialToUse = planetMaterials.TryGetValue(naifId, out Material specificMaterial) ? specificMaterial : planetMaterial;
-                }
+                // Try to use planet-specific material first, fall back to generic material
+                Material materialToUse = planetMaterials.TryGetValue(naifId, out Material specificMaterial) ? specificMaterial : planetMaterial;
                 
                 if (materialToUse != null)
                 {
@@ -885,8 +918,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 proxy = proxy.transform
             };
 
-            // Create labels only for non-asteroids
-            if (enableLabels && objectType != "asteroid")
+            if (enableLabels)
             {
                 CreateLabelForBody(body);
                 Debug.Log($"Created label for {body.name}");
@@ -982,18 +1014,10 @@ public class SolarSystemParallaxManager : MonoBehaviour
                     keyPart = keyPart.Trim('"');
                     valuePart = valuePart.Trim('"');
                     
-                    // Parse key as int
-                    if (int.TryParse(keyPart, out int naifId))
+                    // Parse key as long to support large Gaia source IDs
+                    if (long.TryParse(keyPart, out long naifId))
                     {
                         naifIdToName[naifId] = valuePart;
-                    }
-                    else if (long.TryParse(keyPart, out long naifIdLong))
-                    {
-                        // Handle very large IDs (like Gaia source IDs) as int if possible
-                        if (naifIdLong <= int.MaxValue && naifIdLong >= int.MinValue)
-                        {
-                            naifIdToName[(int)naifIdLong] = valuePart;
-                        }
                     }
                 }
             }
@@ -1006,7 +1030,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         }
     }
     
-    private string GetBodyName(int naifId, string objectType)
+    private string GetBodyName(long naifId, string objectType)
     {
         // First check if we have a name in the loaded JSON mapping
         if (naifIdToName.ContainsKey(naifId))
@@ -1257,8 +1281,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
                     keyPart = keyPart.Trim('"');
                     valuePart = valuePart.Trim('"');
                     
-                    // Parse key as int
-                    if (int.TryParse(keyPart, out int naifId))
+                    // Parse key as long to support large Gaia source IDs
+                    if (long.TryParse(keyPart, out long naifId))
                     {
                         string materialPath = valuePart;
                         
@@ -1539,9 +1563,6 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         foreach (var body in bodies)
         {
-            // Skip asteroids - they don't affect speed mechanics
-            if (body.objectType == "asteroid") continue;
-            
             Vector3 offset = body.realPosAu - playerRealPosAu;
             float distanceSqr = offset.sqrMagnitude;
             
@@ -1953,15 +1974,12 @@ public class SolarSystemParallaxManager : MonoBehaviour
         scroll.verticalScrollbar = scrollbar;
         scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
         
-        // Separate bodies into planets/sun and moons (exclude asteroids)
+        // Separate bodies into planets/sun and moons
         List<BodyInstance> mainBodies = new List<BodyInstance>();
         List<BodyInstance> moons = new List<BodyInstance>();
         
         foreach (var body in bodies)
         {
-            // Skip asteroids - they don't appear in autopilot
-            if (body.objectType == "asteroid") continue;
-            
             if (IsMoon(body.naifId))
             {
                 moons.Add(body);
@@ -2045,7 +2063,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         Debug.Log($"Autopilot menu created: {mainBodies.Count} planets, {moons.Count} moons");
     }
     
-    private bool IsMoon(int naifId)
+    private bool IsMoon(long naifId)
     {
         // Moons have NAIF IDs: 3xx (Earth), 4xx (Mars), 5xx (Jupiter), 6xx (Saturn), 7xx (Uranus), 8xx (Neptune), 9xx (Pluto)
         // But not the parent planets: 399 (Earth), 499 (Mars), 599 (Jupiter), 699 (Saturn), 799 (Uranus), 899 (Neptune), 999 (Pluto)
@@ -2059,7 +2077,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         return false;
     }
     
-    private bool IsProximaSystem(int naifId)
+    private bool IsProximaSystem(long naifId)
     {
         // Check if body is part of the Proxima Centauri / Alpha Centauri system
         // These have very large NAIF IDs (Gaia source IDs)
@@ -2656,6 +2674,217 @@ public class SolarSystemParallaxManager : MonoBehaviour
             // Slide in from bottom: -1200 (off-screen) to 0 (center)
             float yPos = Mathf.Lerp(-1200, 0, easedProgress);
             panelRect.anchoredPosition = new Vector2(0, yPos);
+        }
+    }
+    
+    // ========================
+    // ASTEROID RENDERING
+    // ========================
+    
+    private void InitializeAsteroidMesh()
+    {
+        asteroidMesh = new Mesh();
+        asteroidMesh.name = "AsteroidPointMesh";
+        
+        // Create simple quad for point sprite rendering
+        Vector3[] vertices = {
+            new Vector3(-0.5f, -0.5f, 0),
+            new Vector3( 0.5f, -0.5f, 0),
+            new Vector3( 0.5f,  0.5f, 0),
+            new Vector3(-0.5f,  0.5f, 0)
+        };
+        
+        Vector2[] uv = {
+            new Vector2(0, 0),
+            new Vector2(1, 0),
+            new Vector2(1, 1),
+            new Vector2(0, 1)
+        };
+        
+        int[] triangles = { 0, 1, 2, 2, 3, 0 };
+        
+        asteroidMesh.vertices = vertices;
+        asteroidMesh.uv = uv;
+        asteroidMesh.triangles = triangles;
+        asteroidMesh.RecalculateNormals();
+        asteroidMesh.bounds = new Bounds(Vector3.zero, Vector3.one * 10000f);
+    }
+    
+    private IEnumerator LoadAsteroidDataAsync()
+    {
+        Debug.Log("Loading asteroid data from binary file...");
+        
+        allAsteroids.Clear();
+        
+        string filePath = Path.Combine(Application.streamingAssetsPath, "AsteroidDataset", "asteroids_orbital.bin");
+        
+        if (!File.Exists(filePath))
+        {
+            Debug.LogWarning($"Asteroid data file not found: {filePath}");
+            yield break;
+        }
+        
+        using (BinaryReader reader = new BinaryReader(File.Open(filePath, FileMode.Open)))
+        {
+            // Read header: number of asteroids (uint32)
+            uint asteroidCount = reader.ReadUInt32();
+            Debug.Log($"Loading {asteroidCount} asteroids from binary file...");
+            
+            allAsteroids.Capacity = (int)asteroidCount;
+            
+            int batchSize = 10000;
+            int processed = 0;
+            
+            for (uint i = 0; i < asteroidCount; i++)
+            {
+                // Read binary record: RA, DEC, Distance_AU, H (all float32)
+                float ra_deg = reader.ReadSingle();
+                float dec_deg = reader.ReadSingle();
+                float distance_au = reader.ReadSingle();
+                float magnitude = reader.ReadSingle();
+                
+                // Skip invalid data
+                if (distance_au <= 0 || float.IsNaN(distance_au) || float.IsInfinity(distance_au))
+                    continue;
+                
+                // Convert RA/DEC to Cartesian coordinates in AU
+                float ra_rad = ra_deg * Mathf.Deg2Rad;
+                float dec_rad = dec_deg * Mathf.Deg2Rad;
+                
+                float cos_dec = Mathf.Cos(dec_rad);
+                float x = distance_au * cos_dec * Mathf.Cos(ra_rad);
+                float y = distance_au * Mathf.Sin(dec_rad);
+                float z = distance_au * cos_dec * Mathf.Sin(ra_rad);
+                
+                AsteroidData asteroid = new AsteroidData
+                {
+                    positionAU = new Vector3(x, y, z),
+                    distance = distance_au,
+                    magnitude = magnitude,
+                    originalIndex = (int)i
+                };
+                
+                allAsteroids.Add(asteroid);
+                processed++;
+                
+                // Yield periodically for smooth loading
+                if (processed % batchSize == 0)
+                    yield return null;
+            }
+        }
+        
+        Debug.Log($"Total asteroids loaded: {allAsteroids.Count}");
+        asteroidsLoaded = true;
+        
+        // Initial update
+        UpdateVisibleAsteroids();
+    }
+    
+    private void UpdateVisibleAsteroids()
+    {
+        if (!asteroidsLoaded) return;
+        
+        visibleAsteroids.Clear();
+        
+        Camera cam = GetActiveCamera();
+        if (cam == null) return;
+        
+        Vector3 cameraPos = cam.transform.position;
+        Vector3 cameraForward = cam.transform.forward;
+        
+        // Calculate effective FOV with generous margin
+        float halfFOVWithMargin = cam.fieldOfView * 0.5f + 45f; // 45 degree margin
+        
+        foreach (AsteroidData asteroid in allAsteroids)
+        {
+            // Calculate asteroid position on virtual horizon with parallax
+            Vector3 asteroidWorldPos = CalculateAsteroidWorldPosition(asteroid);
+            
+            // FOV culling
+            Vector3 toAsteroid = (asteroidWorldPos - cameraPos).normalized;
+            float dotProduct = Vector3.Dot(cameraForward, toAsteroid);
+            float angleToCamera = Mathf.Acos(Mathf.Clamp(dotProduct, -1f, 1f)) * Mathf.Rad2Deg;
+            
+            if (angleToCamera > halfFOVWithMargin)
+                continue;
+            
+            visibleAsteroids.Add(asteroid);
+            
+            // Limit asteroids per frame for performance
+            if (visibleAsteroids.Count >= maxAsteroidsPerFrame)
+                break;
+        }
+    }
+    
+    private Vector3 CalculateAsteroidWorldPosition(AsteroidData asteroid)
+    {
+        // Asteroid position in AU relative to Sun
+        Vector3 asteroidPosAU = asteroid.positionAU;
+        
+        // Apply parallax: calculate position relative to player
+        Vector3 relativePos = asteroidPosAU - playerRealPosAu;
+        
+        // Get direction to asteroid from player
+        Vector3 direction = relativePos.normalized;
+        
+        // Project onto virtual horizon sphere
+        return direction * horizonRadius;
+    }
+    
+    private void UpdateAsteroidRendering()
+    {
+        int asteroidCount = visibleAsteroids.Count;
+        
+        // Initialize or resize arrays if needed
+        if (asteroidPositions == null || asteroidPositions.Length != asteroidCount)
+        {
+            asteroidPositions = new Vector3[asteroidCount];
+            asteroidMatrices = new Matrix4x4[asteroidCount];
+        }
+        
+        // Update positions and matrices
+        for (int i = 0; i < asteroidCount; i++)
+        {
+            AsteroidData asteroid = visibleAsteroids[i];
+            Vector3 worldPos = CalculateAsteroidWorldPosition(asteroid);
+            
+            asteroidPositions[i] = worldPos;
+            asteroidMatrices[i] = Matrix4x4.TRS(worldPos, Quaternion.identity, Vector3.one);
+        }
+    }
+    
+    private void RenderAsteroids()
+    {
+        if (asteroidMatrices == null || asteroidMatrices.Length == 0 || asteroidMaterial == null)
+            return;
+        
+        // Ensure asteroidPropertyBlock is initialized
+        if (asteroidPropertyBlock == null)
+            asteroidPropertyBlock = new MaterialPropertyBlock();
+        
+        // Set material properties for asteroids
+        asteroidPropertyBlock.SetColor("_Color", asteroidColor);
+        asteroidPropertyBlock.SetFloat("_Size", baseAsteroidSize);
+        asteroidPropertyBlock.SetFloat("_Brightness", asteroidBrightness);
+        
+        // Render asteroids in batches (Unity has limits on instanced rendering)
+        const int BATCH_SIZE = 1023; // Unity's limit for Graphics.DrawMeshInstanced
+        
+        for (int startIndex = 0; startIndex < asteroidMatrices.Length; startIndex += BATCH_SIZE)
+        {
+            int count = Mathf.Min(BATCH_SIZE, asteroidMatrices.Length - startIndex);
+            Matrix4x4[] batch = new Matrix4x4[count];
+            
+            Array.Copy(asteroidMatrices, startIndex, batch, 0, count);
+            
+            Graphics.DrawMeshInstanced(
+                asteroidMesh,
+                0,
+                asteroidMaterial,
+                batch,
+                count,
+                asteroidPropertyBlock
+            );
         }
     }
 }

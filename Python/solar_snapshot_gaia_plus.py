@@ -512,6 +512,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--epoch", default=None, help="UTC epoch ISO, e.g. 2026-01-12T12:00:00Z (default: now)")
     ap.add_argument("--out", default="solar_snapshot_gaia_plus.csv", help="Output CSV")
+    ap.add_argument("--asteroid-out", default="asteroids.csv", help="Asteroid output CSV (separate file)")
     ap.add_argument("--center", default="500@10", help="Horizons CENTER, default heliocentric (Sun)")
     ap.add_argument("--rate-limit", type=float, default=0.2, help="Sleep seconds between Horizons calls")
 
@@ -529,15 +530,19 @@ def main() -> None:
     print(f"[INFO] Center: {args.center}")
     print(f"[INFO] Rate limit: {args.rate_limit}s between API calls")
     print(f"[INFO] Asteroids to fetch: {args.asteroids}")
-    print(f"[INFO] Output file: {args.out}")
+    print(f"[INFO] Main output file: {args.out}")
+    print(f"[INFO] Asteroid output file: {args.asteroid_out}")
     print(f"[INFO] Resume mode: {args.resume}")
     print(f"[INFO] ============================================")
 
     # Load existing progress if resuming
     completed_ids: set[str] = set()
+    completed_asteroid_ids: set[str] = set()
     if args.resume:
         print(f"[INFO] Checking for existing progress in {args.out}...")
         completed_ids = load_existing_progress(args.out)
+        print(f"[INFO] Checking for existing asteroid progress in {args.asteroid_out}...")
+        completed_asteroid_ids = load_existing_progress(args.asteroid_out)
     
     print(f"[INFO] Preparing celestial body list...")
     bodies = default_planets_and_major_moons()
@@ -549,8 +554,9 @@ def main() -> None:
     if args.asteroids > 0:
         print(f"[INFO] Fetching asteroid data from SBDB...")
         asteroid_bodies, asteroid_phys = sbdb_top_asteroids(args.asteroids, args.asteroid_offset)
-        bodies.extend(asteroid_bodies)
-        print(f"[INFO] Total bodies to process: {len(bodies)} ({len(asteroid_bodies)} asteroids + {len(bodies) - len(asteroid_bodies)} other bodies)")
+        # Don't add asteroids to main bodies list - they'll be processed separately
+        print(f"[INFO] Total non-asteroid bodies to process: {len(bodies)}")
+        print(f"[INFO] Total asteroid bodies to process: {len(asteroid_bodies)}")
     else:
         print(f"[INFO] Skipping asteroids (--asteroids=0)")
         print(f"[INFO] Total bodies to process: {len(bodies)} (planets, moons, dwarf planets only)")
@@ -560,9 +566,15 @@ def main() -> None:
         original_count = len(bodies)
         bodies = [b for b in bodies if b.source_id not in completed_ids]
         skipped_count = original_count - len(bodies)
-        print(f"[INFO] Resuming: skipping {skipped_count} already completed, processing {len(bodies)} remaining")
+        print(f"[INFO] Resuming main bodies: skipping {skipped_count} already completed, processing {len(bodies)} remaining")
+        
+        if asteroid_bodies:
+            original_asteroid_count = len(asteroid_bodies)
+            asteroid_bodies = [b for b in asteroid_bodies if b.source_id not in completed_asteroid_ids]
+            skipped_asteroid_count = original_asteroid_count - len(asteroid_bodies)
+            print(f"[INFO] Resuming asteroids: skipping {skipped_asteroid_count} already completed, processing {len(asteroid_bodies)} remaining")
     
-    if not bodies:
+    if not bodies and not asteroid_bodies:
         print("[INFO] All bodies already processed!")
         return
 
@@ -573,11 +585,35 @@ def main() -> None:
     else:
         print(f"[INFO] No asteroids to process - skipping physical property setup")
 
-    # Open file in append mode if resuming, write mode if starting fresh
-    file_mode = "a" if args.resume and os.path.exists(args.out) else "w"
-    write_header = file_mode == "w" or not os.path.exists(args.out)
+    # Process main bodies (planets, moons, etc.)
+    if bodies:
+        process_bodies(bodies, args.out, epoch, args.center, args.rate_limit, args.resume, 
+                      completed_ids, args.progress_interval, {})
     
-    with open(args.out, file_mode, newline="", encoding="utf-8") as f:
+    # Process asteroids to separate file
+    if asteroid_bodies:
+        process_bodies(asteroid_bodies, args.asteroid_out, epoch, args.center, args.rate_limit, args.resume,
+                      completed_asteroid_ids, args.progress_interval, asteroid_phys)
+
+    total_main_rows = len(completed_ids) + (len(bodies) if bodies else 0) if args.resume else (len(bodies) if bodies else 0)
+    total_asteroid_rows = len(completed_asteroid_ids) + (len(asteroid_bodies) if asteroid_bodies else 0) if args.resume else (len(asteroid_bodies) if asteroid_bodies else 0)
+    print(f"[INFO] Completed! Main bodies: {args.out} ({total_main_rows} rows), Asteroids: {args.asteroid_out} ({total_asteroid_rows} rows)")
+
+
+def process_bodies(bodies: list[Body], output_file: str, epoch: str, center: str, rate_limit: float,
+                   resume: bool, completed_ids: set[str], progress_interval: int,
+                   physical_data: dict[str, dict[str, Optional[float]]]) -> None:
+    """Process a list of bodies and write to CSV file."""
+def process_bodies(bodies: list[Body], output_file: str, epoch: str, center: str, rate_limit: float,
+                   resume: bool, completed_ids: set[str], progress_interval: int,
+                   physical_data: dict[str, dict[str, Optional[float]]]) -> None:
+    """Process a list of bodies and write to CSV file."""
+    
+    # Open file in append mode if resuming, write mode if starting fresh
+    file_mode = "a" if resume and os.path.exists(output_file) else "w"
+    write_header = file_mode == "w" or not os.path.exists(output_file)
+    
+    with open(output_file, file_mode, newline="", encoding="utf-8") as f:
         w = csv.writer(f)
 
         # Write header only for new files
@@ -605,7 +641,7 @@ def main() -> None:
                 "H",
             ])
         
-        print(f"[INFO] Processing {len(bodies)} bodies, writing to {args.out} (mode: {file_mode})")
+        print(f"[INFO] Processing {len(bodies)} bodies, writing to {output_file} (mode: {file_mode})")
 
         processed_count = 0
         print(f"[INFO] Starting main processing loop: {len(bodies)} bodies to process")
@@ -618,7 +654,7 @@ def main() -> None:
             # 1) snapshot vectors
             print(f"[INFO]   -> Horizons vectors API call for {b.name}...")
             try:
-                vec = horizons_vectors_icrf(b.command, epoch, args.center)
+                vec = horizons_vectors_icrf(b.command, epoch, center)
                 x, y, z = vec["x"], vec["y"], vec["z"]
                 vx, vy, vz = vec["vx"], vec["vy"], vec["vz"]
 
@@ -633,9 +669,9 @@ def main() -> None:
                 w.writerow([b.source_id, b.kind] + [""] * 18)
                 f.flush()  # Ensure data is written immediately
                 processed_count += 1
-                if processed_count % args.progress_interval == 0:
+                if processed_count % progress_interval == 0:
                     print(f"[INFO] Progress: {processed_count}/{len(bodies)} ({100*processed_count/len(bodies):.1f}%)")
-                time.sleep(args.rate_limit)
+                time.sleep(rate_limit)
                 continue
 
             # 2) physical properties via Horizons OBJ_DATA (works best for planets/moons)
@@ -645,7 +681,7 @@ def main() -> None:
             # asteroid: prefer SBDB for size/albedo/H/rot; Horizons OBJ_DATA may be sparse
             H_val = None
             if b.kind == "asteroid":
-                phys = asteroid_phys.get(b.source_id, {})
+                phys = physical_data.get(b.source_id, {})
                 size_km = phys.get("diameter_km")
                 albedo = phys.get("albedo")
                 rot_hr = phys.get("rot_per_hr")
@@ -713,13 +749,10 @@ def main() -> None:
             print(f"[INFO]   -> CSV write: SUCCESS")
             
             # Progress reporting
-            if processed_count % args.progress_interval == 0 or processed_count == len(bodies):
+            if processed_count % progress_interval == 0 or processed_count == len(bodies):
                 print(f"[INFO] ===== Progress: {processed_count}/{len(bodies)} ({100*processed_count/len(bodies):.1f}%) =====\n")
 
-            time.sleep(args.rate_limit)
-
-    total_rows = len(completed_ids) + processed_count if args.resume else processed_count
-    print(f"[INFO] Completed! Wrote {args.out} (total rows: {total_rows}, processed this run: {processed_count})")
+            time.sleep(rate_limit)
 
 
 if __name__ == "__main__":

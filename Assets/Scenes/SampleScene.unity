@@ -568,11 +568,16 @@ MonoBehaviour:
   horizonMaterial: {fileID: 2100000, guid: f12098f110e17446eab1f24a6e51f488, type: 2}
   showHorizonSphere: 0
   planetMaterial: {fileID: 2100000, guid: 6034bd29d40f246c99d7b30eee17c99a, type: 2}
-  asteroidMaterial: {fileID: 0}
   minProxyRadius: 1
   maxProxyRadius: 1999
   useHighQualitySpheres: 1
   sphereSubdivisions: 4
+  enableAsteroids: 1
+  asteroidMaterial: {fileID: 2100000, guid: 3b110bfe1241a412ea9c281cc689aa3c, type: 2}
+  baseAsteroidSize: 5
+  asteroidColor: {r: 1, g: 0.4, b: 0.2, a: 1}
+  asteroidBrightness: 1.2
+  maxAsteroidsPerFrame: 100000
   targetCamera: {fileID: 1528494429}
   moveAction: {fileID: -1680190386980627800, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   verticalAction: {fileID: 0}
