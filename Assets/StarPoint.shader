@@ -52,13 +52,17 @@ Shader "Custom/StarPoint"
                 float3 worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
                 
                 // Calculate billboard vectors for camera-facing quads
-                float3 viewDir = normalize(_WorldSpaceCameraPos - worldPos);
+                float3 cameraPos = _WorldSpaceCameraPos;
+                #if defined(UNITY_STEREO_INSTANCING_ENABLED) || defined(UNITY_STEREO_MULTIVIEW_ENABLED)
+                    cameraPos = unity_StereoWorldSpaceCameraPos[unity_StereoEyeIndex];
+                #endif
+                float3 viewDir = normalize(cameraPos - worldPos);
                 float3 upDir = float3(0, 1, 0);
                 float3 rightDir = normalize(cross(upDir, viewDir));
                 upDir = normalize(cross(viewDir, rightDir));
                 
                 // Scale based on distance and size parameter
-                float dist = length(_WorldSpaceCameraPos - worldPos);
+                float dist = length(cameraPos - worldPos);
                 float scale = _Size * max(0.1, dist * 0.0001);
                 
                 // Apply billboard transformation

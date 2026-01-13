@@ -30,6 +30,8 @@ Shader "Custom/ProceduralSun"
             #pragma vertex vert
             #pragma fragment frag
             #pragma target 3.0
+            #pragma multi_compile_instancing
+            #pragma multi_compile _ UNITY_SINGLE_PASS_STEREO STEREO_INSTANCING_ON STEREO_MULTIVIEW_ON
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
@@ -37,6 +39,7 @@ Shader "Custom/ProceduralSun"
             {
                 float4 positionOS : POSITION;
                 float3 normalOS   : NORMAL;
+                UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
             struct Varyings
@@ -45,6 +48,7 @@ Shader "Custom/ProceduralSun"
                 float3 worldPos    : TEXCOORD0;
                 float3 worldNormal : TEXCOORD1;
                 float3 objectPos   : TEXCOORD2;
+                UNITY_VERTEX_OUTPUT_STEREO
             };
 
             CBUFFER_START(UnityPerMaterial)
@@ -116,6 +120,8 @@ Shader "Custom/ProceduralSun"
             Varyings vert (Attributes IN)
             {
                 Varyings OUT;
+                UNITY_SETUP_INSTANCE_ID(IN);
+                UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(OUT);
 
                 OUT.worldPos    = TransformObjectToWorld(IN.positionOS.xyz);
                 OUT.worldNormal = TransformObjectToWorldNormal(IN.normalOS);
@@ -132,8 +138,10 @@ Shader "Custom/ProceduralSun"
 
             half4 frag (Varyings IN) : SV_Target
             {
+                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(IN);
+                
                 float3 N = normalize(IN.worldNormal);
-                float3 V = normalize(_WorldSpaceCameraPos.xyz - IN.worldPos);
+                float3 V = normalize(GetCameraPositionWS() - IN.worldPos);
 
                 float t = _Time.y;
 
