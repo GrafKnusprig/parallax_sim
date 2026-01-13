@@ -30,6 +30,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
     [Header("Planets / Bodies")]
     [SerializeField] private Material planetMaterial;
+    [SerializeField] private Material asteroidMaterial;
     [Tooltip("Minimum planet proxy radius (Unity units)")]
     [SerializeField] private float minProxyRadius = 1f;
     [Tooltip("Maximum planet proxy radius (Unity units)")]
@@ -144,6 +145,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     {
         public string name;
         public int naifId;
+        public string objectType; // sun, planet, moon, dwarf_planet, star, asteroid
         public Vector3 realPosAu;
         public float radiusKm;
         public Transform proxy;
@@ -854,8 +856,19 @@ public class SolarSystemParallaxManager : MonoBehaviour
             var renderer = proxy.GetComponent<MeshRenderer>();
             if (renderer != null)
             {
-                // Try to use planet-specific material first, fall back to generic material
-                Material materialToUse = planetMaterials.TryGetValue(naifId, out Material specificMaterial) ? specificMaterial : planetMaterial;
+                Material materialToUse;
+                
+                // Use asteroid material for asteroids
+                if (objectType == "asteroid")
+                {
+                    materialToUse = asteroidMaterial != null ? asteroidMaterial : planetMaterial;
+                }
+                else
+                {
+                    // Try to use planet-specific material first, fall back to generic material
+                    materialToUse = planetMaterials.TryGetValue(naifId, out Material specificMaterial) ? specificMaterial : planetMaterial;
+                }
+                
                 if (materialToUse != null)
                 {
                     renderer.sharedMaterial = materialToUse;
@@ -866,13 +879,14 @@ public class SolarSystemParallaxManager : MonoBehaviour
             {
                 name = name,
                 naifId = naifId,
+                objectType = objectType,
                 realPosAu = realPosAu,
                 radiusKm = radiusKm,
                 proxy = proxy.transform
             };
 
-            // NEW: optional label setup
-            if (enableLabels)
+            // Create labels only for non-asteroids
+            if (enableLabels && objectType != "asteroid")
             {
                 CreateLabelForBody(body);
                 Debug.Log($"Created label for {body.name}");
@@ -1525,6 +1539,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         foreach (var body in bodies)
         {
+            // Skip asteroids - they don't affect speed mechanics
+            if (body.objectType == "asteroid") continue;
+            
             Vector3 offset = body.realPosAu - playerRealPosAu;
             float distanceSqr = offset.sqrMagnitude;
             
@@ -1682,13 +1699,13 @@ public class SolarSystemParallaxManager : MonoBehaviour
                     RectTransformUtility.ScreenPointToLocalPointInRectangle(
                         canvasRect, screenPos, canvasCam, out canvasPos);
                     
-                    // Add offset to position label to the right of the planet
+                    // Add offset to position label to the right of the body
                     canvasPos.x += labelOffsetPixels;
                     
                     // Calculate label bounds (approximate based on text size)
-                    float labelWidth = 100f; // Approximate label width
-                    float labelHeight = 25f; // Approximate label height
-                    Rect bounds = new Rect(canvasPos.x, canvasPos.y - labelHeight / 2, labelWidth, labelHeight);
+                    float labelWidth = 100f;
+                    float labelHeight = 25f;
+                    Rect bounds = new Rect(canvasPos.x - labelWidth / 2, canvasPos.y - labelHeight / 2, labelWidth, labelHeight);
                     
                     visibleLabels.Add((body, canvasPos, distAu, bounds));
                 }
@@ -1700,8 +1717,19 @@ public class SolarSystemParallaxManager : MonoBehaviour
         }
         
         // Second pass: detect overlaps and hide overlapping labels
-        // Sort by distance (closest first) - closer labels have priority
-        visibleLabels.Sort((a, b) => a.distAu.CompareTo(b.distAu));
+        // Sort by priority: Proxima system first, then by distance (closest first)
+        visibleLabels.Sort((a, b) => 
+        {
+            bool aIsProxima = IsProximaSystem(a.body);
+            bool bIsProxima = IsProximaSystem(b.body);
+            
+            // Proxima system always has priority
+            if (aIsProxima && !bIsProxima) return -1;
+            if (!aIsProxima && bIsProxima) return 1;
+            
+            // Otherwise sort by distance (closest first)
+            return a.distAu.CompareTo(b.distAu);
+        });
         
         List<Rect> occupiedRects = new List<Rect>();
         
@@ -1764,8 +1792,20 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 }
                 else
                 {
-                    // No spot found - hide this label
-                    labelData.body.labelUI.SetActive(false);
+                    // No spot found - check if this is a priority object (Proxima system)
+                    if (IsProximaSystem(labelData.body))
+                    {
+                        // Proxima system labels are always shown, even if overlapping
+                        RectTransform labelRect = labelData.body.labelUI.GetComponent<RectTransform>();
+                        labelRect.localPosition = labelData.screenPos;
+                        labelData.body.labelUI.SetActive(true);
+                        occupiedRects.Add(labelData.labelBounds);
+                    }
+                    else
+                    {
+                        // No spot found - hide this label
+                        labelData.body.labelUI.SetActive(false);
+                    }
                 }
             }
             else
@@ -1913,12 +1953,15 @@ public class SolarSystemParallaxManager : MonoBehaviour
         scroll.verticalScrollbar = scrollbar;
         scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
         
-        // Separate bodies into planets/sun and moons
+        // Separate bodies into planets/sun and moons (exclude asteroids)
         List<BodyInstance> mainBodies = new List<BodyInstance>();
         List<BodyInstance> moons = new List<BodyInstance>();
         
         foreach (var body in bodies)
         {
+            // Skip asteroids - they don't appear in autopilot
+            if (body.objectType == "asteroid") continue;
+            
             if (IsMoon(body.naifId))
             {
                 moons.Add(body);
@@ -1928,6 +1971,28 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 mainBodies.Add(body);
             }
         }
+        
+        // Sort main bodies: Proxima system at top, then Sun, then planets by distance
+        mainBodies.Sort((a, b) => 
+        {
+            bool aIsProxima = IsProximaSystem(a);
+            bool bIsProxima = IsProximaSystem(b);
+            
+            // Proxima system always at top
+            if (aIsProxima && !bIsProxima) return -1;
+            if (!aIsProxima && bIsProxima) return 1;
+            
+            // Sun next
+            bool aIsSun = a.naifId == 10;
+            bool bIsSun = b.naifId == 10;
+            if (aIsSun && !bIsSun) return -1;
+            if (!aIsSun && bIsSun) return 1;
+            
+            // Otherwise sort by distance from player
+            Vector3 offsetA = a.realPosAu - playerRealPosAu;
+            Vector3 offsetB = b.realPosAu - playerRealPosAu;
+            return offsetA.magnitude.CompareTo(offsetB.magnitude);
+        });
         
         // Add buttons for main bodies
         float buttonHeight = 50f;
@@ -1992,6 +2057,24 @@ public class SolarSystemParallaxManager : MonoBehaviour
         if (naifId >= 801 && naifId <= 899 && naifId != 899) return true; // Neptune's moons
         if (naifId >= 901 && naifId <= 999 && naifId != 999) return true; // Pluto's moons
         return false;
+    }
+    
+    private bool IsProximaSystem(int naifId)
+    {
+        // Check if body is part of the Proxima Centauri / Alpha Centauri system
+        // These have very large NAIF IDs (Gaia source IDs)
+        long id = naifId;
+        return id == 4472832130942575872L || // Alpha Centauri A
+               id == 4472832130942575873L || // Alpha Centauri B
+               id == 4472832130942575874L;   // Proxima Centauri
+    }
+    
+    private bool IsProximaSystem(BodyInstance body)
+    {
+        if (body == null) return false;
+        return IsProximaSystem(body.naifId) || 
+               body.name.Contains("Proxima") || 
+               body.name.Contains("Alpha Centauri");
     }
     
     private void CreateAutopilotButton(GameObject parent, BodyInstance body, int index, float buttonHeight, float spacing, bool isMoon)

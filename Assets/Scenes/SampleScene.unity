@@ -562,21 +562,18 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SolarSystemParallaxManager
   csvFileName: solar_system_positions_with_velocity.csv
-  planetMaterialsCsvFileName: planet_materials.csv
-  targetDate: 2023-07-10
+  planetMaterialsJsonFileName: planet_materials.json
+  objectNamesJsonFileName: stellar_object_names.json
   horizonRadius: 4000
   horizonMaterial: {fileID: 2100000, guid: f12098f110e17446eab1f24a6e51f488, type: 2}
   showHorizonSphere: 0
   planetMaterial: {fileID: 2100000, guid: 6034bd29d40f246c99d7b30eee17c99a, type: 2}
+  asteroidMaterial: {fileID: 0}
   minProxyRadius: 1
   maxProxyRadius: 1999
   useHighQualitySpheres: 1
   sphereSubdivisions: 4
-  moveSpeedAuPerSecond: 0.1
   targetCamera: {fileID: 1528494429}
-  enableDynamicBehavior: 1
-  baseScale: 0.0001
-  minScale: 0.0001
   moveAction: {fileID: -1680190386980627800, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   verticalAction: {fileID: 0}
   enableLabels: 1
@@ -589,6 +586,8 @@ MonoBehaviour:
   hudFontSize: 16
   hudColor: {r: 0, g: 1, b: 1, a: 1}
   hudPosition: {x: 20, y: -20}
+  enableVRMode: 0
+  enableLoadingScreen: 1
 --- !u!4 &713169412
 Transform:
   m_ObjectHideFlags: 0
