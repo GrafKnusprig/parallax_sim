@@ -32,7 +32,6 @@ public class StellarParallaxManager : MonoBehaviour
     // Constants
     private const float PARSEC_TO_AU = 206264.806f;  // 1 parsec = 206,264.806 AU
     private const float AU_TO_PARSEC = 1f / PARSEC_TO_AU;  // 1 AU = 1/206,264.806 parsecs
-    private const int CSV_FILE_COUNT = 6;
     
     // Star data structure for GDR1 format
     private struct StarData
@@ -161,119 +160,78 @@ public class StellarParallaxManager : MonoBehaviour
     
     private IEnumerator LoadGDR1DataAsync()
     {
-        Debug.Log("Loading Gaia GDR1 stellar data...");
+        Debug.Log("Loading Gaia GDR1 stellar data from binary file...");
         
         allStars.Clear();
         
-        // Pre-allocate capacity for better performance (estimated ~2.4M stars)
-        allStars.Capacity = 2500000;
+        string filePath = Path.Combine(Application.streamingAssetsPath, "GDR1", "gaia_stars.bin");
         
-        int totalStarsLoaded = 0;
-        
-        // Load all 6 CSV files
-        for (int fileIndex = 1; fileIndex <= CSV_FILE_COUNT; fileIndex++)
+        if (!File.Exists(filePath))
         {
-            string fileName = $"gaia_gdr1_homogen_subset_part{fileIndex:D3}.csv";
-            string filePath = Path.Combine(Application.streamingAssetsPath, "GDR1", fileName);
-            
-            if (!File.Exists(filePath))
-            {
-                Debug.LogWarning($"GDR1 file not found: {fileName}");
-                continue;
-            }
-            
-            yield return StartCoroutine(LoadCSVFile(filePath, fileIndex));
+            Debug.LogWarning($"Gaia binary file not found: {filePath}");
+            yield break;
         }
         
-        Debug.Log($"Total stars loaded: {allStars.Count}");
-        Debug.Log($"Distance range: {minStarDistance:F2} - {maxStarDistance:F2} parsecs");
-        
-        starsLoaded = true;
-        UpdateVisibleStars();
-    }
-    
-    private IEnumerator LoadCSVFile(string filePath, int fileIndex)
-    {
-        Debug.Log($"Loading file {fileIndex}: {Path.GetFileName(filePath)}");
-        
-        // Read all lines at once for faster processing
-        string[] lines = File.ReadAllLines(filePath);
-        
-        int lineCount = 0;
-        int batchSize = 10000; // Process 10x more lines per yield for faster loading
-        
-        // Skip header (start at index 1)
-        for (int i = 1; i < lines.Length; i++)
+        using (BinaryReader reader = new BinaryReader(File.Open(filePath, FileMode.Open)))
         {
-            if (TryParseGDR1Data(lines[i], allStars.Count, out StarData star))
+            // Read header: number of stars (uint32)
+            uint starCount = reader.ReadUInt32();
+            Debug.Log($"Loading {starCount:N0} stars from binary file...");
+            
+            allStars.Capacity = (int)starCount;
+            
+            int batchSize = 10000;
+            int processed = 0;
+            
+            for (uint i = 0; i < starCount; i++)
             {
+                // Read binary record: RA, DEC, Distance, Magnitude (all float32)
+                float ra_deg = reader.ReadSingle();
+                float dec_deg = reader.ReadSingle();
+                float distance_pc = reader.ReadSingle();
+                float magnitude = reader.ReadSingle();
+                
+                // Skip invalid data
+                if (distance_pc <= 0 || float.IsNaN(distance_pc) || float.IsInfinity(distance_pc))
+                    continue;
+                
+                // Convert spherical coordinates (RA, Dec) to Cartesian
+                float ra_rad = ra_deg * Mathf.Deg2Rad;
+                float dec_rad = dec_deg * Mathf.Deg2Rad;
+                
+                // Convert to cartesian coordinates (distance * unit vector)
+                float cos_dec = Mathf.Cos(dec_rad);
+                float x = distance_pc * cos_dec * Mathf.Cos(ra_rad);
+                float y = distance_pc * Mathf.Sin(dec_rad);
+                float z = distance_pc * cos_dec * Mathf.Sin(ra_rad);
+                
+                StarData star = new StarData
+                {
+                    positionParsecs = new Vector3(x, y, z),
+                    distance = distance_pc,
+                    magnitude = magnitude,
+                    originalIndex = (int)i
+                };
+                
                 allStars.Add(star);
                 
                 // Update distance range
                 if (star.distance < minStarDistance) minStarDistance = star.distance;
                 if (star.distance > maxStarDistance) maxStarDistance = star.distance;
+                
+                processed++;
+                
+                // Yield periodically for smooth loading
+                if (processed % batchSize == 0)
+                    yield return null;
             }
-            
-            lineCount++;
-            
-            // Yield every 10,000 lines (10x faster than before)
-            if (lineCount % batchSize == 0)
-                yield return null;
         }
         
-        Debug.Log($"File {fileIndex} loaded: {allStars.Count} total stars so far");
-    }
-    
-    private bool TryParseGDR1Data(string line, int index, out StarData star)
-    {
-        star = new StarData();
+        Debug.Log($"Total stars loaded: {allStars.Count:N0}");
+        Debug.Log($"Distance range: {minStarDistance:F2} - {maxStarDistance:F2} parsecs");
         
-        if (string.IsNullOrEmpty(line?.Trim()))
-            return false;
-        
-        string[] parts = line.Split(',');
-        if (parts.Length < 7) // source_id,ra_deg,dec_deg,parallax_mas,distance_pc,phot_g_mean_mag,abs_mag_g
-            return false;
-        
-        try
-        {
-            // Parse required fields
-            float ra_deg, dec_deg, distance_pc, magnitude;
-            
-            if (!float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out ra_deg) ||
-                !float.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out dec_deg) ||
-                !float.TryParse(parts[4], NumberStyles.Float, CultureInfo.InvariantCulture, out distance_pc) ||
-                !float.TryParse(parts[5], NumberStyles.Float, CultureInfo.InvariantCulture, out magnitude))
-            {
-                return false;
-            }
-            
-            // Skip stars with invalid data
-            if (distance_pc <= 0 || float.IsNaN(distance_pc) || float.IsInfinity(distance_pc))
-                return false;
-            
-            // Convert spherical coordinates (RA, Dec) to Cartesian
-            // RA is in degrees (0-360), Dec is in degrees (-90 to +90)
-            float ra_rad = ra_deg * Mathf.Deg2Rad;
-            float dec_rad = dec_deg * Mathf.Deg2Rad;
-            
-            // Convert to cartesian coordinates (distance * unit vector)
-            float cos_dec = Mathf.Cos(dec_rad);
-            float x = distance_pc * cos_dec * Mathf.Cos(ra_rad);
-            float y = distance_pc * Mathf.Sin(dec_rad);
-            float z = distance_pc * cos_dec * Mathf.Sin(ra_rad);
-            
-            star.positionParsecs = new Vector3(x, y, z);
-            star.distance = distance_pc;
-            star.magnitude = magnitude;
-            star.originalIndex = index;
-            
-            return true;
-        }
-        catch (Exception)
-        {
-            return false;
-        }
+        starsLoaded = true;
+        UpdateVisibleStars();
     }
     
     private void UpdateVisibleStars()
