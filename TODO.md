@@ -6,4 +6,4 @@
 - controller steuerung
 - future: google maps auf erde
 - high res textuen für alle planeten: https://www.solarsystemscope.com/textures/
-- saturn ringe
+- saturn ringe tilt fixen
