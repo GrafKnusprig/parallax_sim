@@ -1,0 +1,9 @@
+- texturen für alle planeten / monde
+- erde hat spiegelverkehrte textur ggf. bei allen anderen auch prüfen
+- journey-funktion. fliegt automatisch eine vorprogrammierte route von planet zu planet. große schrift: nächstes ziel "jupiter". bei ankuft wird einmal um den planeten geflogen und infos eingeblendet. danach fliegt man weiter zum nächsten.
+- label aufhübschen
+- bug: proxima labels werden immer alle angezeigt. es reicht wenn auf große distanz nur eines davon angezeigt wird.
+- controller steuerung
+- future: google maps auf erde
+- high res textuen für alle planeten: https://www.solarsystemscope.com/textures/
+- saturn ringe

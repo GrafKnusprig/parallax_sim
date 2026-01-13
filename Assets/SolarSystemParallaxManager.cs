@@ -38,6 +38,14 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [SerializeField] private bool useHighQualitySpheres = true;
     [Tooltip("Higher = more detailed (0-4 recommended)")]
     [SerializeField] private int sphereSubdivisions = 3;  // Higher = more detailed (0-4 recommended)
+    
+    [Header("Saturn Rings")]
+    [Tooltip("Material for Saturn's rings (should use alpha transparency)")]
+    [SerializeField] private Material saturnRingMaterial;
+    [Tooltip("Inner radius of Saturn's rings (in Saturn radii)")]
+    [SerializeField] private float saturnRingInnerRadius = 1.2f;
+    [Tooltip("Outer radius of Saturn's rings (in Saturn radii)")]
+    [SerializeField] private float saturnRingOuterRadius = 2.3f;
 
     [Header("Asteroids")]
     [SerializeField] private bool enableAsteroids = true;
@@ -183,6 +191,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         // Link to planet data
         public PlanetData planetData;
+        
+        // Ring system (for Saturn, etc.)
+        public GameObject ringObject;
     }
     
     // Planet data from CSV dataset
@@ -917,6 +928,12 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 radiusKm = radiusKm,
                 proxy = proxy.transform
             };
+            
+            // Create rings for Saturn (NAIF ID 699)
+            if (naifId == 699 && saturnRingMaterial != null)
+            {
+                body.ringObject = CreateSaturnRings(proxy.transform, radiusKm);
+            }
 
             if (enableLabels)
             {
@@ -1198,7 +1215,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private Vector2 CalculateSphericalUV(Vector3 p)
     {
         // Spherical to UV mapping
-        float u = Mathf.Atan2(p.x, p.z) / (2f * Mathf.PI) + 0.5f;
+        // Use (z, x) instead of (x, z) to match standard equirectangular projection
+        // This prevents texture mirroring
+        float u = Mathf.Atan2(p.z, p.x) / (2f * Mathf.PI) + 0.5f;
         float v = Mathf.Asin(Mathf.Clamp(p.y, -1f, 1f)) / Mathf.PI + 0.5f;
         return new Vector2(u, v);
     }
@@ -1243,6 +1262,91 @@ public class SolarSystemParallaxManager : MonoBehaviour
         cache[key] = index;
         
         return index;
+    }
+    
+    private GameObject CreateSaturnRings(Transform parentPlanet, float planetRadiusKm)
+    {
+        GameObject ringObject = new GameObject("SaturnRings");
+        ringObject.transform.SetParent(parentPlanet, false);
+        ringObject.transform.localPosition = Vector3.zero;
+        
+        // Create ring mesh
+        MeshFilter meshFilter = ringObject.AddComponent<MeshFilter>();
+        MeshRenderer meshRenderer = ringObject.AddComponent<MeshRenderer>();
+        
+        // Create the ring geometry
+        Mesh ringMesh = CreateRingMesh(saturnRingInnerRadius, saturnRingOuterRadius, 128);
+        meshFilter.mesh = ringMesh;
+        
+        // Apply material with transparency
+        if (saturnRingMaterial != null)
+        {
+            meshRenderer.sharedMaterial = saturnRingMaterial;
+        }
+        
+        // Tilt the rings (Saturn's rings are tilted ~26.7 degrees to its orbital plane)
+        ringObject.transform.localRotation = Quaternion.Euler(26.7f, 0, 0);
+        
+        // The scale will be set in UpdateBodyProxies along with the planet
+        ringObject.transform.localScale = Vector3.one;
+        
+        return ringObject;
+    }
+    
+    private Mesh CreateRingMesh(float innerRadius, float outerRadius, int segments)
+    {
+        Mesh mesh = new Mesh();
+        mesh.name = "RingMesh";
+        
+        int vertexCount = (segments + 1) * 2;
+        Vector3[] vertices = new Vector3[vertexCount];
+        Vector2[] uvs = new Vector2[vertexCount];
+        Vector3[] normals = new Vector3[vertexCount];
+        
+        // Create vertices in a ring pattern
+        for (int i = 0; i <= segments; i++)
+        {
+            float angle = (float)i / segments * 2f * Mathf.PI;
+            float cos = Mathf.Cos(angle);
+            float sin = Mathf.Sin(angle);
+            
+            // Inner vertex
+            int innerIndex = i * 2;
+            vertices[innerIndex] = new Vector3(cos * innerRadius, 0, sin * innerRadius);
+            uvs[innerIndex] = new Vector2(0, (float)i / segments);  // Swapped: U=radial position, V=angle
+            normals[innerIndex] = Vector3.up;
+            
+            // Outer vertex
+            int outerIndex = i * 2 + 1;
+            vertices[outerIndex] = new Vector3(cos * outerRadius, 0, sin * outerRadius);
+            uvs[outerIndex] = new Vector2(1, (float)i / segments);  // Swapped: U=radial position, V=angle
+            normals[outerIndex] = Vector3.up;
+        }
+        
+        // Create triangles
+        int[] triangles = new int[segments * 6];
+        for (int i = 0; i < segments; i++)
+        {
+            int baseIndex = i * 6;
+            int vertexIndex = i * 2;
+            
+            // First triangle
+            triangles[baseIndex] = vertexIndex;
+            triangles[baseIndex + 1] = vertexIndex + 1;
+            triangles[baseIndex + 2] = vertexIndex + 2;
+            
+            // Second triangle
+            triangles[baseIndex + 3] = vertexIndex + 1;
+            triangles[baseIndex + 4] = vertexIndex + 3;
+            triangles[baseIndex + 5] = vertexIndex + 2;
+        }
+        
+        mesh.vertices = vertices;
+        mesh.uv = uvs;
+        mesh.normals = normals;
+        mesh.triangles = triangles;
+        
+        return mesh;
     }
     
     private void LoadPlanetMaterials()
