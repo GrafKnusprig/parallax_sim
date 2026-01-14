@@ -1,4 +1,3 @@
-
 # Texturen
 
 - [ ] texturen für alle planeten / monde
@@ -24,11 +23,14 @@
 - [ ] controller steuerung
 - [ ] z achse über q und e steuern -> auf vr controller mappen
 
+- [ ] ladescreen -> random planet dreht sich davor/dahinter
+
 - [ ] VR: viewport des HMD sollte auf den angepeilten planeten drehen (autopilot)
 
 - [ ] neues datenset für info tool bzw. aktuell daten aus dem neuen datenset lesen
 
 - [ ] future: google maps auf erde
+- [ ] future: startbildschirm mit settings etc. rando planet dreht sich im hintergrund
 
 # Bugs
 
@@ -37,3 +39,8 @@
 - [ ] BUG: autopilot ist teilweise viel zu langsam wenn ein planet in der nähe ist -> erste speed zonen überspringen
 - [ ] BUG: info tool lässt sich für saturn nicht anzeigen da dione der nächste ist (nach dem autopilot travel)
 - [ ] BUG: in den jupiter kann man "reinfliegen" die geschwindigkeits regulierund und scaling scheint einen fehler zu haben
+
+# Refactoring
+
+- [ ] UI in eigenes file über interface oder anders exposen
+- [ ] Autopilot in eigenes file wenn möglich (könnte einfacher für die journey erweitert werden)
