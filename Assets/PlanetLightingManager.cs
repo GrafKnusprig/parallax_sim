@@ -8,24 +8,18 @@ using System.Collections.Generic;
 public class PlanetLightingManager : MonoBehaviour
 {
     [Header("Sun Settings")]
-    [SerializeField] private Transform sunTransform;
     [SerializeField] private Color sunColor = Color.white;
     [SerializeField] private float sunIntensity = 1.0f;
-    [SerializeField] private float ambientLight = 0.1f;
+    [SerializeField] private float ambientLight = 0.05f;
     
     [Header("Auto-Find Settings")]
-    [SerializeField] private bool autoFindSun = true;
-    [SerializeField] private long sunNaifId = 10; // NAIF ID for the Sun
-    
-    [Header("Material Management")]
-    [SerializeField] private bool autoFindMaterials = true;
-    [SerializeField] private Material[] planetMaterials;
+    [SerializeField] private bool debugLogging = false;
     
     [Header("References")]
     [SerializeField] private SolarSystemParallaxManager solarSystemManager;
     
-    private List<Material> managedMaterials = new List<Material>();
-    private static readonly int SunPositionID = Shader.PropertyToID("_SunPosition");
+    private Dictionary<Material, long> materialToNaifId = new Dictionary<Material, long>();
+    private static readonly int SunDirectionID = Shader.PropertyToID("_SunDirection");
     private static readonly int SunColorID = Shader.PropertyToID("_SunColor");
     private static readonly int SunIntensityID = Shader.PropertyToID("_SunIntensity");
     private static readonly int AmbientLightID = Shader.PropertyToID("_AmbientLight");
@@ -40,127 +34,66 @@ public class PlanetLightingManager : MonoBehaviour
             {
                 Debug.LogWarning("PlanetLightingManager: Could not find SolarSystemParallaxManager in scene");
             }
-        }
-        
-        // Auto-find sun if needed
-        if (autoFindSun && sunTransform == null)
-        {
-            FindSunTransform();
-        }
-        
-        // Gather materials
-        GatherMaterials();
-        
-        // Initial update
-        UpdateLighting();
-    }
-
-    void Update()
-    {
-        // Re-find sun if it was lost (e.g., scene reload)
-        if (sunTransform == null && autoFindSun)
-        {
-            FindSunTransform();
-        }
-        
-        UpdateLighting();
-    }
-    
-    /// <summary>
-    /// Finds the sun GameObject by searching for the object with NAIF ID 10
-    /// </summary>
-    private void FindSunTransform()
-    {
-        // Search all transforms with "ID: 10" in the name (NAIF ID for Sun)
-        Transform[] allTransforms = FindObjectsOfType<Transform>();
-        foreach (Transform t in allTransforms)
-        {
-            // The solar system manager creates objects with names like "Sun (ID: 10)"
-            if (t.name.Contains($"ID: {sunNaifId}") || t.name.Contains($"ID:{sunNaifId}"))
+            else if (debugLogging)
             {
-                sunTransform = t;
-                Debug.Log($"PlanetLightingManager: Found sun at {t.name}");
-                return;
+                Debug.Log("PlanetLightingManager: Found SolarSystemParallaxManager");
             }
         }
     }
     
     /// <summary>
-    /// Finds all materials that use the EnhancedPlanet shader
+    /// Register a material with its corresponding NAIF ID and real position
+    /// Call this from SolarSystemParallaxManager when creating planets
     /// </summary>
-    private void GatherMaterials()
+    public void RegisterPlanetMaterial(Material material, long naifId, Vector3 realPosAu)
     {
-        managedMaterials.Clear();
+        Debug.Log($"PlanetLightingManager: RegisterPlanetMaterial called for NAIF {naifId}");
         
-        // Add manually assigned materials
-        if (planetMaterials != null)
+        if (material == null)
         {
-            foreach (Material mat in planetMaterials)
-            {
-                if (mat != null && !managedMaterials.Contains(mat))
-                {
-                    managedMaterials.Add(mat);
-                }
-            }
-        }
-        
-        // Auto-find materials if enabled
-        if (autoFindMaterials)
-        {
-            MeshRenderer[] renderers = FindObjectsOfType<MeshRenderer>();
-            foreach (MeshRenderer renderer in renderers)
-            {
-                foreach (Material mat in renderer.sharedMaterials)
-                {
-                    if (mat != null && mat.shader != null && 
-                        mat.shader.name == "Custom/EnhancedPlanet" &&
-                        !managedMaterials.Contains(mat))
-                    {
-                        managedMaterials.Add(mat);
-                    }
-                }
-            }
-        }
-        
-        Debug.Log($"PlanetLightingManager: Managing {managedMaterials.Count} materials");
-    }
-    
-    /// <summary>
-    /// Updates all managed materials with current sun position and properties
-    /// </summary>
-    private void UpdateLighting()
-    {
-        if (sunTransform == null)
+            Debug.LogError($"PlanetLightingManager: Material is NULL for NAIF {naifId}!");
             return;
-            
-        Vector3 sunPosition = sunTransform.position;
+        }
         
-        foreach (Material mat in managedMaterials)
+        if (material.shader == null)
         {
+            Debug.LogError($"PlanetLightingManager: Material {material.name} has NULL shader for NAIF {naifId}!");
+        }
+        
+        materialToNaifId[material] = naifId;
+        
+        // Calculate light direction: from planet to sun (sun is at origin)
+        // Normalize the negative of the planet's position
+        Vector3 sunDirection = -realPosAu.normalized;
+        
+        // Set lighting properties (only once - static positions)
+        material.SetVector(SunDirectionID, sunDirection);
+        material.SetColor(SunColorID, sunColor);
+        material.SetFloat(SunIntensityID, sunIntensity);
+        material.SetFloat(AmbientLightID, ambientLight);
+        
+        Debug.Log($"  ✓ Registered NAIF {naifId}: shader={material.shader?.name}, sunDir={sunDirection}, sunColor={sunColor}, intensity={sunIntensity}, ambient={ambientLight}");
+    }
+    
+    /// <summary>
+    /// Update sun color and intensity for all materials (can be called at runtime to change appearance)
+    /// </summary>
+    public void UpdateSunProperties(Color? newSunColor = null, float? newIntensity = null, float? newAmbient = null)
+    {
+        if (newSunColor.HasValue) sunColor = newSunColor.Value;
+        if (newIntensity.HasValue) sunIntensity = newIntensity.Value;
+        if (newAmbient.HasValue) ambientLight = newAmbient.Value;
+        
+        foreach (var kvp in materialToNaifId)
+        {
+            Material mat = kvp.Key;
             if (mat != null)
             {
-                mat.SetVector(SunPositionID, sunPosition);
                 mat.SetColor(SunColorID, sunColor);
                 mat.SetFloat(SunIntensityID, sunIntensity);
                 mat.SetFloat(AmbientLightID, ambientLight);
             }
         }
-    }
-    
-    /// <summary>
-    /// Call this to refresh the material list (e.g., after creating new planets)
-    /// </summary>
-    public void RefreshMaterials()
-    {
-        GatherMaterials();
-    }
-    
-    /// <summary>
-    /// Manually set the sun transform
-    /// </summary>
-    public void SetSunTransform(Transform sun)
-    {
-        sunTransform = sun;
     }
     
     /// <summary>

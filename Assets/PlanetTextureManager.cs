@@ -1,10 +1,15 @@
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 /// <summary>
 /// Manages loading and applying high-resolution textures, normal maps, bump maps,
 /// and atmosphere/cloud layers for planetary bodies.
+/// Now supports both Editor and Runtime loading with proper Resources folder usage.
 /// </summary>
 public class PlanetTextureManager : MonoBehaviour
 {
@@ -24,190 +29,388 @@ public class PlanetTextureManager : MonoBehaviour
         public float atmosphereOpacity = 0.5f;
         
         public bool hasAtmosphere = false;
+        public bool isLoading = false;
+        public bool loadingFailed = false;
     }
 
-    [Header("Texture Settings")]
-    [SerializeField] private string highResTexturesPath = "HighResTextures";
+    [Header("Texture Loading Settings")]
+    [SerializeField] private bool useAsyncLoading = true;
+    [SerializeField] private float loadingDelay = 0.05f; // Delay between texture loads to prevent freezing
+    
+    [Header("Texture Path (relative to Assets/ or Resources/)")]
+    [Tooltip("Path relative to Assets/ folder in Editor, or Resources/ folder in builds")]
+    [SerializeField] private string texturesPath = "HighResTextures";
     
     [Header("Material References")]
+    [Tooltip("Template material for planets (must be assigned!)")]
     [SerializeField] private Material planetMaterialTemplate;
+    
+    [Tooltip("Template material for atmospheres")]
     [SerializeField] private Material atmosphereMaterialTemplate;
+    
+    [Tooltip("Template material for the Sun")]
     [SerializeField] private Material sunMaterialTemplate;
     
     [Header("Atmosphere Settings")]
     [SerializeField] private bool enableAtmospheres = true;
     [SerializeField] private float atmosphereHeightMultiplier = 1.05f; // 5% larger than planet
     
+    [Header("Debug")]
+    [SerializeField] private bool verboseLogging = true;
+    
     private Dictionary<long, PlanetTextureSet> textureSets = new Dictionary<long, PlanetTextureSet>();
     private Dictionary<long, Material> createdMaterials = new Dictionary<long, Material>();
+    private bool isInitialized = false;
+    private Coroutine loadingCoroutine = null;
     
     // Texture file mapping based on what we found in HighResTextures
-    private static readonly Dictionary<long, string> textureFileNames = new Dictionary<long, string>
+    private static readonly Dictionary<long, TextureInfo> textureDatabase = new Dictionary<long, TextureInfo>
     {
         // Solar System Planets
-        { 10, "8k_sun" },
-        { 199, "8k_mercury" },
-        { 299, "8k_venus_surface" },
-        { 399, "8k_earth_daymap" },
-        { 301, "8k_moon" },
-        { 499, "8k_mars" },
-        { 599, "8k_jupiter" },
-        { 699, "8k_saturn" },
-        { 799, "2k_uranus" },
-        { 899, "2k_neptune" },
-        { 999, "plutomap2k" },
+        { 10, new TextureInfo("8k_sun") },
+        { 199, new TextureInfo("8k_mercury") },
+        { 299, new TextureInfo("8k_venus_surface", atmosphereFile: "4k_venus_atmosphere") },
+        { 399, new TextureInfo("8k_earth_daymap", normalFile: "8k_earth_normal_map", specularFile: "8k_earth_specular_map", 
+                               atmosphereFile: "8k_earth_clouds", nightLightsFile: "8k_earth_nightmap") },
+        { 301, new TextureInfo("8k_moon") },
+        { 499, new TextureInfo("8k_mars") },
+        { 599, new TextureInfo("8k_jupiter") },
+        { 699, new TextureInfo("8k_saturn") },
+        { 799, new TextureInfo("2k_uranus") },
+        { 899, new TextureInfo("2k_neptune") },
+        { 999, new TextureInfo("plutomap2k", bumpFile: "plutobump2k") },
         
         // Jupiter Moons
-        { 501, "Jupiter_Moons/Io" },
-        { 502, "Jupiter_Moons/Europa" },
-        { 503, "Jupiter_Moons/Ganymede" },
-        { 504, "Jupiter_Moons/Callisto" },
+        { 501, new TextureInfo("Jupiter_Moons/Io") },
+        { 502, new TextureInfo("Jupiter_Moons/Europa") },
+        { 503, new TextureInfo("Jupiter_Moons/Ganymede") },
+        { 504, new TextureInfo("Jupiter_Moons/Callisto") },
         
         // Saturn Moons
-        { 601, "Saturn_Moons/Mimas" },
-        { 602, "Saturn_Moons/Enceladus" },
-        { 603, "Saturn_Moons/Tethys" },
-        { 604, "Saturn_Moons/Dione" },
-        { 605, "Saturn_Moons/Rhea" },
-        { 606, "Saturn_Moons/TitanSurface" },
-        { 608, "Saturn_Moons/Iapetus" },
+        { 601, new TextureInfo("Saturn_Moons/Mimas") },
+        { 602, new TextureInfo("Saturn_Moons/Enceladus") },
+        { 603, new TextureInfo("Saturn_Moons/Tethys") },
+        { 604, new TextureInfo("Saturn_Moons/Dione") },
+        { 605, new TextureInfo("Saturn_Moons/Rhea") },
+        { 606, new TextureInfo("Saturn_Moons/TitanSurface", atmosphereFile: "Saturn_Moons/TitanClouds") },
+        { 608, new TextureInfo("Saturn_Moons/Iapetus") },
     };
     
-    // Planets with atmosphere/cloud layers
-    private static readonly Dictionary<long, string> atmosphereFileNames = new Dictionary<long, string>
+    /// <summary>
+    /// Helper class to organize texture file information
+    /// </summary>
+    [System.Serializable]
+    public class TextureInfo
     {
-        { 399, "8k_earth_clouds" },
-        { 299, "4k_venus_atmosphere" },
-        { 606, "Saturn_Moons/TitanClouds" },
-    };
-    
-    // Planets with normal maps
-    private static readonly Dictionary<long, string> normalMapFileNames = new Dictionary<long, string>
-    {
-        { 399, "8k_earth_normal_map" },
-    };
-    
-    // Planets with bump maps
-    private static readonly Dictionary<long, string> bumpMapFileNames = new Dictionary<long, string>
-    {
-        { 999, "plutobump2k" },
-    };
-    
-    // Planets with specular maps
-    private static readonly Dictionary<long, string> specularMapFileNames = new Dictionary<long, string>
-    {
-        { 399, "8k_earth_specular_map" },
-    };
-    
-    // Planets with night lights
-    private static readonly Dictionary<long, string> nightLightsFileNames = new Dictionary<long, string>
-    {
-        { 399, "8k_earth_nightmap" },
-    };
+        public string baseFile;
+        public string normalFile;
+        public string bumpFile;
+        public string specularFile;
+        public string atmosphereFile;
+        public string nightLightsFile;
+        
+        public TextureInfo(string baseFile, string normalFile = null, string bumpFile = null, 
+                          string specularFile = null, string atmosphereFile = null, string nightLightsFile = null)
+        {
+            this.baseFile = baseFile;
+            this.normalFile = normalFile;
+            this.bumpFile = bumpFile;
+            this.specularFile = specularFile;
+            this.atmosphereFile = atmosphereFile;
+            this.nightLightsFile = nightLightsFile;
+        }
+    }
 
+    /// <summary>
+    /// Initializes the texture manager and starts loading textures
+    /// </summary>
     public void Initialize()
     {
-        LoadAllTextures();
+        if (isInitialized)
+        {
+            if (verboseLogging) Debug.LogWarning("PlanetTextureManager already initialized!");
+            return;
+        }
+        
+        try
+        {
+            Debug.Log("=== PlanetTextureManager: Initializing ===");
+            
+            // Validate material templates
+            if (!ValidateMaterialTemplates())
+            {
+                Debug.LogError("PlanetTextureManager: Material template validation failed! Check Inspector assignments.");
+                return;
+            }
+            
+            // Start loading textures
+            if (useAsyncLoading)
+            {
+                loadingCoroutine = StartCoroutine(LoadAllTexturesAsync());
+            }
+            else
+            {
+                LoadAllTexturesSync();
+            }
+            
+            isInitialized = true;
+            Debug.Log("=== PlanetTextureManager: Initialization started ===");
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"PlanetTextureManager: Exception during initialization: {e.Message}\n{e.StackTrace}");
+        }
     }
     
     /// <summary>
-    /// Loads all available high-resolution textures from the Assets folder
+    /// Validates that required material templates are assigned
     /// </summary>
-    private void LoadAllTextures()
+    private bool ValidateMaterialTemplates()
     {
-        foreach (var kvp in textureFileNames)
+        bool isValid = true;
+        
+        if (planetMaterialTemplate == null)
+        {
+            Debug.LogError("PlanetTextureManager: planetMaterialTemplate is NOT ASSIGNED! Please assign it in the Inspector.");
+            isValid = false;
+        }
+        else
+        {
+            if (verboseLogging)
+                Debug.Log($"✓ planetMaterialTemplate: {planetMaterialTemplate.name}, shader: {(planetMaterialTemplate.shader != null ? planetMaterialTemplate.shader.name : "NULL")}");
+        }
+        
+        if (atmosphereMaterialTemplate == null)
+        {
+            Debug.LogWarning("PlanetTextureManager: atmosphereMaterialTemplate not assigned. Atmosphere layers will not be created.");
+        }
+        else if (verboseLogging)
+        {
+            Debug.Log($"✓ atmosphereMaterialTemplate: {atmosphereMaterialTemplate.name}");
+        }
+        
+        if (sunMaterialTemplate == null)
+        {
+            Debug.LogWarning("PlanetTextureManager: sunMaterialTemplate not assigned. Sun will use fallback material.");
+        }
+        else if (verboseLogging)
+        {
+            Debug.Log($"✓ sunMaterialTemplate: {sunMaterialTemplate.name}");
+        }
+        
+        return isValid;
+    }
+    
+    /// <summary>
+    /// Loads all available high-resolution textures synchronously (blocking)
+    /// </summary>
+    private void LoadAllTexturesSync()
+    {
+        Debug.Log("Loading textures synchronously...");
+        int loadedCount = 0;
+        
+        foreach (var kvp in textureDatabase)
         {
             long naifId = kvp.Key;
-            string baseName = kvp.Value;
+            TextureInfo info = kvp.Value;
             
-            PlanetTextureSet textureSet = new PlanetTextureSet
-            {
-                naifId = naifId,
-                planetName = baseName
-            };
+            PlanetTextureSet textureSet = LoadTextureSetForPlanet(naifId, info);
             
-            // Load base texture
-            textureSet.baseTexture = LoadTextureFromResources(baseName);
-            
-            // Load normal map if available
-            if (normalMapFileNames.ContainsKey(naifId))
-            {
-                textureSet.normalMap = LoadTextureFromResources(normalMapFileNames[naifId]);
-            }
-            
-            // Load bump map if available
-            if (bumpMapFileNames.ContainsKey(naifId))
-            {
-                textureSet.bumpMap = LoadTextureFromResources(bumpMapFileNames[naifId]);
-            }
-            
-            // Load specular map if available
-            if (specularMapFileNames.ContainsKey(naifId))
-            {
-                textureSet.specularMap = LoadTextureFromResources(specularMapFileNames[naifId]);
-            }
-            
-            // Load atmosphere/cloud layer if available
-            if (atmosphereFileNames.ContainsKey(naifId))
-            {
-                textureSet.atmosphereTexture = LoadTextureFromResources(atmosphereFileNames[naifId]);
-                textureSet.hasAtmosphere = true;
-                textureSet.atmosphereOpacity = 0.5f; // Default opacity
-            }
-            
-            // Load night lights if available
-            if (nightLightsFileNames.ContainsKey(naifId))
-            {
-                textureSet.nightLightsTexture = LoadTextureFromResources(nightLightsFileNames[naifId]);
-            }
-            
-            if (textureSet.baseTexture != null)
+            if (textureSet != null && textureSet.baseTexture != null)
             {
                 textureSets[naifId] = textureSet;
-                Debug.Log($"Loaded texture set for {baseName} (ID: {naifId})");
+                loadedCount++;
             }
         }
         
-        Debug.Log($"Loaded {textureSets.Count} high-resolution texture sets");
+        Debug.Log($"Loaded {loadedCount}/{textureDatabase.Count} texture sets synchronously");
     }
     
     /// <summary>
-    /// Loads a texture from the Assets folder (editor) or Resources folder (build)
+    /// Loads all available high-resolution textures asynchronously to prevent freezing
     /// </summary>
-    private Texture2D LoadTextureFromResources(string fileName)
+    private IEnumerator LoadAllTexturesAsync()
     {
-#if UNITY_EDITOR
-        // In editor, load from Assets folder directly using AssetDatabase
-        string assetPath = $"Assets/{highResTexturesPath}/{fileName}";
+        Debug.Log("Loading textures asynchronously...");
+        int loadedCount = 0;
+        int totalCount = textureDatabase.Count;
         
-        // Try different extensions
+        foreach (var kvp in textureDatabase)
+        {
+            long naifId = kvp.Key;
+            TextureInfo info = kvp.Value;
+            
+            // Mark as loading
+            PlanetTextureSet textureSet = new PlanetTextureSet
+            {
+                naifId = naifId,
+                planetName = info.baseFile,
+                isLoading = true
+            };
+            textureSets[naifId] = textureSet;
+            
+            // Load the texture set
+            textureSet = LoadTextureSetForPlanet(naifId, info);
+            
+            if (textureSet != null && textureSet.baseTexture != null)
+            {
+                textureSet.isLoading = false;
+                textureSets[naifId] = textureSet;
+                loadedCount++;
+                
+                if (verboseLogging)
+                    Debug.Log($"[{loadedCount}/{totalCount}] Loaded texture set for {info.baseFile} (NAIF {naifId})");
+            }
+            else
+            {
+                textureSet.isLoading = false;
+                textureSet.loadingFailed = true;
+                if (verboseLogging)
+                    Debug.LogWarning($"[{loadedCount}/{totalCount}] Failed to load textures for NAIF {naifId}");
+            }
+            
+            // Small delay to prevent freezing
+            yield return new WaitForSeconds(loadingDelay);
+        }
+        
+        Debug.Log($"✓ Async texture loading complete: {loadedCount}/{totalCount} texture sets loaded");
+    }
+    
+    /// <summary>
+    /// Loads a complete texture set for a specific planet
+    /// </summary>
+    private PlanetTextureSet LoadTextureSetForPlanet(long naifId, TextureInfo info)
+    {
+        PlanetTextureSet textureSet = new PlanetTextureSet
+        {
+            naifId = naifId,
+            planetName = info.baseFile
+        };
+        
+        // Load base texture (required)
+        textureSet.baseTexture = LoadTexture(info.baseFile);
+        if (textureSet.baseTexture == null)
+        {
+            if (verboseLogging)
+                Debug.LogWarning($"Could not load base texture for {info.baseFile}");
+            return null;
+        }
+        
+        // Load optional textures
+        if (!string.IsNullOrEmpty(info.normalFile))
+            textureSet.normalMap = LoadTexture(info.normalFile);
+            
+        if (!string.IsNullOrEmpty(info.bumpFile))
+            textureSet.bumpMap = LoadTexture(info.bumpFile);
+            
+        if (!string.IsNullOrEmpty(info.specularFile))
+            textureSet.specularMap = LoadTexture(info.specularFile);
+            
+        if (!string.IsNullOrEmpty(info.atmosphereFile))
+        {
+            textureSet.atmosphereTexture = LoadTexture(info.atmosphereFile);
+            textureSet.hasAtmosphere = textureSet.atmosphereTexture != null;
+            textureSet.atmosphereOpacity = 0.5f;
+        }
+        
+        if (!string.IsNullOrEmpty(info.nightLightsFile))
+            textureSet.nightLightsTexture = LoadTexture(info.nightLightsFile);
+        
+        return textureSet;
+    }
+    
+    /// <summary>
+    /// Unified texture loading method that works in both Editor and Runtime
+    /// Tries multiple file extensions and handles both Resources and AssetDatabase
+    /// </summary>
+    private Texture2D LoadTexture(string fileName)
+    {
+        if (string.IsNullOrEmpty(fileName))
+            return null;
+        
+#if UNITY_EDITOR
+        // In Editor: Load from Assets folder using AssetDatabase
+        return LoadTextureFromAssets(fileName);
+#else
+        // In Build: Load from Resources folder
+        return LoadTextureFromResources(fileName);
+#endif
+    }
+
+#if UNITY_EDITOR
+    /// <summary>
+    /// Loads texture from Assets folder (Editor only)
+    /// </summary>
+    private Texture2D LoadTextureFromAssets(string fileName)
+    {
+        string basePath = $"Assets/{texturesPath}/{fileName}";
+        
+        if (verboseLogging)
+            Debug.Log($"  Attempting to load from: {basePath}");
+        
+        // Try different file extensions
         string[] extensions = { ".jpg", ".jpeg", ".png", ".tif", ".tiff" };
+        
         foreach (string ext in extensions)
         {
-            string fullPath = assetPath + ext;
-            Texture2D texture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(fullPath);
+            string fullPath = basePath + ext;
+            Texture2D texture = AssetDatabase.LoadAssetAtPath<Texture2D>(fullPath);
+            
             if (texture != null)
             {
+                if (verboseLogging)
+                    Debug.Log($"  ✓ LOADED from HighResTextures: {fullPath} ({texture.width}x{texture.height})");
                 return texture;
             }
         }
         
-        // If not found, return null
-        return null;
-#else
-        // In build, load from Resources folder
-        string resourcePath = Path.Combine(highResTexturesPath, fileName);
-        Texture2D texture = Resources.Load<Texture2D>(resourcePath);
-        
-        if (texture == null)
+        // Also try loading without extension (AssetDatabase can handle this)
+        Texture2D textureNoExt = AssetDatabase.LoadAssetAtPath<Texture2D>(basePath);
+        if (textureNoExt != null)
         {
-            // Try without extension
-            string pathWithoutExt = Path.Combine(highResTexturesPath, Path.GetFileNameWithoutExtension(fileName));
-            texture = Resources.Load<Texture2D>(pathWithoutExt);
+            if (verboseLogging)
+                Debug.Log($"  ✓ LOADED from HighResTextures: {basePath} ({textureNoExt.width}x{textureNoExt.height})");
+            return textureNoExt;
         }
         
-        return texture;
+        if (verboseLogging)
+            Debug.LogWarning($"  ✗ NOT FOUND in HighResTextures: {basePath}{{.jpg,.png,.tif}}");
+        
+        return null;
+    }
 #endif
+    
+    /// <summary>
+    /// Loads texture from Resources folder (Runtime/Build)
+    /// </summary>
+    private Texture2D LoadTextureFromResources(string fileName)
+    {
+        // Construct path relative to Resources folder
+        string resourcePath = $"{texturesPath}/{fileName}";
+        
+        // Resources.Load doesn't need file extensions
+        Texture2D texture = Resources.Load<Texture2D>(resourcePath);
+        
+        if (texture != null)
+        {
+            if (verboseLogging)
+                Debug.Log($"  ✓ Loaded from Resources: {resourcePath} ({texture.width}x{texture.height})");
+            return texture;
+        }
+        
+        // Try without the base path (in case texture is directly in Resources)
+        texture = Resources.Load<Texture2D>(fileName);
+        if (texture != null)
+        {
+            if (verboseLogging)
+                Debug.Log($"  ✓ Loaded from Resources: {fileName} ({texture.width}x{texture.height})");
+            return texture;
+        }
+        
+        if (verboseLogging)
+            Debug.LogWarning($"  ✗ Not found in Resources: {resourcePath}");
+        
+        return null;
     }
     
     /// <summary>
@@ -218,42 +421,121 @@ public class PlanetTextureManager : MonoBehaviour
         // Return cached material if already created
         if (createdMaterials.TryGetValue(naifId, out Material cachedMaterial))
         {
-            return cachedMaterial;
+            if (cachedMaterial != null)
+                return cachedMaterial;
         }
         
         // Check if we have textures for this planet
         if (!textureSets.TryGetValue(naifId, out PlanetTextureSet textureSet))
         {
+            if (verboseLogging)
+                Debug.Log($"No texture set available for NAIF {naifId}, using fallback");
+            return fallbackMaterial;
+        }
+        
+        // If still loading, return fallback temporarily
+        if (textureSet.isLoading)
+        {
+            if (verboseLogging)
+                Debug.Log($"Textures still loading for NAIF {naifId}, using fallback temporarily");
+            return fallbackMaterial;
+        }
+        
+        // If loading failed or no base texture, return fallback
+        if (textureSet.loadingFailed || textureSet.baseTexture == null)
+        {
+            if (verboseLogging)
+                Debug.LogWarning($"No base texture for NAIF {naifId}, using fallback");
             return fallbackMaterial;
         }
         
         // Determine which material template to use
-        Material templateMaterial;
-        if (naifId == 10) // Sun
-        {
-            templateMaterial = sunMaterialTemplate;
-        }
-        else
-        {
-            templateMaterial = planetMaterialTemplate;
-        }
+        Material templateMaterial = GetMaterialTemplate(naifId);
         
-        // Check if template material is assigned
         if (templateMaterial == null)
         {
-            Debug.LogError($"Material template not assigned in PlanetTextureManager! Please assign planetMaterialTemplate or sunMaterialTemplate in the Inspector.");
+            Debug.LogError($"No material template available for NAIF {naifId}!");
+            return CreateEmergencyMaterial(naifId, fallbackMaterial);
+        }
+        
+        // Verify template has a valid shader
+        if (templateMaterial.shader == null)
+        {
+            Debug.LogError($"Template material {templateMaterial.name} has NULL shader for NAIF {naifId}!");
             return fallbackMaterial;
         }
         
-        // Create a new material instance from the template
-        Material material = new Material(templateMaterial);
-        material.name = $"Planet_{naifId}_Material";
+        // Create material instance
+        Material material = CreateMaterialFromTemplate(templateMaterial, naifId);
         
-        // Apply base texture
+        // Apply all textures to the material
+        ApplyTexturesToMaterial(material, textureSet);
+        
+        // Cache and return
+        createdMaterials[naifId] = material;
+        
+        if (verboseLogging)
+            Debug.Log($"✓ Created material for NAIF {naifId}: {material.name} with shader {material.shader.name}");
+        
+        return material;
+    }
+    
+    /// <summary>
+    /// Gets the appropriate material template for a given planet
+    /// </summary>
+    private Material GetMaterialTemplate(long naifId)
+    {
+        if (naifId == 10 && sunMaterialTemplate != null) // Sun
+            return sunMaterialTemplate;
+        
+        return planetMaterialTemplate;
+    }
+    
+    /// <summary>
+    /// Creates a material instance from a template
+    /// </summary>
+    private Material CreateMaterialFromTemplate(Material template, long naifId)
+    {
+        Material material = new Material(template);
+        material.name = $"Planet_{naifId}_Material";
+        return material;
+    }
+    
+    /// <summary>
+    /// Creates an emergency fallback material when templates fail
+    /// </summary>
+    private Material CreateEmergencyMaterial(long naifId, Material fallbackMaterial)
+    {
+        if (fallbackMaterial != null)
+            return fallbackMaterial;
+        
+        // Last resort: create a basic material with Standard shader
+        Shader standardShader = Shader.Find("Standard");
+        if (standardShader != null)
+        {
+            Material emergencyMaterial = new Material(standardShader);
+            emergencyMaterial.name = $"Emergency_Material_{naifId}";
+            Debug.LogWarning($"Created emergency material for NAIF {naifId}");
+            return emergencyMaterial;
+        }
+        
+        Debug.LogError($"Cannot create any material for NAIF {naifId}!");
+        return null;
+    }
+    
+    /// <summary>
+    /// Applies all available textures to a material
+    /// </summary>
+    private void ApplyTexturesToMaterial(Material material, PlanetTextureSet textureSet)
+    {
+        // Apply base texture (main texture)
         if (textureSet.baseTexture != null)
         {
             material.mainTexture = textureSet.baseTexture;
             material.SetTexture("_MainTex", textureSet.baseTexture);
+            
+            if (verboseLogging)
+                Debug.Log($"  Applied base texture: {textureSet.baseTexture.name}");
         }
         
         // Apply normal map
@@ -262,14 +544,19 @@ public class PlanetTextureManager : MonoBehaviour
             material.SetTexture("_BumpMap", textureSet.normalMap);
             material.EnableKeyword("_NORMALMAP");
             material.SetFloat("_BumpScale", 1.0f);
+            
+            if (verboseLogging)
+                Debug.Log($"  Applied normal map: {textureSet.normalMap.name}");
         }
-        
-        // Apply bump map (as normal map if no dedicated normal map exists)
-        if (textureSet.bumpMap != null && textureSet.normalMap == null)
+        // Use bump map as normal map if no dedicated normal map exists
+        else if (textureSet.bumpMap != null)
         {
             material.SetTexture("_BumpMap", textureSet.bumpMap);
             material.EnableKeyword("_NORMALMAP");
             material.SetFloat("_BumpScale", 0.5f);
+            
+            if (verboseLogging)
+                Debug.Log($"  Applied bump map as normal: {textureSet.bumpMap.name}");
         }
         
         // Apply specular map
@@ -279,19 +566,22 @@ public class PlanetTextureManager : MonoBehaviour
             material.SetFloat("_Glossiness", 0.5f);
             material.SetFloat("_GlossMapScale", 1.0f);
             material.EnableKeyword("_METALLICGLOSSMAP");
+            
+            if (verboseLogging)
+                Debug.Log($"  Applied specular map: {textureSet.specularMap.name}");
         }
         
-        // Apply emissive for night lights (Earth)
+        // Apply night lights as emissive texture
         if (textureSet.nightLightsTexture != null)
         {
             material.SetTexture("_EmissionMap", textureSet.nightLightsTexture);
             material.EnableKeyword("_EMISSION");
             material.SetColor("_EmissionColor", Color.white * 0.5f);
             material.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;
+            
+            if (verboseLogging)
+                Debug.Log($"  Applied night lights: {textureSet.nightLightsTexture.name}");
         }
-        
-        createdMaterials[naifId] = material;
-        return material;
     }
     
     /// <summary>
@@ -300,22 +590,33 @@ public class PlanetTextureManager : MonoBehaviour
     public GameObject CreateAtmosphereLayer(long naifId, GameObject planetObject)
     {
         if (!enableAtmospheres)
-            return null;
-            
-        if (!textureSets.TryGetValue(naifId, out PlanetTextureSet textureSet))
-            return null;
-            
-        if (!textureSet.hasAtmosphere || textureSet.atmosphereTexture == null)
-            return null;
-        
-        // Check if atmosphere material template is assigned
-        if (atmosphereMaterialTemplate == null)
         {
-            Debug.LogError("Atmosphere material template not assigned in PlanetTextureManager! Please assign atmosphereMaterialTemplate in the Inspector.");
+            if (verboseLogging)
+                Debug.Log($"Atmospheres disabled, skipping for NAIF {naifId}");
             return null;
         }
         
-        // Create atmosphere sphere slightly larger than the planet
+        if (!textureSets.TryGetValue(naifId, out PlanetTextureSet textureSet))
+        {
+            if (verboseLogging)
+                Debug.Log($"No texture set for NAIF {naifId}, cannot create atmosphere");
+            return null;
+        }
+        
+        if (!textureSet.hasAtmosphere || textureSet.atmosphereTexture == null)
+        {
+            if (verboseLogging)
+                Debug.Log($"No atmosphere texture for NAIF {naifId}");
+            return null;
+        }
+        
+        if (atmosphereMaterialTemplate == null)
+        {
+            Debug.LogError($"Atmosphere material template not assigned! Cannot create atmosphere for NAIF {naifId}");
+            return null;
+        }
+        
+        // Create atmosphere sphere
         GameObject atmosphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         atmosphere.name = $"{planetObject.name}_Atmosphere";
         atmosphere.transform.SetParent(planetObject.transform, false);
@@ -327,7 +628,7 @@ public class PlanetTextureManager : MonoBehaviour
         if (collider != null)
             Destroy(collider);
         
-        // Create material instance from template
+        // Create material instance
         Material atmosphereMaterial = new Material(atmosphereMaterialTemplate);
         atmosphereMaterial.name = $"Atmosphere_{naifId}";
         atmosphereMaterial.mainTexture = textureSet.atmosphereTexture;
@@ -345,6 +646,9 @@ public class PlanetTextureManager : MonoBehaviour
             renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         }
         
+        if (verboseLogging)
+            Debug.Log($"✓ Created atmosphere layer for NAIF {naifId}");
+        
         return atmosphere;
     }
     
@@ -353,7 +657,21 @@ public class PlanetTextureManager : MonoBehaviour
     /// </summary>
     public bool HasHighResTextures(long naifId)
     {
-        return textureSets.ContainsKey(naifId);
+        if (!textureSets.TryGetValue(naifId, out PlanetTextureSet textureSet))
+            return false;
+        
+        return textureSet.baseTexture != null && !textureSet.loadingFailed;
+    }
+    
+    /// <summary>
+    /// Checks if textures are still loading for a planet
+    /// </summary>
+    public bool IsLoading(long naifId)
+    {
+        if (!textureSets.TryGetValue(naifId, out PlanetTextureSet textureSet))
+            return false;
+        
+        return textureSet.isLoading;
     }
     
     /// <summary>
@@ -366,10 +684,50 @@ public class PlanetTextureManager : MonoBehaviour
     }
     
     /// <summary>
+    /// Gets the number of successfully loaded texture sets
+    /// </summary>
+    public int GetLoadedTextureCount()
+    {
+        int count = 0;
+        foreach (var textureSet in textureSets.Values)
+        {
+            if (textureSet.baseTexture != null && !textureSet.loadingFailed)
+                count++;
+        }
+        return count;
+    }
+    
+    /// <summary>
     /// Toggles atmosphere visibility for all planets
     /// </summary>
     public void SetAtmospheresEnabled(bool enabled)
     {
         enableAtmospheres = enabled;
+        if (verboseLogging)
+            Debug.Log($"Atmospheres {(enabled ? "enabled" : "disabled")}");
+    }
+    
+    /// <summary>
+    /// Force reload all textures (useful for debugging)
+    /// </summary>
+    public void ReloadAllTextures()
+    {
+        Debug.Log("Reloading all textures...");
+        
+        // Clear existing data
+        textureSets.Clear();
+        createdMaterials.Clear();
+        
+        // Stop any ongoing loading
+        if (loadingCoroutine != null)
+        {
+            StopCoroutine(loadingCoroutine);
+            loadingCoroutine = null;
+        }
+        
+        isInitialized = false;
+        
+        // Restart initialization
+        Initialize();
     }
 }

@@ -4,6 +4,7 @@
 - [x] erde hat spiegelverkehrte textur ggf. bei allen anderen auch prüfen
 - [ ] saturn ringe tilt fixen
 - [ ] high res textuen für alle planeten: https://www.solarsystemscope.com/textures/
+- [x] **COMPLETED: Dynamic texture loading mechanism reworked** - See PLANET_TEXTURE_SYSTEM_README.md
 
 # UI
 

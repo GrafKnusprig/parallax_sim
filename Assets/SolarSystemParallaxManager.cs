@@ -144,6 +144,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
     // High-resolution texture manager
     private PlanetTextureManager textureManager;
     
+    // Planet lighting manager
+    private PlanetLightingManager lightingManager;
+    
     // Autopilot system
     private bool autopilotMenuOpen = false;
     private bool autopilotActive = false;
@@ -272,9 +275,30 @@ public class SolarSystemParallaxManager : MonoBehaviour
         textureManager = GetComponent<PlanetTextureManager>();
         if (textureManager == null)
         {
+            Debug.LogWarning("SolarSystemParallaxManager: PlanetTextureManager not found, creating new instance");
             textureManager = gameObject.AddComponent<PlanetTextureManager>();
         }
-        textureManager.Initialize();
+        else
+        {
+            Debug.Log($"SolarSystemParallaxManager: Found existing PlanetTextureManager component");
+        }
+        
+        if (textureManager != null)
+        {
+            textureManager.Initialize();
+        }
+        else
+        {
+            Debug.LogError("SolarSystemParallaxManager: Failed to get or create PlanetTextureManager!");
+        }
+        
+        // Get or create lighting manager
+        lightingManager = GetComponent<PlanetLightingManager>();
+        if (lightingManager == null)
+        {
+            lightingManager = gameObject.AddComponent<PlanetLightingManager>();
+            Debug.Log("SolarSystemParallaxManager: Created PlanetLightingManager");
+        }
         
         CreateHorizonSphere();
         SetupLabelCanvas();
@@ -923,21 +947,64 @@ public class SolarSystemParallaxManager : MonoBehaviour
             {
                 Material materialToUse = null;
                 
-                // First, try to get high-res material from texture manager
-                if (textureManager != null && textureManager.HasHighResTextures(naifId))
+                // ALWAYS try to get high-res material from texture manager first
+                if (textureManager != null)
                 {
-                    materialToUse = textureManager.GetOrCreatePlanetMaterial(naifId, planetMaterial);
+                    // Try to get or create material with HighResTextures
+                    // Falls back internally if textures not available
+                    Material fallbackMat = planetMaterials.TryGetValue(naifId, out Material specificMaterial) ? specificMaterial : planetMaterial;
+                    materialToUse = textureManager.GetOrCreatePlanetMaterial(naifId, fallbackMat);
+                    
+                    if (materialToUse != null && textureManager.HasHighResTextures(naifId))
+                    {
+                        Debug.Log($"✓ Using HighResTextures material for {name} (NAIF {naifId})");
+                        
+                        // Register material with lighting manager
+                        if (lightingManager != null && naifId != 10) // Skip sun
+                        {
+                            lightingManager.RegisterPlanetMaterial(materialToUse, naifId, realPosAu);
+                        }
+                    }
+                    else if (materialToUse != null)
+                    {
+                        Debug.Log($"Using fallback material for {name} (NAIF {naifId}) - HighResTextures not available");
+                    }
                 }
                 
-                // Fallback to planet-specific material or generic material
+                // Final fallback if texture manager didn't provide anything
                 if (materialToUse == null)
                 {
                     materialToUse = planetMaterials.TryGetValue(naifId, out Material specificMaterial) ? specificMaterial : planetMaterial;
+                    Debug.LogWarning($"Using old material system for {name} (NAIF {naifId})");
                 }
                 
                 if (materialToUse != null)
                 {
-                    renderer.sharedMaterial = materialToUse;
+                    renderer.material = materialToUse; // Use .material instead of .sharedMaterial to create instance
+                    Debug.Log($"Applied material to {name}: {materialToUse.name}");
+                    
+                    // CRITICAL: Verify what shader the renderer actually has now
+                    if (renderer.material != null && renderer.material.shader != null)
+                    {
+                        Debug.Log($"  ✓ Renderer now has shader: {renderer.material.shader.name}");
+                        // Check if main texture is set
+                        if (renderer.material.mainTexture != null)
+                        {
+                            Debug.Log($"  ✓ Renderer has mainTexture: {renderer.material.mainTexture.name}");
+                        }
+                        else
+                        {
+                            Debug.LogError($"  ✗ Renderer mainTexture is NULL!");
+                        }
+                    }
+                    else
+                    {
+                        Debug.LogError($"  ✗ Renderer material or shader is NULL after assignment!");
+                    }
+                }
+                else
+                {
+                    Debug.LogError($"No material available for {name}!");
                 }
             }
 
