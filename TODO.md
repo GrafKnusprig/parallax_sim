@@ -38,7 +38,7 @@
 - [ ] BUG: autopilot beendet nicht
 - [x] BUG: autopilot ist teilweise viel zu langsam wenn ein planet in der nähe ist -> erste speed zonen überspringen
 - [ ] BUG: info tool lässt sich für saturn nicht anzeigen da dione der nächste ist (nach dem autopilot travel)
-- [ ] BUG: in den jupiter kann man "reinfliegen" die geschwindigkeits regulierund und scaling scheint einen fehler zu haben
+- [ ] BUG: in den jupiter kann man "reinfliegen" die geschwindigkeits regulierund und scaling scheint einen fehler zu haben -> konnte ich nicht reproduzieren :O
 
 # Refactoring
 
