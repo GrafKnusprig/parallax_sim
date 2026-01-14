@@ -1435,12 +1435,15 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         if (nearestPlanet == null) return;
         
-        // Calculate distance to nearest planet surface
-        Vector3 offsetAu = nearestPlanet.realPosAu - playerRealPosAu;
+        // When autopilot is active, use autopilot target for speed zones instead of nearest planet
+        BodyInstance targetBody = (autopilotActive && autopilotTarget != null) ? autopilotTarget : nearestPlanet;
+        
+        // Calculate distance to target planet surface
+        Vector3 offsetAu = targetBody.realPosAu - playerRealPosAu;
         float distanceAu = offsetAu.magnitude;
         
         // Convert planet radius from km to AU for comparison
-        float planetRadiusAu = nearestPlanet.radiusKm / (float)AU_KM;
+        float planetRadiusAu = targetBody.radiusKm / (float)AU_KM;
         
         // Distance to planet surface (not center) - prevent negative distance
         distanceToNearestPlanet = Mathf.Max(0.000000001f, distanceAu - planetRadiusAu);
@@ -1474,8 +1477,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
         // Flying away is faster than flying towards for intuitive escape mechanics
         float targetSpeed;
         
-        // Determine movement direction relative to planet
-        Vector3 toPlanet = (nearestPlanet.realPosAu - playerRealPosAu).normalized;
+        // Determine movement direction relative to planet (use target body when autopilot active)
+        Vector3 toPlanet = (targetBody.realPosAu - playerRealPosAu).normalized;
         Vector3 lastMovement = Vector3.zero;
         
         // Get current movement direction from input
@@ -1550,7 +1553,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
         // Debug info (remove or comment out when not needed)
         if (Time.frameCount % 30 == 0) // Every 30 frames
         {
-            Debug.Log($"Distance-Based Speed - Distance: {distanceToNearestPlanet:F6} AU, Scale: {currentScale:F5}, Speed: {currentSpeed:F6} AU/s, Planet: {nearestPlanet.name}");
+            string planetInfo = autopilotActive && autopilotTarget != null ? $"{targetBody.name} (autopilot target)" : targetBody.name;
+            Debug.Log($"Distance-Based Speed - Distance: {distanceToNearestPlanet:F6} AU, Scale: {currentScale:F5}, Speed: {currentSpeed:F6} AU/s, Planet: {planetInfo}");
         }
     }
     

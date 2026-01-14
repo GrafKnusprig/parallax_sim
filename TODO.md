@@ -36,7 +36,7 @@
 
 - [ ] BUG: proxima labels werden immer alle angezeigt. es reicht wenn auf große distanz nur eines davon angezeigt wird.
 - [ ] BUG: autopilot beendet nicht
-- [ ] BUG: autopilot ist teilweise viel zu langsam wenn ein planet in der nähe ist -> erste speed zonen überspringen
+- [x] BUG: autopilot ist teilweise viel zu langsam wenn ein planet in der nähe ist -> erste speed zonen überspringen
 - [ ] BUG: info tool lässt sich für saturn nicht anzeigen da dione der nächste ist (nach dem autopilot travel)
 - [ ] BUG: in den jupiter kann man "reinfliegen" die geschwindigkeits regulierund und scaling scheint einen fehler zu haben
 
