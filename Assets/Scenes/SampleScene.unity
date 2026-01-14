@@ -542,6 +542,8 @@ GameObject:
   - component: {fileID: 713169412}
   - component: {fileID: 713169411}
   - component: {fileID: 713169413}
+  - component: {fileID: 713169414}
+  - component: {fileID: 713169415}
   m_Layer: 0
   m_Name: GameObject
   m_TagString: Untagged
@@ -630,6 +632,38 @@ MonoBehaviour:
   starColor: {r: 1, g: 1, b: 1, a: 1}
   starBrightness: 1
   maxStarsPerFrame: 50000
+--- !u!114 &713169414
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 713169410}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3e106ff562b9f43d2b64d1b48448f3c3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::AtmosphereToggle
+  toggleKey: 30
+  showToggleMessage: 1
+--- !u!114 &713169415
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 713169410}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e0a46071c1323414ba3132ba1f6bab6b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlanetTextureManager
+  highResTexturesPath: HighResTextures
+  planetMaterialTemplate: {fileID: 0}
+  atmosphereMaterialTemplate: {fileID: 0}
+  sunMaterialTemplate: {fileID: 0}
+  enableAtmospheres: 1
+  atmosphereHeightMultiplier: 1.05
 --- !u!1 &832575517
 GameObject:
   m_ObjectHideFlags: 0

@@ -141,6 +141,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
     // Stellar parallax integration
     private StellarParallaxManager stellarManager;
     
+    // High-resolution texture manager
+    private PlanetTextureManager textureManager;
+    
     // Autopilot system
     private bool autopilotMenuOpen = false;
     private bool autopilotActive = false;
@@ -264,6 +267,14 @@ public class SolarSystemParallaxManager : MonoBehaviour
     {
         // Get reference to stellar manager if present
         stellarManager = GetComponent<StellarParallaxManager>();
+        
+        // Get or create texture manager
+        textureManager = GetComponent<PlanetTextureManager>();
+        if (textureManager == null)
+        {
+            textureManager = gameObject.AddComponent<PlanetTextureManager>();
+        }
+        textureManager.Initialize();
         
         CreateHorizonSphere();
         SetupLabelCanvas();
@@ -910,8 +921,19 @@ public class SolarSystemParallaxManager : MonoBehaviour
             var renderer = proxy.GetComponent<MeshRenderer>();
             if (renderer != null)
             {
-                // Try to use planet-specific material first, fall back to generic material
-                Material materialToUse = planetMaterials.TryGetValue(naifId, out Material specificMaterial) ? specificMaterial : planetMaterial;
+                Material materialToUse = null;
+                
+                // First, try to get high-res material from texture manager
+                if (textureManager != null && textureManager.HasHighResTextures(naifId))
+                {
+                    materialToUse = textureManager.GetOrCreatePlanetMaterial(naifId, planetMaterial);
+                }
+                
+                // Fallback to planet-specific material or generic material
+                if (materialToUse == null)
+                {
+                    materialToUse = planetMaterials.TryGetValue(naifId, out Material specificMaterial) ? specificMaterial : planetMaterial;
+                }
                 
                 if (materialToUse != null)
                 {
@@ -933,6 +955,13 @@ public class SolarSystemParallaxManager : MonoBehaviour
             if (naifId == 699 && saturnRingMaterial != null)
             {
                 body.ringObject = CreateSaturnRings(proxy.transform, radiusKm);
+            }
+            
+            // Create atmosphere layer if available (Earth, Venus, Titan, etc.)
+            if (textureManager != null)
+            {
+                GameObject atmosphere = textureManager.CreateAtmosphereLayer(naifId, proxy);
+                // Note: atmosphere is parented to proxy and will move with it
             }
 
             if (enableLabels)
