@@ -961,9 +961,15 @@ public class SolarSystemParallaxManager : MonoBehaviour
             };
             
             // Create rings for Saturn (NAIF ID 699)
-            if (naifId == 699 && saturnRingMaterial != null)
+            if (naifId == 699)
             {
-                body.ringObject = CreateSaturnRings(proxy.transform, radiusKm);
+                // Tilt Saturn 27 degrees on Z axis
+                proxy.transform.localRotation = Quaternion.Euler(0, 0, 27f);
+                
+                if (saturnRingMaterial != null)
+                {
+                    body.ringObject = CreateSaturnRings(proxy.transform, radiusKm);
+                }
             }
 
             if (enableLabels)
@@ -1315,8 +1321,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
             meshRenderer.sharedMaterial = saturnRingMaterial;
         }
         
-        // Tilt the rings (Saturn's rings are tilted ~26.7 degrees to its orbital plane)
-        ringObject.transform.localRotation = Quaternion.Euler(26.7f, 0, 0);
+        // No additional rotation needed - rings inherit Saturn's tilt from parent
+        // The planet is already tilted 27 degrees on Z axis
+        ringObject.transform.localRotation = Quaternion.identity;
         
         // The scale will be set in UpdateBodyProxies along with the planet
         ringObject.transform.localScale = Vector3.one;
