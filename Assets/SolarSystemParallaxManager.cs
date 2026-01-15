@@ -2618,7 +2618,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         float stopDistanceAu = targetRadiusAu * 10f; // Stop at 10x planet radius
         
         // Check if we've arrived (with small tolerance for floating-point precision)
-        float arrivalTolerance = 1e-8f; // Small tolerance in AU to handle precision issues
+        float arrivalTolerance = 1e-4f; // Tolerance in AU (~15,000 km) - generous to ensure reliable exit
         float remainingDistance = distanceAu - stopDistanceAu;
         if (distanceAu <= stopDistanceAu || remainingDistance < arrivalTolerance)
         {
