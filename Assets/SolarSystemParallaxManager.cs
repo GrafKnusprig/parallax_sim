@@ -2617,8 +2617,10 @@ public class SolarSystemParallaxManager : MonoBehaviour
         float targetRadiusAu = autopilotTarget.radiusKm / (float)AU_KM;
         float stopDistanceAu = targetRadiusAu * 10f; // Stop at 10x planet radius
         
-        // Check if we've arrived
-        if (distanceAu <= stopDistanceAu)
+        // Check if we've arrived (with small tolerance for floating-point precision)
+        float arrivalTolerance = 1e-8f; // Small tolerance in AU to handle precision issues
+        float remainingDistance = distanceAu - stopDistanceAu;
+        if (distanceAu <= stopDistanceAu || remainingDistance < arrivalTolerance)
         {
             Debug.Log($"Autopilot: Arrived at {autopilotTarget.name}");
             StopAutopilot();
