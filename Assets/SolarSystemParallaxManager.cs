@@ -131,8 +131,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private float actualSpeed; // Actual movement speed (0 when standing still)
     private float distanceToNearestPlanet;
     
-    // Planet-specific materials
-    private Dictionary<long, Material> planetMaterials = new Dictionary<long, Material>();
+    // Planet-specific textures and materials
+    private Dictionary<long, Texture2D> planetTextures = new Dictionary<long, Texture2D>();
+    private Dictionary<long, Material> planetMaterials = new Dictionary<long, Material>(); // For stars with custom materials
     
     // HUD elements
     private GameObject hudUI;
@@ -910,12 +911,42 @@ public class SolarSystemParallaxManager : MonoBehaviour
             var renderer = proxy.GetComponent<MeshRenderer>();
             if (renderer != null)
             {
-                // Try to use planet-specific material first, fall back to generic material
-                Material materialToUse = planetMaterials.TryGetValue(naifId, out Material specificMaterial) ? specificMaterial : planetMaterial;
+                Material materialToUse = null;
+                
+                // Check if this body has a custom material (e.g., stars with procedural shaders)
+                if (planetMaterials.TryGetValue(naifId, out Material customMaterial))
+                {
+                    materialToUse = customMaterial;
+                }
+                // Otherwise, use the base material with texture applied
+                else if (planetMaterial != null)
+                {
+                    // Duplicate the material so each body has its own instance
+                    materialToUse = new Material(planetMaterial);
+                    
+                    // Try to load body-specific texture, fall back to default (ID 0)
+                    Texture2D textureToUse = null;
+                    if (planetTextures.TryGetValue(naifId, out Texture2D specificTexture))
+                    {
+                        textureToUse = specificTexture;
+                    }
+                    else if (planetTextures.TryGetValue(0, out Texture2D defaultTexture))
+                    {
+                        textureToUse = defaultTexture;
+                        Debug.Log($"Using default texture for {name} (NAIF ID {naifId})");
+                    }
+                    
+                    // Apply texture to the duplicated material
+                    if (textureToUse != null)
+                    {
+                        materialToUse.SetTexture("_BaseMap", textureToUse);
+                        materialToUse.SetTexture("_MainTex", textureToUse); // Legacy shader support
+                    }
+                }
                 
                 if (materialToUse != null)
                 {
-                    renderer.sharedMaterial = materialToUse;
+                    renderer.material = materialToUse; // Use .material (not .sharedMaterial) since we duplicated it
                 }
             }
 
@@ -1388,34 +1419,61 @@ public class SolarSystemParallaxManager : MonoBehaviour
                     // Parse key as long to support large Gaia source IDs
                     if (long.TryParse(keyPart, out long naifId))
                     {
-                        string materialPath = valuePart;
+                        string assetPath = valuePart;
                         
-                        // Load material from asset path (works in editor and build)
-                        Material material = null;
-                        
-#if UNITY_EDITOR
-                        // In editor, use AssetDatabase
-                        material = UnityEditor.AssetDatabase.LoadAssetAtPath<Material>(materialPath);
-#else
-                        // In build, try to find material by converting path to Resources path
-                        string resourcesPath = materialPath.Replace("Assets/", "").Replace(".mat", "");
-                        material = Resources.Load<Material>(resourcesPath);
-#endif
-                        
-                        if (material != null)
+                        // Check if this is a material (.mat) or texture (.jpg, .png, .tif, etc.)
+                        if (assetPath.EndsWith(".mat"))
                         {
-                            planetMaterials[naifId] = material;
-                            Debug.Log($"Loaded material for NAIF ID {naifId}: {materialPath}");
+                            // Load material (for stars with procedural shaders)
+                            Material material = null;
+                            
+#if UNITY_EDITOR
+                            material = UnityEditor.AssetDatabase.LoadAssetAtPath<Material>(assetPath);
+#else
+                            string resourcesPath = assetPath.Replace("Assets/", "").Replace(".mat", "");
+                            material = Resources.Load<Material>(resourcesPath);
+#endif
+                            
+                            if (material != null)
+                            {
+                                planetMaterials[naifId] = material;
+                                Debug.Log($"Loaded material for NAIF ID {naifId}: {assetPath}");
+                            }
+                            else
+                            {
+                                Debug.LogWarning($"Could not load material at path: {assetPath} for NAIF ID {naifId}");
+                            }
                         }
                         else
                         {
-                            Debug.LogWarning($"Could not load material at path: {materialPath} for NAIF ID {naifId}");
+                            // Load texture (for planets/moons)
+                            Texture2D texture = null;
+                            
+#if UNITY_EDITOR
+                            texture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
+#else
+                            string resourcesPath = assetPath.Replace("Assets/", "");
+                            // Remove extension for Resources.Load
+                            int lastDot = resourcesPath.LastIndexOf('.');
+                            if (lastDot > 0) resourcesPath = resourcesPath.Substring(0, lastDot);
+                            texture = Resources.Load<Texture2D>(resourcesPath);
+#endif
+                            
+                            if (texture != null)
+                            {
+                                planetTextures[naifId] = texture;
+                                Debug.Log($"Loaded texture for NAIF ID {naifId}: {assetPath}");
+                            }
+                            else
+                            {
+                                Debug.LogWarning($"Could not load texture at path: {assetPath} for NAIF ID {naifId}");
+                            }
                         }
                     }
                 }
             }
             
-            Debug.Log($"Loaded {planetMaterials.Count} planet-specific materials.");
+            Debug.Log($"Loaded {planetTextures.Count} planet textures and {planetMaterials.Count} custom materials.");
         }
         catch (System.Exception e)
         {
