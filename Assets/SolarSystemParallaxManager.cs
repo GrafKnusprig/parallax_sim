@@ -134,6 +134,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
     // Planet-specific textures and materials
     private Dictionary<long, Texture2D> planetTextures = new Dictionary<long, Texture2D>();
     private Dictionary<long, Material> planetMaterials = new Dictionary<long, Material>(); // For stars with custom materials
+    private Dictionary<long, bool> bodyEmitting = new Dictionary<long, bool>(); // Whether body emits light
+    private Dictionary<long, long?> bodyIlluminatedBy = new Dictionary<long, long?>(); // Which body illuminates this one
     
     // HUD elements
     private GameObject hudUI;
@@ -912,6 +914,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
             if (renderer != null)
             {
                 Material materialToUse = null;
+                bool isEmitting = bodyEmitting.TryGetValue(naifId, out bool emitting) && emitting;
                 
                 // Check if this body has a custom material (e.g., stars with procedural shaders)
                 if (planetMaterials.TryGetValue(naifId, out Material customMaterial))
@@ -941,6 +944,15 @@ public class SolarSystemParallaxManager : MonoBehaviour
                     {
                         materialToUse.SetTexture("_BaseMap", textureToUse);
                         materialToUse.SetTexture("_MainTex", textureToUse); // Legacy shader support
+                        
+                        // If this body emits light, make it glow
+                        if (isEmitting)
+                        {
+                            materialToUse.EnableKeyword("_EMISSION");
+                            materialToUse.SetTexture("_EmissionMap", textureToUse);
+                            materialToUse.SetColor("_EmissionColor", Color.white * 2f); // Bright emission
+                            Debug.Log($"Enabled emission for {name} (NAIF ID {naifId})");
+                        }
                     }
                 }
                 
@@ -1400,81 +1412,109 @@ public class SolarSystemParallaxManager : MonoBehaviour
         {
             string jsonText = File.ReadAllText(path);
             
-            // Parse JSON manually (Unity's JsonUtility doesn't support dictionaries directly)
+            // Parse JSON manually - now each entry is an object with path, emitting, illuminated_by
+            // Simple JSON parser for our specific structure
             jsonText = jsonText.Trim();
             if (jsonText.StartsWith("{") && jsonText.EndsWith("}"))
             {
-                jsonText = jsonText.Substring(1, jsonText.Length - 2); // Remove outer braces
-                string[] entries = jsonText.Split(',');
+                // Remove outer braces and split by closing brace followed by comma
+                jsonText = jsonText.Substring(1, jsonText.Length - 2);
+                
+                // Split entries more carefully to handle nested objects
+                List<string> entries = new List<string>();
+                int braceDepth = 0;
+                int startIndex = 0;
+                
+                for (int i = 0; i < jsonText.Length; i++)
+                {
+                    if (jsonText[i] == '{') braceDepth++;
+                    else if (jsonText[i] == '}') braceDepth--;
+                    else if (jsonText[i] == ',' && braceDepth == 0)
+                    {
+                        entries.Add(jsonText.Substring(startIndex, i - startIndex));
+                        startIndex = i + 1;
+                    }
+                }
+                // Add last entry
+                if (startIndex < jsonText.Length)
+                    entries.Add(jsonText.Substring(startIndex));
                 
                 foreach (string entry in entries)
                 {
                     string trimmedEntry = entry.Trim();
                     if (string.IsNullOrEmpty(trimmedEntry)) continue;
                     
-                    // Split by first colon
-                    int colonIndex = trimmedEntry.IndexOf(':');
-                    if (colonIndex < 0) continue;
+                    // Parse "ID": { ... }
+                    int firstColon = trimmedEntry.IndexOf(':');
+                    if (firstColon < 0) continue;
                     
-                    string keyPart = trimmedEntry.Substring(0, colonIndex).Trim();
-                    string valuePart = trimmedEntry.Substring(colonIndex + 1).Trim();
+                    string keyPart = trimmedEntry.Substring(0, firstColon).Trim().Trim('"');
+                    string valuePart = trimmedEntry.Substring(firstColon + 1).Trim();
                     
-                    // Remove quotes
-                    keyPart = keyPart.Trim('"');
-                    valuePart = valuePart.Trim('"');
+                    if (!long.TryParse(keyPart, out long naifId)) continue;
                     
-                    // Parse key as long to support large Gaia source IDs
-                    if (long.TryParse(keyPart, out long naifId))
+                    // Parse the object { "path": "...", "emitting": ..., "illuminated_by": ... }
+                    if (!valuePart.StartsWith("{") || !valuePart.EndsWith("}")) continue;
+                    
+                    valuePart = valuePart.Substring(1, valuePart.Length - 2); // Remove braces
+                    
+                    // Extract properties
+                    string assetPath = ExtractJsonStringValue(valuePart, "path");
+                    bool emitting = ExtractJsonBoolValue(valuePart, "emitting");
+                    long? illuminatedBy = ExtractJsonLongValue(valuePart, "illuminated_by");
+                    
+                    // Store emitting and illuminated_by properties
+                    bodyEmitting[naifId] = emitting;
+                    bodyIlluminatedBy[naifId] = illuminatedBy;
+                    
+                    if (string.IsNullOrEmpty(assetPath)) continue;
+                    
+                    // Check if this is a material (.mat) or texture (.jpg, .png, .tif, etc.)
+                    if (assetPath.EndsWith(".mat"))
                     {
-                        string assetPath = valuePart;
+                        // Load material (for stars with procedural shaders)
+                        Material material = null;
                         
-                        // Check if this is a material (.mat) or texture (.jpg, .png, .tif, etc.)
-                        if (assetPath.EndsWith(".mat"))
-                        {
-                            // Load material (for stars with procedural shaders)
-                            Material material = null;
-                            
 #if UNITY_EDITOR
-                            material = UnityEditor.AssetDatabase.LoadAssetAtPath<Material>(assetPath);
+                        material = UnityEditor.AssetDatabase.LoadAssetAtPath<Material>(assetPath);
 #else
-                            string resourcesPath = assetPath.Replace("Assets/", "").Replace(".mat", "");
-                            material = Resources.Load<Material>(resourcesPath);
+                        string resourcesPath = assetPath.Replace("Assets/", "").Replace(".mat", "");
+                        material = Resources.Load<Material>(resourcesPath);
 #endif
-                            
-                            if (material != null)
-                            {
-                                planetMaterials[naifId] = material;
-                                Debug.Log($"Loaded material for NAIF ID {naifId}: {assetPath}");
-                            }
-                            else
-                            {
-                                Debug.LogWarning($"Could not load material at path: {assetPath} for NAIF ID {naifId}");
-                            }
+                        
+                        if (material != null)
+                        {
+                            planetMaterials[naifId] = material;
+                            Debug.Log($"Loaded material for NAIF ID {naifId}: {assetPath} (emitting: {emitting})");
                         }
                         else
                         {
-                            // Load texture (for planets/moons)
-                            Texture2D texture = null;
-                            
+                            Debug.LogWarning($"Could not load material at path: {assetPath} for NAIF ID {naifId}");
+                        }
+                    }
+                    else
+                    {
+                        // Load texture (for planets/moons)
+                        Texture2D texture = null;
+                        
 #if UNITY_EDITOR
-                            texture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
+                        texture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
 #else
-                            string resourcesPath = assetPath.Replace("Assets/", "");
-                            // Remove extension for Resources.Load
-                            int lastDot = resourcesPath.LastIndexOf('.');
-                            if (lastDot > 0) resourcesPath = resourcesPath.Substring(0, lastDot);
-                            texture = Resources.Load<Texture2D>(resourcesPath);
+                        string resourcesPath = assetPath.Replace("Assets/", "");
+                        // Remove extension for Resources.Load
+                        int lastDot = resourcesPath.LastIndexOf('.');
+                        if (lastDot > 0) resourcesPath = resourcesPath.Substring(0, lastDot);
+                        texture = Resources.Load<Texture2D>(resourcesPath);
 #endif
-                            
-                            if (texture != null)
-                            {
-                                planetTextures[naifId] = texture;
-                                Debug.Log($"Loaded texture for NAIF ID {naifId}: {assetPath}");
-                            }
-                            else
-                            {
-                                Debug.LogWarning($"Could not load texture at path: {assetPath} for NAIF ID {naifId}");
-                            }
+                        
+                        if (texture != null)
+                        {
+                            planetTextures[naifId] = texture;
+                            Debug.Log($"Loaded texture for NAIF ID {naifId}: {assetPath} (emitting: {emitting}, illuminated_by: {illuminatedBy})");
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"Could not load texture at path: {assetPath} for NAIF ID {naifId}");
                         }
                     }
                 }
@@ -1486,6 +1526,74 @@ public class SolarSystemParallaxManager : MonoBehaviour
         {
             Debug.LogError($"Error loading planet materials JSON: {e.Message}");
         }
+    }
+    
+    private string ExtractJsonStringValue(string json, string key)
+    {
+        string pattern = $"\"{key}\"";
+        int keyIndex = json.IndexOf(pattern);
+        if (keyIndex < 0) return null;
+        
+        int colonIndex = json.IndexOf(':', keyIndex);
+        if (colonIndex < 0) return null;
+        
+        int startQuote = json.IndexOf('"', colonIndex);
+        if (startQuote < 0) return null;
+        
+        int endQuote = json.IndexOf('"', startQuote + 1);
+        if (endQuote < 0) return null;
+        
+        return json.Substring(startQuote + 1, endQuote - startQuote - 1);
+    }
+    
+    private bool ExtractJsonBoolValue(string json, string key)
+    {
+        string pattern = $"\"{key}\"";
+        int keyIndex = json.IndexOf(pattern);
+        if (keyIndex < 0) return false;
+        
+        int colonIndex = json.IndexOf(':', keyIndex);
+        if (colonIndex < 0) return false;
+        
+        int startValue = colonIndex + 1;
+        while (startValue < json.Length && char.IsWhiteSpace(json[startValue])) startValue++;
+        
+        if (startValue >= json.Length) return false;
+        
+        // Find end of value (comma or closing brace)
+        int endValue = startValue;
+        while (endValue < json.Length && json[endValue] != ',' && json[endValue] != '}') endValue++;
+        
+        string value = json.Substring(startValue, endValue - startValue).Trim();
+        return value.Equals("true", StringComparison.OrdinalIgnoreCase);
+    }
+    
+    private long? ExtractJsonLongValue(string json, string key)
+    {
+        string pattern = $"\"{key}\"";
+        int keyIndex = json.IndexOf(pattern);
+        if (keyIndex < 0) return null;
+        
+        int colonIndex = json.IndexOf(':', keyIndex);
+        if (colonIndex < 0) return null;
+        
+        int startValue = colonIndex + 1;
+        while (startValue < json.Length && char.IsWhiteSpace(json[startValue])) startValue++;
+        
+        if (startValue >= json.Length) return null;
+        
+        // Check for null value
+        if (json.Substring(startValue).StartsWith("null")) return null;
+        
+        // Find end of value (comma or closing brace)
+        int endValue = startValue;
+        while (endValue < json.Length && json[endValue] != ',' && json[endValue] != '}') endValue++;
+        
+        string value = json.Substring(startValue, endValue - startValue).Trim();
+        if (long.TryParse(value, out long result))
+            return result;
+        
+        return null;
     }
 
     // --- Dynamic scaling and speed ---

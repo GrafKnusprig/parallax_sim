@@ -567,7 +567,7 @@ MonoBehaviour:
   horizonRadius: 4000
   horizonMaterial: {fileID: 2100000, guid: f12098f110e17446eab1f24a6e51f488, type: 2}
   showHorizonSphere: 0
-  planetMaterial: {fileID: 2100000, guid: 6034bd29d40f246c99d7b30eee17c99a, type: 2}
+  planetMaterial: {fileID: 2100000, guid: 43fe661452b484958ba0b68cc81dcfac, type: 2}
   minProxyRadius: 1
   maxProxyRadius: 1999
   useHighQualitySpheres: 1
@@ -1090,7 +1090,7 @@ Camera:
     width: 1
     height: 1
   near clip plane: 0.01
-  far clip plane: 5000
+  far clip plane: 15000
   field of view: 60
   orthographic: 0
   orthographic size: 5
