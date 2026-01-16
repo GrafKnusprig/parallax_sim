@@ -2617,8 +2617,10 @@ public class SolarSystemParallaxManager : MonoBehaviour
         float targetRadiusAu = autopilotTarget.radiusKm / (float)AU_KM;
         float stopDistanceAu = targetRadiusAu * 10f; // Stop at 10x planet radius
         
-        // Check if we've arrived
-        if (distanceAu <= stopDistanceAu)
+        // Check if we've arrived (with small tolerance for floating-point precision)
+        float arrivalTolerance = 1e-4f; // Tolerance in AU (~15,000 km) - generous to ensure reliable exit
+        float remainingDistance = distanceAu - stopDistanceAu;
+        if (distanceAu <= stopDistanceAu || remainingDistance < arrivalTolerance)
         {
             Debug.Log($"Autopilot: Arrived at {autopilotTarget.name}");
             StopAutopilot();
@@ -2888,12 +2890,64 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
         planetInfoVisible = !planetInfoVisible;
         
-        if (planetInfoVisible && nearestPlanet != null)
+        if (planetInfoVisible)
         {
-            if (planetInfoUI != null) planetInfoUI.SetActive(true);
-            PopulatePlanetInfo(nearestPlanet);
-            Debug.Log($"Showing planet info for: {nearestPlanet.name}");
+            // Find the nearest body within range that has info data
+            BodyInstance infoTarget = FindNearestBodyWithinRange();
+            
+            if (infoTarget != null)
+            {
+                if (planetInfoUI != null) planetInfoUI.SetActive(true);
+                PopulatePlanetInfo(infoTarget);
+                Debug.Log($"Showing planet info for: {infoTarget.name}");
+            }
+            else
+            {
+                // No valid target found, don't show panel
+                planetInfoVisible = false;
+                Debug.Log("No body with planet info data found within range");
+            }
         }
+    }
+    
+    /// <summary>
+    /// Finds the nearest body that has planet info data and is within range.
+    /// Range is based on body radius (500x radius).
+    /// Includes Sun and Moon as special cases even without CSV data.
+    /// </summary>
+    private BodyInstance FindNearestBodyWithinRange()
+    {
+        // Max distance multiplier - body must be within this many radii to show info
+        const float MAX_DISTANCE_RADII = 500f;
+        
+        BodyInstance nearest = null;
+        float nearestDist = float.MaxValue;
+        
+        foreach (var body in bodies)
+        {
+            // Check if this body has planet info data, or is Sun/Earth's Moon (special cases)
+            bool hasInfo = body.planetData != null || body.naifId == 301 || body.naifId == 10;
+            if (!hasInfo) continue;
+            
+            // Calculate distance in AU
+            float distanceAu = (body.realPosAu - playerRealPosAu).magnitude;
+            
+            // Calculate max allowed distance based on body radius
+            float bodyRadiusAu = body.radiusKm / (float)AU_KM;
+            float maxDistanceAu = bodyRadiusAu * MAX_DISTANCE_RADII;
+            
+            // Skip if too far from this body
+            if (distanceAu > maxDistanceAu) continue;
+            
+            // Find the nearest body among those in range
+            if (distanceAu < nearestDist)
+            {
+                nearestDist = distanceAu;
+                nearest = body;
+            }
+        }
+        
+        return nearest;
     }
     
     private void PopulatePlanetInfo(BodyInstance body)
