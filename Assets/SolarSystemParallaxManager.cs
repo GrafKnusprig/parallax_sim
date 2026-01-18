@@ -462,41 +462,76 @@ public class SolarSystemParallaxManager : MonoBehaviour
         Debug.Log("HUD created successfully");
     }
     
-    // Origin shifting system - keeps player local offset small for maximum precision
+    // Origin shifting system - adaptive based on proximity to celestial bodies
+    // Only shifts when near planets for precision; allows free travel at extreme distances
     private void CheckAndPerformOriginShift()
     {
-        const double SHIFT_THRESHOLD = SECTOR_SIZE_AU * 0.5; // Shift when reaching half sector size
+        const double SHIFT_THRESHOLD = SECTOR_SIZE_AU * 0.5; // 500,000 AU threshold
+        const double PLANET_PROXIMITY_THRESHOLD = 100000.0; // Only shift if within 100,000 AU of any body
         
         // Check if player's local offset is getting large
         double offsetMagnitude = playerRealPosAu.localOffset.magnitude;
         
         if (offsetMagnitude > SHIFT_THRESHOLD)
         {
-            Debug.Log($"Origin shift triggered: player offset {offsetMagnitude:F2} AU exceeds threshold {SHIFT_THRESHOLD:F2} AU");
+            // Check if we're near any celestial body
+            bool nearAnyBody = false;
+            double closestBodyDistance = double.PositiveInfinity;
             
-            // Calculate the shift amount (move player back to near origin of their sector)
-            Vector3d shiftAmount = playerRealPosAu.localOffset;
-            
-            // Shift player position (this updates sector and resets local offset)
-            playerRealPosAu = new HierarchicalPosition(playerRealPosAu.sector, Vector3d.zero);
-            
-            // Shift all bodies by the same amount (relative to player)
-            for (int i = 0; i < bodies.Count; i++)
+            foreach (var body in bodies)
             {
-                bodies[i].realPosAu = bodies[i].realPosAu.Subtract(shiftAmount, SECTOR_SIZE_AU);
+                Vector3d offset = playerRealPosAu.OffsetTo(body.realPosAu, SECTOR_SIZE_AU);
+                double distance = offset.magnitude;
+                
+                if (distance < closestBodyDistance)
+                    closestBodyDistance = distance;
+                
+                if (distance < PLANET_PROXIMITY_THRESHOLD)
+                {
+                    nearAnyBody = true;
+                    break; // Found at least one nearby body
+                }
             }
             
-            // Shift all asteroids by the same amount
-            for (int i = 0; i < allAsteroids.Count; i++)
+            // Only perform origin shift if we're near a celestial body
+            if (nearAnyBody)
             {
-                AsteroidData asteroid = allAsteroids[i];
-                asteroid.positionAU = asteroid.positionAU.Subtract(shiftAmount, SECTOR_SIZE_AU);
-                allAsteroids[i] = asteroid;
+                Debug.Log($"Origin shift triggered: player offset {offsetMagnitude:F2} AU, nearest body {closestBodyDistance:F2} AU");
+                
+                // Calculate the shift amount (move player back to near origin of their sector)
+                Vector3d shiftAmount = playerRealPosAu.localOffset;
+                
+                // Shift player position (this updates sector and resets local offset)
+                playerRealPosAu = new HierarchicalPosition(playerRealPosAu.sector, Vector3d.zero);
+                
+                // Shift all bodies by the same amount (relative to player)
+                for (int i = 0; i < bodies.Count; i++)
+                {
+                    bodies[i].realPosAu = bodies[i].realPosAu.Subtract(shiftAmount, SECTOR_SIZE_AU);
+                }
+                
+                // Shift all asteroids by the same amount
+                for (int i = 0; i < allAsteroids.Count; i++)
+                {
+                    AsteroidData asteroid = allAsteroids[i];
+                    asteroid.positionAU = asteroid.positionAU.Subtract(shiftAmount, SECTOR_SIZE_AU);
+                    allAsteroids[i] = asteroid;
+                }
+                
+                // Note: Stars are handled by StellarParallaxManager which calculates relative to player
+                
+                Debug.Log($"Origin shift complete: player now at {playerRealPosAu}");
             }
-            
-            // Note: Stars are handled by StellarParallaxManager which calculates relative to player
-            
-            Debug.Log($"Origin shift complete: player now at {playerRealPosAu}");
+            else
+            {
+                // Far from all bodies - allow offset to grow without shifting
+                // This prevents jumps during high-speed interstellar travel
+                // Double precision can handle offsets up to ~10^15 AU with millimeter precision
+                if (offsetMagnitude > SECTOR_SIZE_AU * 10.0) // Log warning at 10M AU
+                {
+                    Debug.LogWarning($"Player very far from all bodies: {offsetMagnitude:F0} AU from sector origin. Precision may degrade at extreme distances.");
+                }
+            }
         }
     }
 
