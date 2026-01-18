@@ -111,7 +111,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     // Asteroid data
     private struct AsteroidData
     {
-        public Vector3 positionAU;  // 3D position in AU (solar system coordinates)
+        public HierarchicalPosition positionAU;  // 3D position in AU (hierarchical coordinates)
         public float distance;      // Distance from Sun in AU
         public float magnitude;     // H magnitude for brightness
         public int originalIndex;   // Original index for debugging
@@ -309,6 +309,24 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         Debug.Log($"Player spawn position: {playerRealPosAu} AU");
     }
+    
+    // Get Sun's current position (for stellar parallax calculations)
+    public HierarchicalPosition GetSunPosition()
+    {
+        foreach (var body in bodies)
+        {
+            if (body.naifId == 10) // Sun
+                return body.realPosAu;
+        }
+        return HierarchicalPosition.zero; // Fallback if Sun not found
+    }
+    
+    // Get player position relative to Sun (for stellar coordinates)
+    public Vector3d GetPlayerPositionRelativeToSun()
+    {
+        HierarchicalPosition sunPos = GetSunPosition();
+        return sunPos.OffsetTo(playerRealPosAu, SECTOR_SIZE_AU);
+    }
 
     private void SetupLabelCanvas()
     {
@@ -468,7 +486,14 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 bodies[i].realPosAu = bodies[i].realPosAu.Subtract(shiftAmount, SECTOR_SIZE_AU);
             }
             
-            // Note: Asteroids stay in their original positions - they're calculated relative to player anyway
+            // Shift all asteroids by the same amount
+            for (int i = 0; i < allAsteroids.Count; i++)
+            {
+                AsteroidData asteroid = allAsteroids[i];
+                asteroid.positionAU = asteroid.positionAU.Subtract(shiftAmount, SECTOR_SIZE_AU);
+                allAsteroids[i] = asteroid;
+            }
+            
             // Note: Stars are handled by StellarParallaxManager which calculates relative to player
             
             Debug.Log($"Origin shift complete: player now at {playerRealPosAu}");
@@ -3119,18 +3144,21 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 if (distance_au <= 0 || float.IsNaN(distance_au) || float.IsInfinity(distance_au))
                     continue;
                 
-                // Convert RA/DEC to Cartesian coordinates in AU
-                float ra_rad = ra_deg * Mathf.Deg2Rad;
-                float dec_rad = dec_deg * Mathf.Deg2Rad;
+                // Convert RA/DEC to Cartesian coordinates in AU using double precision
+                double ra_rad = ra_deg * Math.PI / 180.0;
+                double dec_rad = dec_deg * Math.PI / 180.0;
                 
-                float cos_dec = Mathf.Cos(dec_rad);
-                float x = distance_au * cos_dec * Mathf.Cos(ra_rad);
-                float y = distance_au * Mathf.Sin(dec_rad);
-                float z = distance_au * cos_dec * Mathf.Sin(ra_rad);
+                double cos_dec = Math.Cos(dec_rad);
+                double x = distance_au * cos_dec * Math.Cos(ra_rad);
+                double y = distance_au * Math.Sin(dec_rad);
+                double z = distance_au * cos_dec * Math.Sin(ra_rad);
+                
+                Vector3d absolutePos = new Vector3d(x, y, z);
+                HierarchicalPosition hierarchicalPos = new HierarchicalPosition(absolutePos, SECTOR_SIZE_AU);
                 
                 AsteroidData asteroid = new AsteroidData
                 {
-                    positionAU = new Vector3(x, y, z),
+                    positionAU = hierarchicalPos,
                     distance = distance_au,
                     magnitude = magnitude,
                     originalIndex = (int)i
@@ -3190,14 +3218,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
     
     private Vector3 CalculateAsteroidWorldPosition(AsteroidData asteroid)
     {
-        // Asteroid position in AU (stored as simple Vector3 - asteroids are within solar system)
-        Vector3d asteroidPosAU = new Vector3d(asteroid.positionAU);
-        
-        // Convert player position to absolute AU for comparison
-        Vector3d playerAbsoluteAu = playerRealPosAu.ToAbsolutePosition(SECTOR_SIZE_AU);
-        
-        // Apply parallax: calculate position relative to player
-        Vector3d relativePos = asteroidPosAU - playerAbsoluteAu;
+        // Calculate position relative to player using hierarchical coordinates
+        Vector3d relativePos = playerRealPosAu.OffsetTo(asteroid.positionAU, SECTOR_SIZE_AU);
         
         // Get direction to asteroid from player
         Vector3d direction = relativePos.normalized;

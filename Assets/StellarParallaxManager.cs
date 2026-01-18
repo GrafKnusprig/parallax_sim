@@ -248,9 +248,10 @@ public class StellarParallaxManager : MonoBehaviour
         Vector3 cameraForward = playerCamera.transform.forward;
         float horizonRadius = solarSystemManager.HorizonRadius;
         
-        // Convert hierarchical position to parsecs for stellar calculations
-        Vector3d playerPosAu = solarSystemManager.playerRealPosAu.ToAbsolutePosition(1_000_000.0);
-        Vector3 playerPosParsecs = (Vector3)(playerPosAu * AU_TO_PARSEC);
+        // Get player position RELATIVE TO SUN for stellar coordinates
+        // Stars are positioned with Sun at origin (0,0,0), so we need player offset from Sun
+        Vector3d playerPosRelativeToSunAu = solarSystemManager.GetPlayerPositionRelativeToSun();
+        Vector3 playerPosParsecs = (Vector3)(playerPosRelativeToSunAu * AU_TO_PARSEC);
         
         // Calculate effective FOV with generous margin
         float halfFOVWithMargin = playerCamera.fieldOfView * 0.5f + FOV_CULLING_MARGIN;
@@ -349,9 +350,10 @@ public class StellarParallaxManager : MonoBehaviour
         
         float horizonRadius = solarSystemManager.HorizonRadius;
         
-        // Convert hierarchical position to parsecs for stellar calculations
-        Vector3d playerPosAu = solarSystemManager.playerRealPosAu.ToAbsolutePosition(1_000_000.0);
-        Vector3 playerPosParsecs = (Vector3)(playerPosAu * AU_TO_PARSEC);
+        // Get player position RELATIVE TO SUN for stellar coordinates
+        // Stars are positioned with Sun at origin (0,0,0), so we need player offset from Sun
+        Vector3d playerPosRelativeToSunAu = solarSystemManager.GetPlayerPositionRelativeToSun();
+        Vector3 playerPosParsecs = (Vector3)(playerPosRelativeToSunAu * AU_TO_PARSEC);
         
         // Update positions and matrices
         for (int i = 0; i < starCount; i++)
