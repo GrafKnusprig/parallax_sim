@@ -103,7 +103,7 @@ public class StellarParallaxManager : MonoBehaviour
         bool shouldUpdate = Vector3.Distance(currentCameraPos, lastCameraPosition) > 0.5f ||
                            Vector3.Angle(currentCameraForward, lastCameraForward) > 2f ||
                            Mathf.Abs(renderDistanceRange - lastRenderDistance) > 0.1f ||
-                           (enableParallax && Vector3.Distance(solarSystemManager.playerRealPosAu, Vector3.zero) > 0.001f); // Update for parallax
+                           (enableParallax && solarSystemManager.playerRealPosAu.localOffset.magnitude > 0.001); // Update for parallax
         
         if (shouldUpdate)
         {
@@ -247,7 +247,10 @@ public class StellarParallaxManager : MonoBehaviour
         Vector3 cameraPos = playerCamera.transform.position;
         Vector3 cameraForward = playerCamera.transform.forward;
         float horizonRadius = solarSystemManager.HorizonRadius;
-        Vector3 playerPosParsecs = solarSystemManager.playerRealPosAu * AU_TO_PARSEC;
+        
+        // Convert hierarchical position to parsecs for stellar calculations
+        Vector3d playerPosAu = solarSystemManager.playerRealPosAu.ToAbsolutePosition(1_000_000.0);
+        Vector3 playerPosParsecs = (Vector3)(playerPosAu * AU_TO_PARSEC);
         
         // Calculate effective FOV with generous margin
         float halfFOVWithMargin = playerCamera.fieldOfView * 0.5f + FOV_CULLING_MARGIN;
@@ -345,7 +348,10 @@ public class StellarParallaxManager : MonoBehaviour
         }
         
         float horizonRadius = solarSystemManager.HorizonRadius;
-        Vector3 playerPosParsecs = solarSystemManager.playerRealPosAu * AU_TO_PARSEC;
+        
+        // Convert hierarchical position to parsecs for stellar calculations
+        Vector3d playerPosAu = solarSystemManager.playerRealPosAu.ToAbsolutePosition(1_000_000.0);
+        Vector3 playerPosParsecs = (Vector3)(playerPosAu * AU_TO_PARSEC);
         
         // Update positions and matrices
         for (int i = 0; i < starCount; i++)
@@ -487,45 +493,5 @@ public class StellarParallaxManager : MonoBehaviour
     public bool IsDataLoaded()
     {
         return starsLoaded;
-    }
-}
-
-// High-precision vector struct for accurate parallax calculations
-public struct Vector3d
-{
-    public double x, y, z;
-    
-    public Vector3d(double x, double y, double z)
-    {
-        this.x = x;
-        this.y = y;
-        this.z = z;
-    }
-    
-    public double magnitude => System.Math.Sqrt(x * x + y * y + z * z);
-    
-    public Vector3d normalized
-    {
-        get
-        {
-            double mag = magnitude;
-            if (mag < 1e-15) return new Vector3d(1, 0, 0); // Avoid division by zero
-            return new Vector3d(x / mag, y / mag, z / mag);
-        }
-    }
-    
-    public static Vector3d operator -(Vector3d a, Vector3d b)
-    {
-        return new Vector3d(a.x - b.x, a.y - b.y, a.z - b.z);
-    }
-    
-    public static Vector3d operator *(Vector3d a, double scalar)
-    {
-        return new Vector3d(a.x * scalar, a.y * scalar, a.z * scalar);
-    }
-    
-    public static Vector3d operator /(Vector3d a, double scalar)
-    {
-        return new Vector3d(a.x / scalar, a.y / scalar, a.z / scalar);
     }
 }

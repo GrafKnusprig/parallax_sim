@@ -99,9 +99,10 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private const double SPEED_OF_LIGHT_KM_S = 299_792_458.0; // km/s (exact value)
     private const double LIGHTYEAR_KM = 9_460_730_472_580.8; // km in 1 lightyear
     private const float PARSEC_TO_AU = 206264.806f;  // 1 parsec = 206,264.806 AU
+    private const double SECTOR_SIZE_AU = 1_000_000.0; // Each sector is 1 million AU (approx 5 parsecs)
 
     [System.NonSerialized]
-    public Vector3 playerRealPosAu; // player position in AU (real space) - public for StellarParallaxManager
+    public HierarchicalPosition playerRealPosAu; // player position in AU (real space) - public for StellarParallaxManager
 
     private GameObject horizonSphere;
 
@@ -185,7 +186,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         public string name;
         public long naifId;
         public string objectType; // sun, planet, moon, dwarf_planet, star, asteroid
-        public Vector3 realPosAu;
+        public HierarchicalPosition realPosAu;
         public float radiusKm;
         public Transform proxy;
 
@@ -442,6 +443,37 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         Debug.Log("HUD created successfully");
     }
+    
+    // Origin shifting system - keeps player local offset small for maximum precision
+    private void CheckAndPerformOriginShift()
+    {
+        const double SHIFT_THRESHOLD = SECTOR_SIZE_AU * 0.5; // Shift when reaching half sector size
+        
+        // Check if player's local offset is getting large
+        double offsetMagnitude = playerRealPosAu.localOffset.magnitude;
+        
+        if (offsetMagnitude > SHIFT_THRESHOLD)
+        {
+            Debug.Log($"Origin shift triggered: player offset {offsetMagnitude:F2} AU exceeds threshold {SHIFT_THRESHOLD:F2} AU");
+            
+            // Calculate the shift amount (move player back to near origin of their sector)
+            Vector3d shiftAmount = playerRealPosAu.localOffset;
+            
+            // Shift player position (this updates sector and resets local offset)
+            playerRealPosAu = new HierarchicalPosition(playerRealPosAu.sector, Vector3d.zero);
+            
+            // Shift all bodies by the same amount (relative to player)
+            for (int i = 0; i < bodies.Count; i++)
+            {
+                bodies[i].realPosAu = bodies[i].realPosAu.Subtract(shiftAmount, SECTOR_SIZE_AU);
+            }
+            
+            // Note: Asteroids stay in their original positions - they're calculated relative to player anyway
+            // Note: Stars are handled by StellarParallaxManager which calculates relative to player
+            
+            Debug.Log($"Origin shift complete: player now at {playerRealPosAu}");
+        }
+    }
 
     private void Update()
     {
@@ -481,6 +513,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
             UpdatePlayerMovement();
         }
         
+        // Check for origin shift (keep player near sector origin for precision)
+        CheckAndPerformOriginShift();
+        
         UpdateBodyProxies();
         UpdatePlanetInfoPanel();
         
@@ -492,11 +527,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
             RenderAsteroids();
         }
         
-        // Notify stellar manager of position change
-        if (stellarManager != null)
-        {
-            stellarManager.OnPlayerPositionChanged(playerRealPosAu);
-        }
+        // Stellar manager handles its own update based on playerRealPosAu
     }
     
     private void CreateLoadingScreen()
@@ -799,7 +830,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         if (!earthFound)
         {
             Debug.LogWarning("Earth (naifId 399) not found in dataset. Player starts at origin in real space.");
-            playerRealPosAu = Vector3.zero;
+            playerRealPosAu = HierarchicalPosition.zero;
         }
     }
     
@@ -848,25 +879,26 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 hasPosition = false;
             
             // For the Sun or bodies with empty position data, set to origin
-            Vector3 realPosAu;
+            HierarchicalPosition realPosAu;
             if (naifId == 10 || !hasPosition) // Sun or invalid position
             {
-                realPosAu = Vector3.zero;
+                realPosAu = HierarchicalPosition.zero;
             }
             else
             {
                 // Convert RA/Dec/Distance from parsecs to Cartesian AU coordinates
-                float ra_rad = ra_deg * Mathf.Deg2Rad;
-                float dec_rad = dec_deg * Mathf.Deg2Rad;
+                double ra_rad = ra_deg * Math.PI / 180.0;
+                double dec_rad = dec_deg * Math.PI / 180.0;
                 
-                float cos_dec = Mathf.Cos(dec_rad);
-                float distance_au = distance_pc * PARSEC_TO_AU;
+                double cos_dec = Math.Cos(dec_rad);
+                double distance_au = distance_pc * PARSEC_TO_AU;
                 
-                float x = distance_au * cos_dec * Mathf.Cos(ra_rad);
-                float y = distance_au * Mathf.Sin(dec_rad);
-                float z = distance_au * cos_dec * Mathf.Sin(ra_rad);
+                double x = distance_au * cos_dec * Math.Cos(ra_rad);
+                double y = distance_au * Math.Sin(dec_rad);
+                double z = distance_au * cos_dec * Math.Sin(ra_rad);
                 
-                realPosAu = new Vector3(x, y, z);
+                Vector3d absolutePos = new Vector3d(x, y, z);
+                realPosAu = new HierarchicalPosition(absolutePos, SECTOR_SIZE_AU);
             }
             
             // Parse mean radius (field index 16)
@@ -996,10 +1028,10 @@ public class SolarSystemParallaxManager : MonoBehaviour
             if (naifId == 399 && !localEarthFound)
             {
                 // Position player at a good distance in front of Earth for viewing
-                Vector3 earthOffset = new Vector3(0, 0, -0.1f); // 0.1 AU in front of Earth along -Z axis
-                playerRealPosAu = realPosAu + earthOffset;
+                Vector3d earthOffset = new Vector3d(0, 0, -0.1); // 0.1 AU in front of Earth along -Z axis
+                playerRealPosAu = realPosAu.Add(earthOffset, SECTOR_SIZE_AU);
                 localEarthFound = true;
-                Debug.Log($"Player positioned in front of Earth at: {playerRealPosAu} AU");
+                Debug.Log($"Player positioned in front of Earth at: {playerRealPosAu}");
             }
         }
 
@@ -1612,19 +1644,19 @@ public class SolarSystemParallaxManager : MonoBehaviour
         BodyInstance targetBody = (autopilotActive && autopilotTarget != null) ? autopilotTarget : nearestPlanet;
         
         // Calculate distance to target planet surface
-        Vector3 offsetAu = targetBody.realPosAu - playerRealPosAu;
-        float distanceAu = offsetAu.magnitude;
+        Vector3d offsetAu = playerRealPosAu.OffsetTo(targetBody.realPosAu, SECTOR_SIZE_AU);
+        double distanceAu = offsetAu.magnitude;
         
         // Convert planet radius from km to AU for comparison
-        float planetRadiusAu = targetBody.radiusKm / (float)AU_KM;
+        double planetRadiusAu = targetBody.radiusKm / AU_KM;
         
         // Distance to planet surface (not center) - prevent negative distance
-        distanceToNearestPlanet = Mathf.Max(0.000000001f, distanceAu - planetRadiusAu);
+        distanceToNearestPlanet = (float)Math.Max(0.000000001, distanceAu - planetRadiusAu);
         
         // IMPROVED SCALING AND SPEED SYSTEM:
         // Fixed issues with flying through planets and speed decreasing when flying away
         
-        float zoneDistance = planetRadiusAu * 100f; // Single zone distance
+        float zoneDistance = (float)planetRadiusAu * 100f; // Single zone distance
         
         // Hardcoded scale values for consistent behavior
         float baseScale = 1f;      // Normal scale
@@ -1651,7 +1683,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
         float targetSpeed;
         
         // Determine movement direction relative to planet (use target body when autopilot active)
-        Vector3 toPlanet = (targetBody.realPosAu - playerRealPosAu).normalized;
+        Vector3d toPlanetVec = playerRealPosAu.OffsetTo(targetBody.realPosAu, SECTOR_SIZE_AU);
+        Vector3 toPlanet = (Vector3)toPlanetVec.normalized;
         Vector3 lastMovement = Vector3.zero;
         
         // Get current movement direction from input
@@ -1764,7 +1797,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
             lightSpeedDisplay = "0% lightspeed";
         
         // Calculate distance from Sun (origin)
-        double distanceFromSunAu = playerRealPosAu.magnitude;
+        Vector3d absolutePos = playerRealPosAu.ToAbsolutePosition(SECTOR_SIZE_AU);
+        double distanceFromSunAu = absolutePos.magnitude;
         double distanceFromSunKm = distanceFromSunAu * AU_KM;
         
         // Format distance display
@@ -1813,8 +1847,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
         // Add autopilot status
         if (autopilotActive && autopilotTarget != null)
         {
-            Vector3 toTarget = autopilotTarget.realPosAu - playerRealPosAu;
-            float distanceAu = toTarget.magnitude;
+            Vector3d toTarget = playerRealPosAu.OffsetTo(autopilotTarget.realPosAu, SECTOR_SIZE_AU);
+            double distanceAu = toTarget.magnitude;
             double distKm = distanceAu * AU_KM;
             
             string autopilotDistDisplay;
@@ -1839,13 +1873,13 @@ public class SolarSystemParallaxManager : MonoBehaviour
     
     private void FindNearestPlanet()
     {
-        float closestDistanceSqr = Mathf.Infinity;
+        double closestDistanceSqr = double.PositiveInfinity;
         BodyInstance closest = null;
         
         foreach (var body in bodies)
         {
-            Vector3 offset = body.realPosAu - playerRealPosAu;
-            float distanceSqr = offset.sqrMagnitude;
+            Vector3d offset = playerRealPosAu.OffsetTo(body.realPosAu, SECTOR_SIZE_AU);
+            double distanceSqr = offset.sqrMagnitude;
             
             if (distanceSqr < closestDistanceSqr)
             {
@@ -1893,8 +1927,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
         if (nearestPlanet != null)
         {
             // Calculate if nearest planet would be at maximum size
-            Vector3 offsetToNearestAu = nearestPlanet.realPosAu - playerRealPosAu;
-            float distAu = offsetToNearestAu.magnitude;
+            Vector3d offsetToNearestAu = playerRealPosAu.OffsetTo(nearestPlanet.realPosAu, SECTOR_SIZE_AU);
+            double distAu = offsetToNearestAu.magnitude;
             double distKm = distAu * AU_KM;
             double angularRadius = Math.Atan(nearestPlanet.radiusKm / distKm);
             double proxyRadius = Math.Tan(angularRadius) * horizonRadius;
@@ -1903,7 +1937,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
             if (planetAtMaxSize)
             {
                 // Check if movement is towards the planet
-                Vector3 toPlanet = offsetToNearestAu.normalized;
+                Vector3 toPlanet = (Vector3)offsetToNearestAu.normalized;
                 float movementDot = Vector3.Dot(moveDir, toPlanet);
                 
                 if (movementDot > 0.1f) // Moving towards planet
@@ -1921,7 +1955,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
             }
         }
 
-        playerRealPosAu += moveDir * (currentSpeed * Time.deltaTime);
+        Vector3d moveDirDouble = new Vector3d(moveDir.x, moveDir.y, moveDir.z);
+        playerRealPosAu = playerRealPosAu.Add(moveDirDouble * (currentSpeed * Time.deltaTime), SECTOR_SIZE_AU);
         
         // Track actual movement speed
         actualSpeed = currentSpeed;
@@ -1938,10 +1973,11 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         foreach (var body in bodies)
         {
-            Vector3 offsetAu = body.realPosAu - playerRealPosAu;
-            float distAu = offsetAu.magnitude;
+            // Calculate offset using hierarchical coordinates
+            Vector3d offsetAu = playerRealPosAu.OffsetTo(body.realPosAu, SECTOR_SIZE_AU);
+            double distAu = offsetAu.magnitude;
 
-            if (distAu < 1e-6f)
+            if (distAu < 1e-6)
             {
                 body.proxy.gameObject.SetActive(false);
                 if (body.labelUI != null)
@@ -1951,10 +1987,10 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
             body.proxy.gameObject.SetActive(true);
 
-            Vector3 dir = offsetAu / distAu;
+            Vector3d dir = offsetAu / distAu;
 
             // Position on horizon sphere
-            Vector3 proxyPos = dir * horizonRadius;
+            Vector3 proxyPos = (Vector3)(dir * horizonRadius);
             body.proxy.position = proxyPos;
 
             // Apparent angular radius (radians)
@@ -2009,7 +2045,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
                     float labelHeight = 25f;
                     Rect bounds = new Rect(canvasPos.x - labelWidth / 2, canvasPos.y - labelHeight / 2, labelWidth, labelHeight);
                     
-                    visibleLabels.Add((body, canvasPos, distAu, bounds));
+                    visibleLabels.Add((body, canvasPos, (float)distAu, bounds));
                 }
                 else
                 {
@@ -2288,8 +2324,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
             if (!aIsSun && bIsSun) return 1;
             
             // Otherwise sort by distance from player
-            Vector3 offsetA = a.realPosAu - playerRealPosAu;
-            Vector3 offsetB = b.realPosAu - playerRealPosAu;
+            Vector3d offsetA = playerRealPosAu.OffsetTo(a.realPosAu, SECTOR_SIZE_AU);
+            Vector3d offsetB = playerRealPosAu.OffsetTo(b.realPosAu, SECTOR_SIZE_AU);
             return offsetA.magnitude.CompareTo(offsetB.magnitude);
         });
         
@@ -2610,16 +2646,16 @@ public class SolarSystemParallaxManager : MonoBehaviour
         if (!autopilotActive || autopilotTarget == null) return;
         
         // Calculate direction and distance to target
-        Vector3 toTarget = autopilotTarget.realPosAu - playerRealPosAu;
-        float distanceAu = toTarget.magnitude;
+        Vector3d toTarget = playerRealPosAu.OffsetTo(autopilotTarget.realPosAu, SECTOR_SIZE_AU);
+        double distanceAu = toTarget.magnitude;
         
         // Convert target radius to AU for stopping distance
-        float targetRadiusAu = autopilotTarget.radiusKm / (float)AU_KM;
-        float stopDistanceAu = targetRadiusAu * 10f; // Stop at 10x planet radius
+        double targetRadiusAu = autopilotTarget.radiusKm / AU_KM;
+        double stopDistanceAu = targetRadiusAu * 10.0; // Stop at 10x planet radius
         
         // Check if we've arrived (with small tolerance for floating-point precision)
-        float arrivalTolerance = 1e-4f; // Tolerance in AU (~15,000 km) - generous to ensure reliable exit
-        float remainingDistance = distanceAu - stopDistanceAu;
+        double arrivalTolerance = 1e-4; // Tolerance in AU (~15,000 km) - generous to ensure reliable exit
+        double remainingDistance = distanceAu - stopDistanceAu;
         if (distanceAu <= stopDistanceAu || remainingDistance < arrivalTolerance)
         {
             Debug.Log($"Autopilot: Arrived at {autopilotTarget.name}");
@@ -2643,10 +2679,10 @@ public class SolarSystemParallaxManager : MonoBehaviour
         }
         
         // Calculate travel speed (use the dynamic currentSpeed from UpdateDynamicBehavior)
-        Vector3 moveDir = toTarget.normalized;
+        Vector3d moveDir = toTarget.normalized;
         
         // Move towards target
-        float moveAmount = currentSpeed * Time.deltaTime * 1.5f; // 1.5x normal speed for autopilot
+        double moveAmount = currentSpeed * Time.deltaTime * 1.5; // 1.5x normal speed for autopilot
         
         // Don't overshoot
         if (moveAmount > distanceAu - stopDistanceAu)
@@ -2654,7 +2690,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
             moveAmount = distanceAu - stopDistanceAu;
         }
         
-        playerRealPosAu += moveDir * moveAmount;
+        playerRealPosAu = playerRealPosAu.Add(moveDir * moveAmount, SECTOR_SIZE_AU);
         actualSpeed = currentSpeed * 1.5f;
     }
     
@@ -2930,7 +2966,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
             if (!hasInfo) continue;
             
             // Calculate distance in AU
-            float distanceAu = (body.realPosAu - playerRealPosAu).magnitude;
+            Vector3d offset = playerRealPosAu.OffsetTo(body.realPosAu, SECTOR_SIZE_AU);
+            float distanceAu = (float)offset.magnitude;
             
             // Calculate max allowed distance based on body radius
             float bodyRadiusAu = body.radiusKm / (float)AU_KM;
@@ -3153,17 +3190,20 @@ public class SolarSystemParallaxManager : MonoBehaviour
     
     private Vector3 CalculateAsteroidWorldPosition(AsteroidData asteroid)
     {
-        // Asteroid position in AU relative to Sun
-        Vector3 asteroidPosAU = asteroid.positionAU;
+        // Asteroid position in AU (stored as simple Vector3 - asteroids are within solar system)
+        Vector3d asteroidPosAU = new Vector3d(asteroid.positionAU);
+        
+        // Convert player position to absolute AU for comparison
+        Vector3d playerAbsoluteAu = playerRealPosAu.ToAbsolutePosition(SECTOR_SIZE_AU);
         
         // Apply parallax: calculate position relative to player
-        Vector3 relativePos = asteroidPosAU - playerRealPosAu;
+        Vector3d relativePos = asteroidPosAU - playerAbsoluteAu;
         
         // Get direction to asteroid from player
-        Vector3 direction = relativePos.normalized;
+        Vector3d direction = relativePos.normalized;
         
         // Project onto virtual horizon sphere
-        return direction * horizonRadius;
+        return (Vector3)(direction * horizonRadius);
     }
     
     private void UpdateAsteroidRendering()
@@ -3221,5 +3261,212 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 asteroidPropertyBlock
             );
         }
+    }
+}
+
+// Double precision 3D vector for accurate calculations
+[System.Serializable]
+public struct Vector3d
+{
+    public double x, y, z;
+    
+    public Vector3d(double x, double y, double z)
+    {
+        this.x = x;
+        this.y = y;
+        this.z = z;
+    }
+    
+    public Vector3d(Vector3 v)
+    {
+        this.x = v.x;
+        this.y = v.y;
+        this.z = v.z;
+    }
+    
+    public double magnitude => System.Math.Sqrt(x * x + y * y + z * z);
+    
+    public double sqrMagnitude => x * x + y * y + z * z;
+    
+    public Vector3d normalized
+    {
+        get
+        {
+            double mag = magnitude;
+            if (mag < 1e-15) return new Vector3d(1, 0, 0);
+            return new Vector3d(x / mag, y / mag, z / mag);
+        }
+    }
+    
+    public static Vector3d zero => new Vector3d(0, 0, 0);
+    
+    public static Vector3d operator +(Vector3d a, Vector3d b)
+    {
+        return new Vector3d(a.x + b.x, a.y + b.y, a.z + b.z);
+    }
+    
+    public static Vector3d operator -(Vector3d a, Vector3d b)
+    {
+        return new Vector3d(a.x - b.x, a.y - b.y, a.z - b.z);
+    }
+    
+    public static Vector3d operator *(Vector3d a, double scalar)
+    {
+        return new Vector3d(a.x * scalar, a.y * scalar, a.z * scalar);
+    }
+    
+    public static Vector3d operator *(double scalar, Vector3d a)
+    {
+        return new Vector3d(a.x * scalar, a.y * scalar, a.z * scalar);
+    }
+    
+    public static Vector3d operator /(Vector3d a, double scalar)
+    {
+        return new Vector3d(a.x / scalar, a.y / scalar, a.z / scalar);
+    }
+    
+    public static Vector3d operator -(Vector3d a)
+    {
+        return new Vector3d(-a.x, -a.y, -a.z);
+    }
+    
+    public static explicit operator Vector3(Vector3d v)
+    {
+        return new Vector3((float)v.x, (float)v.y, (float)v.z);
+    }
+    
+    public override string ToString()
+    {
+        return $"({x:F6}, {y:F6}, {z:F6})";
+    }
+}
+
+// Hierarchical position system for unlimited scale with high precision
+[System.Serializable]
+public struct HierarchicalPosition
+{
+    public Vector3Int sector;      // Which sector (each sector is SECTOR_SIZE_AU)
+    public Vector3d localOffset;   // Precise position within sector (in AU)
+    
+    public HierarchicalPosition(Vector3Int sector, Vector3d localOffset)
+    {
+        this.sector = sector;
+        this.localOffset = localOffset;
+    }
+    
+    // Create from absolute AU position
+    public HierarchicalPosition(Vector3d absolutePositionAu, double sectorSizeAu)
+    {
+        int sectorX = (int)System.Math.Floor(absolutePositionAu.x / sectorSizeAu);
+        int sectorY = (int)System.Math.Floor(absolutePositionAu.y / sectorSizeAu);
+        int sectorZ = (int)System.Math.Floor(absolutePositionAu.z / sectorSizeAu);
+        
+        sector = new Vector3Int(sectorX, sectorY, sectorZ);
+        localOffset = new Vector3d(
+            absolutePositionAu.x - sectorX * sectorSizeAu,
+            absolutePositionAu.y - sectorY * sectorSizeAu,
+            absolutePositionAu.z - sectorZ * sectorSizeAu
+        );
+    }
+    
+    // Convert from Vector3 (for legacy compatibility)
+    public HierarchicalPosition(Vector3 positionAu, double sectorSizeAu)
+    {
+        Vector3d pos = new Vector3d(positionAu);
+        int sectorX = (int)System.Math.Floor(pos.x / sectorSizeAu);
+        int sectorY = (int)System.Math.Floor(pos.y / sectorSizeAu);
+        int sectorZ = (int)System.Math.Floor(pos.z / sectorSizeAu);
+        
+        sector = new Vector3Int(sectorX, sectorY, sectorZ);
+        localOffset = new Vector3d(
+            pos.x - sectorX * sectorSizeAu,
+            pos.y - sectorY * sectorSizeAu,
+            pos.z - sectorZ * sectorSizeAu
+        );
+    }
+    
+    // Convert to absolute AU position (for debugging/display)
+    public Vector3d ToAbsolutePosition(double sectorSizeAu)
+    {
+        return new Vector3d(
+            sector.x * sectorSizeAu + localOffset.x,
+            sector.y * sectorSizeAu + localOffset.y,
+            sector.z * sectorSizeAu + localOffset.z
+        );
+    }
+    
+    // Calculate offset from this position to another (player-relative coordinates)
+    public Vector3d OffsetTo(HierarchicalPosition other, double sectorSizeAu)
+    {
+        // Calculate sector difference
+        Vector3Int sectorDiff = other.sector - this.sector;
+        
+        // Convert to AU offset
+        Vector3d sectorOffsetAu = new Vector3d(
+            sectorDiff.x * sectorSizeAu,
+            sectorDiff.y * sectorSizeAu,
+            sectorDiff.z * sectorSizeAu
+        );
+        
+        // Add local offset difference
+        return sectorOffsetAu + (other.localOffset - this.localOffset);
+    }
+    
+    // Add a Vector3d offset (for movement)
+    public HierarchicalPosition Add(Vector3d offsetAu, double sectorSizeAu)
+    {
+        Vector3d newLocal = localOffset + offsetAu;
+        Vector3Int newSector = sector;
+        
+        // Handle sector overflow in X
+        while (newLocal.x >= sectorSizeAu)
+        {
+            newLocal.x -= sectorSizeAu;
+            newSector.x++;
+        }
+        while (newLocal.x < 0)
+        {
+            newLocal.x += sectorSizeAu;
+            newSector.x--;
+        }
+        
+        // Handle sector overflow in Y
+        while (newLocal.y >= sectorSizeAu)
+        {
+            newLocal.y -= sectorSizeAu;
+            newSector.y++;
+        }
+        while (newLocal.y < 0)
+        {
+            newLocal.y += sectorSizeAu;
+            newSector.y--;
+        }
+        
+        // Handle sector overflow in Z
+        while (newLocal.z >= sectorSizeAu)
+        {
+            newLocal.z -= sectorSizeAu;
+            newSector.z++;
+        }
+        while (newLocal.z < 0)
+        {
+            newLocal.z += sectorSizeAu;
+            newSector.z--;
+        }
+        
+        return new HierarchicalPosition(newSector, newLocal);
+    }
+    
+    // Subtract (shift) all positions by an offset (for origin shifting)
+    public HierarchicalPosition Subtract(Vector3d offsetAu, double sectorSizeAu)
+    {
+        return Add(-offsetAu, sectorSizeAu);
+    }
+    
+    public static HierarchicalPosition zero => new HierarchicalPosition(Vector3Int.zero, Vector3d.zero);
+    
+    public override string ToString()
+    {
+        return $"Sector{sector} + {localOffset}";
     }
 }
