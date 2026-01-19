@@ -128,5 +128,10 @@
     "path": "Assets/ProximaCentauri.mat",
     "emitting": true,
     "illuminated_by": null
+  },
+  "9000000000": {
+    "path": "Assets/BlackHole.mat",
+    "emitting": false,
+    "illuminated_by": null
   }
 }

@@ -185,7 +185,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     {
         public string name;
         public long naifId;
-        public string objectType; // sun, planet, moon, dwarf_planet, star, asteroid
+        public string objectType; // sun, planet, moon, dwarf_planet, star, asteroid, black_hole
         public HierarchicalPosition realPosAu;
         public float radiusKm;
         public Transform proxy;
@@ -914,6 +914,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         bool localEarthFound = earthFound;
 
         // Parse new Gaia-format CSV: source_id,object_type,ra_deg,dec_deg,parallax_mas,distance_pc,phot_g_mean_mag,abs_mag_g,size_km,vx_au_d,vy_au_d,vz_au_d,speed_km_s,gm_km3_s2,mass_kg,density_g_cm3,mean_radius_km,albedo,rot_per_hr,H
+        // object_type can be: sun, planet, moon, dwarf_planet, star, black_hole
         for (int i = 1; i < lines.Length; i++)
         {
             string line = lines[i].Trim();
@@ -925,7 +926,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
             // Parse fields from new format
             if (!long.TryParse(parts[0], out long naifId)) continue; // source_id is the NAIF ID
             
-            string objectType = parts[1]; // object_type (sun, planet, moon, dwarf_planet, star)
+            string objectType = parts[1]; // object_type (sun, planet, moon, dwarf_planet, star, black_hole)
             
             // Parse RA, Dec, Distance in parsecs
             float ra_deg = 0, dec_deg = 0, distance_pc = 0;
@@ -968,17 +969,29 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 if (float.TryParse(parts[16], NumberStyles.Float, CultureInfo.InvariantCulture, out float radius))
                 {
                     radiusKm = radius;
+                    if (naifId == 9000000000) // Sagittarius A* debug
+                    {
+                        Debug.Log($"Sagittarius A* parsed radius: {radiusKm:F2} km from string '{parts[16]}'");
+                    }
                 }
                 else
                 {
                     // Fallback to BodyRadiiKm dictionary if parsing fails
                     radiusKm = BodyRadiiKm.TryGetValue(naifId, out float r) ? r : 1_000f;
+                    if (naifId == 9000000000)
+                    {
+                        Debug.LogWarning($"Sagittarius A* FAILED to parse radius from '{parts[16]}', using fallback: {radiusKm}");
+                    }
                 }
             }
             else
             {
                 // Fallback to BodyRadiiKm dictionary if field is empty
                 radiusKm = BodyRadiiKm.TryGetValue(naifId, out float r) ? r : 1_000f;
+                if (naifId == 9000000000)
+                {
+                    Debug.LogWarning($"Sagittarius A* radius field empty or missing, using fallback: {radiusKm}");
+                }
             }
             
             // Create name from NAIF ID
@@ -1890,8 +1903,29 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         if (nearestPlanet != null)
         {
+            double distanceToPlanetKm = distanceToNearestPlanet * AU_KM;
+            string planetDistanceDisplay;
+            
+            // Show both AU and km when distance is reasonable (< 10 million km)
+            if (distanceToPlanetKm < 10_000_000)
+            {
+                string kmDisplay;
+                if (distanceToPlanetKm >= 1_000_000)
+                    kmDisplay = $"{distanceToPlanetKm / 1_000_000:F2}M km";
+                else if (distanceToPlanetKm >= 1_000)
+                    kmDisplay = $"{distanceToPlanetKm / 1_000:F1}k km";
+                else
+                    kmDisplay = $"{distanceToPlanetKm:F0} km";
+                
+                planetDistanceDisplay = $"{distanceToNearestPlanet:F6} AU ({kmDisplay})";
+            }
+            else
+            {
+                planetDistanceDisplay = $"{distanceToNearestPlanet:F6} AU";
+            }
+            
             hudText.text += $"\nNearest: {nearestPlanet.name}\n" +
-                           $"Distance: {distanceToNearestPlanet:F6} AU";
+                           $"Distance: {planetDistanceDisplay}";
         }
         
         // Add stellar manager info
@@ -3021,8 +3055,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         foreach (var body in bodies)
         {
-            // Check if this body has planet info data, or is Sun/Earth's Moon (special cases)
-            bool hasInfo = body.planetData != null || body.naifId == 301 || body.naifId == 10;
+            // Check if this body has planet info data, or is Sun/Earth's Moon/Black Hole (special cases)
+            bool hasInfo = body.planetData != null || body.naifId == 301 || body.naifId == 10 || body.objectType == "black_hole";
             if (!hasInfo) continue;
             
             // Calculate distance in AU
