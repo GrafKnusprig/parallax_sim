@@ -17,6 +17,8 @@
 
 - [ ] autopilot vr-ui (akutell kann man nicht damit interagieren)
 - [ ] planet-info für vr verbessern
+- [ ] put important information in the center (consider fov properties from lecture)
+- [ ] Use the periphiral vision for subtle effects (light speed animation, planet approximation warning, red blinking etc.)
 
 ## Neue Features
 
