@@ -109,6 +109,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [Tooltip("VR Controller button to toggle the autopilot menu (e.g., menu button or Y/B button).")]
     [SerializeField] private InputActionReference autopilotMenuAction;
     
+    [Tooltip("VR Controller button to toggle planet info display.")]
+    [SerializeField] private InputActionReference planetInfoAction;
+    
     [Header("Loading Screen")]
     [Tooltip("Show loading screen while stellar data is being loaded")]
     [SerializeField] private bool enableLoadingScreen = true;
@@ -199,6 +202,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private bool isVRMode = false;
     private bool wasVRMode = false; // Track if mode changed
     private bool autopilotTriggerWasPressed = false; // Track trigger state for edge detection
+    private bool planetInfoTriggerWasPressed = false; // Track planet info trigger state
 
     private class BodyInstance
     {
@@ -268,6 +272,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         if (moveAction != null) moveAction.action.Enable();
         if (verticalAction != null) verticalAction.action.Enable();
         if (autopilotMenuAction != null) autopilotMenuAction.action.Enable();
+        if (planetInfoAction != null) planetInfoAction.action.Enable();
     }
 
     private void OnDisable()
@@ -275,6 +280,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         if (moveAction != null) moveAction.action.Disable();
         if (verticalAction != null) verticalAction.action.Disable();
         if (autopilotMenuAction != null) autopilotMenuAction.action.Disable();
+        if (planetInfoAction != null) planetInfoAction.action.Disable();
     }
 
     private Camera GetActiveCamera()
@@ -640,8 +646,24 @@ public class SolarSystemParallaxManager : MonoBehaviour
             ToggleAutopilotMenu();
         }
         
-        // Handle planet info toggle with I key
-        if (Keyboard.current != null && Keyboard.current.iKey.wasPressedThisFrame)
+        // Handle planet info toggle with I key or VR controller button
+        bool planetInfoTogglePressed = (Keyboard.current != null && Keyboard.current.iKey.wasPressedThisFrame);
+        
+        // Check VR controller trigger for planet info
+        if (planetInfoAction != null && planetInfoAction.action.enabled)
+        {
+            float triggerValue = planetInfoAction.action.ReadValue<float>();
+            bool triggerIsPressed = triggerValue > 0.5f;
+            
+            // Detect rising edge (trigger just pressed)
+            if (triggerIsPressed && !planetInfoTriggerWasPressed)
+            {
+                planetInfoTogglePressed = true;
+            }
+            planetInfoTriggerWasPressed = triggerIsPressed;
+        }
+        
+        if (planetInfoTogglePressed)
         {
             TogglePlanetInfo();
         }
