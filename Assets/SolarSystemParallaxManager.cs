@@ -6,6 +6,7 @@ using System.IO;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
+using UnityEngine.XR.Interaction.Toolkit.UI;
 using TMPro;
 
 public class SolarSystemParallaxManager : MonoBehaviour
@@ -105,6 +106,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [Tooltip("Enable VR mode for headset display. When disabled, uses standard screen with mouse support.")]
     [SerializeField] private bool enableVRMode = false;
     
+    [Tooltip("VR Controller button to toggle the autopilot menu (e.g., menu button or Y/B button).")]
+    [SerializeField] private InputActionReference autopilotMenuAction;
+    
     [Header("Loading Screen")]
     [Tooltip("Show loading screen while stellar data is being loaded")]
     [SerializeField] private bool enableLoadingScreen = true;
@@ -194,6 +198,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     // VR/Desktop adaptive mode
     private bool isVRMode = false;
     private bool wasVRMode = false; // Track if mode changed
+    private bool autopilotTriggerWasPressed = false; // Track trigger state for edge detection
 
     private class BodyInstance
     {
@@ -262,12 +267,14 @@ public class SolarSystemParallaxManager : MonoBehaviour
     {
         if (moveAction != null) moveAction.action.Enable();
         if (verticalAction != null) verticalAction.action.Enable();
+        if (autopilotMenuAction != null) autopilotMenuAction.action.Enable();
     }
 
     private void OnDisable()
     {
         if (moveAction != null) moveAction.action.Disable();
         if (verticalAction != null) verticalAction.action.Disable();
+        if (autopilotMenuAction != null) autopilotMenuAction.action.Disable();
     }
 
     private Camera GetActiveCamera()
@@ -365,9 +372,18 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 ConfigureCanvasForDesktop(canvas);
             }
             
-            canvasGO.AddComponent<GraphicRaycaster>();
+            // Add appropriate raycaster based on VR mode
+            if (isVRMode)
+            {
+                // Use TrackedDeviceGraphicRaycaster for VR controller interaction
+                canvasGO.AddComponent<TrackedDeviceGraphicRaycaster>();
+            }
+            else
+            {
+                canvasGO.AddComponent<GraphicRaycaster>();
+            }
             labelCanvas = canvas;
-            Debug.Log($"Created automatic label canvas ({(isVRMode ? "World Space for VR" : "Screen Space for Desktop")})");
+            Debug.Log($"Created automatic label canvas ({(isVRMode ? "World Space for VR with TrackedDeviceGraphicRaycaster" : "Screen Space for Desktop")})");
         }
         else if (labelCanvas != null)
         {
@@ -375,6 +391,19 @@ public class SolarSystemParallaxManager : MonoBehaviour
             if (isVRMode)
             {
                 ConfigureCanvasForVR(labelCanvas);
+                
+                // Ensure TrackedDeviceGraphicRaycaster exists for VR controller interaction
+                if (labelCanvas.GetComponent<TrackedDeviceGraphicRaycaster>() == null)
+                {
+                    // Remove standard GraphicRaycaster if present (they conflict)
+                    var oldRaycaster = labelCanvas.GetComponent<GraphicRaycaster>();
+                    if (oldRaycaster != null && !(oldRaycaster is TrackedDeviceGraphicRaycaster))
+                    {
+                        Destroy(oldRaycaster);
+                    }
+                    labelCanvas.gameObject.AddComponent<TrackedDeviceGraphicRaycaster>();
+                    Debug.Log("Added TrackedDeviceGraphicRaycaster to existing canvas for VR controller interaction");
+                }
             }
             else
             {
@@ -387,8 +416,34 @@ public class SolarSystemParallaxManager : MonoBehaviour
         {
             GameObject eventSystemGO = new GameObject("EventSystem");
             eventSystemGO.AddComponent<UnityEngine.EventSystems.EventSystem>();
-            eventSystemGO.AddComponent<UnityEngine.InputSystem.UI.InputSystemUIInputModule>();
-            Debug.Log("Created EventSystem for UI interaction");
+            
+            if (isVRMode)
+            {
+                // Use XRUIInputModule for VR controller input
+                eventSystemGO.AddComponent<XRUIInputModule>();
+                Debug.Log("Created EventSystem with XRUIInputModule for VR controller interaction");
+            }
+            else
+            {
+                eventSystemGO.AddComponent<UnityEngine.InputSystem.UI.InputSystemUIInputModule>();
+                Debug.Log("Created EventSystem for UI interaction");
+            }
+        }
+        else if (isVRMode)
+        {
+            // Ensure VR UI input module is present if EventSystem already exists
+            var existingEventSystem = UnityEngine.EventSystems.EventSystem.current;
+            if (existingEventSystem.GetComponent<XRUIInputModule>() == null)
+            {
+                // Remove existing input module if present
+                var existingInputModule = existingEventSystem.GetComponent<UnityEngine.EventSystems.BaseInputModule>();
+                if (existingInputModule != null)
+                {
+                    Destroy(existingInputModule);
+                }
+                existingEventSystem.gameObject.AddComponent<XRUIInputModule>();
+                Debug.Log("Added XRUIInputModule to existing EventSystem for VR controller interaction");
+            }
         }
     }
     
@@ -563,8 +618,24 @@ public class SolarSystemParallaxManager : MonoBehaviour
             return;
         }
         
-        // Handle autopilot toggle with X key
-        if (Keyboard.current != null && Keyboard.current.xKey.wasPressedThisFrame)
+        // Handle autopilot toggle with X key or VR controller button
+        bool autopilotTogglePressed = (Keyboard.current != null && Keyboard.current.xKey.wasPressedThisFrame);
+        
+        // Check VR controller trigger (it's an axis, so we need to detect edge)
+        if (autopilotMenuAction != null && autopilotMenuAction.action.enabled)
+        {
+            float triggerValue = autopilotMenuAction.action.ReadValue<float>();
+            bool triggerIsPressed = triggerValue > 0.5f;
+            
+            // Detect rising edge (trigger just pressed)
+            if (triggerIsPressed && !autopilotTriggerWasPressed)
+            {
+                autopilotTogglePressed = true;
+            }
+            autopilotTriggerWasPressed = triggerIsPressed;
+        }
+        
+        if (autopilotTogglePressed)
         {
             ToggleAutopilotMenu();
         }
