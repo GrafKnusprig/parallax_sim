@@ -33,18 +33,16 @@ public class StellarParallaxManager : MonoBehaviour
     [Tooltip("Maximum stars to render per frame (count)")]
     [SerializeField] private int maxStarsPerFrame = 2500000;
 
-    [Header("Distance-Based Brightness")]
-    [Tooltip("Enable dimming stars based on distance")]
-    [SerializeField] private bool enableDistanceBrightness = true;
-    [Tooltip("Distance (parsecs) where stars are at full brightness")]
-    [SerializeField] private float brightnessNearDistanceParsecs = 5f;
-    [Tooltip("Distance (parsecs) where stars are at minimum brightness")]
-    [SerializeField] private float brightnessFarDistanceParsecs = 1000f;
-    [Tooltip("Brightness falloff curve (1=linear, 2=quadratic, 0.5=sqrt)")]
-    [SerializeField] private float brightnessFalloffExponent = 1.5f;
+    [Header("GPU Processing (Compute Shader)")]
+    [Tooltip("Use GPU compute shader for star processing (fastest)")]
+    [SerializeField] private bool useComputeShader = true;
+    [Tooltip("Compute shader for star culling")]
+    [SerializeField] private ComputeShader starCullingShader;
+    [Tooltip("GPU-optimized star material (uses StructuredBuffer)")]
+    [SerializeField] private Material starMaterialGPU;
 
     [Header("Parallel Processing (Burst/Jobs)")]
-    [Tooltip("Use Burst-compiled Jobs for parallel star processing")]
+    [Tooltip("Use Burst-compiled Jobs for parallel star processing (fallback if no compute shader)")]
     [SerializeField] private bool useJobs = true;
     [Tooltip("Batch size for parallel job processing")]
     [SerializeField] private int jobBatchSize = 512;
@@ -122,13 +120,31 @@ public class StellarParallaxManager : MonoBehaviour
     
     // Per-frame output arrays (persistent allocations, sized to star count)
     private NativeArray<float3> nativeOutputWorldPositions; // Indexed by star index
-    private NativeArray<float> nativeOutputBrightness;       // Per-star brightness (0-1)
     private NativeArray<int> nativeVisibilityFlags;          // 1 = visible, 0 = culled
     private int outputArrayCapacity = 0;
     
     // Reusable managed arrays for rendering (avoid GC allocations)
     private Matrix4x4[] renderBatchBuffer;
     private const int RENDER_BATCH_SIZE = 1023; // Unity's limit for Graphics.DrawMeshInstanced
+    
+    // GPU Compute Shader resources
+    private ComputeBuffer starInputBuffer;       // All stars (uploaded once)
+    private ComputeBuffer visibleStarsBuffer;    // Visible stars output (AppendBuffer)
+    private ComputeBuffer indirectArgsBuffer;    // For DrawMeshInstancedIndirect
+    private bool computeBuffersAllocated = false;
+    private int computeKernelCull;
+    private uint[] indirectArgs = new uint[5];   // Reusable args array
+    
+    // GPU input struct (must match compute shader)
+    private struct StarInputGPU
+    {
+        public Vector3 positionParsecs;
+        public Vector3 direction;
+        public float distance;
+        public float invDistance;
+        
+        public static int Size => sizeof(float) * 8; // 3 + 3 + 1 + 1 = 8 floats
+    }
     
     // Data storage
     private List<StarData> allStars = new List<StarData>();
@@ -186,11 +202,6 @@ public class StellarParallaxManager : MonoBehaviour
         public float auToParsec;
         public float parallaxApproxDistanceParsecs;
         
-        // Brightness parameters
-        public float brightnessNearDistance;  // Distance (parsecs) where brightness = 1.0
-        public float brightnessFarDistance;   // Distance (parsecs) where brightness approaches 0
-        public float brightnessExponent;      // Falloff curve exponent
-        
         // Input: Feature flags
         public bool enableParallax;
         public bool enableFastParallaxApprox;
@@ -200,8 +211,6 @@ public class StellarParallaxManager : MonoBehaviour
         // Each star writes to its own index, then we compact on main thread
         [WriteOnly, NativeDisableParallelForRestriction]
         public NativeArray<float3> outputWorldPositions;
-        [WriteOnly, NativeDisableParallelForRestriction]
-        public NativeArray<float> outputBrightness;
         [WriteOnly, NativeDisableParallelForRestriction]
         public NativeArray<int> visibilityFlags; // 1 = visible, 0 = culled
         
@@ -276,14 +285,8 @@ public class StellarParallaxManager : MonoBehaviour
                 return;
             }
             
-            // Calculate brightness based on distance (inverse-square-ish falloff)
-            float normalizedDist = math.saturate((distance - brightnessNearDistance) / (brightnessFarDistance - brightnessNearDistance));
-            float brightness = math.pow(1.0f - normalizedDist, brightnessExponent);
-            brightness = math.clamp(brightness, 0.02f, 1.0f); // Ensure minimum visibility
-            
-            // Star is visible - write world position, brightness, and mark as visible
+            // Star is visible - write world position and mark as visible
             outputWorldPositions[index] = worldPos;
-            outputBrightness[index] = brightness;
             visibilityFlags[index] = 1;
         }
         
@@ -343,28 +346,7 @@ public class StellarParallaxManager : MonoBehaviour
         }
     }
     
-    // ============================================================================
-    // BURST JOB: Build Matrix4x4 array with brightness encoded in scale
-    // ============================================================================
-    [BurstCompile(FloatPrecision.Standard, FloatMode.Fast)]
-    private struct BuildMatricesWithBrightnessJob : IJobParallelFor
-    {
-        [ReadOnly] public NativeArray<float3> worldPositions;
-        [ReadOnly] public NativeArray<float> brightness;
-        [WriteOnly] public NativeArray<Matrix4x4> matrices;
-        
-        public void Execute(int index)
-        {
-            float3 pos = worldPositions[index];
-            float b = brightness[index];
-            // Encode brightness in the scale - shader will extract it
-            matrices[index] = Matrix4x4.TRS(
-                new Vector3(pos.x, pos.y, pos.z),
-                Quaternion.identity,
-                new Vector3(b, b, b)
-            );
-        }
-    }
+
 
     private void Awake()
     {
@@ -405,7 +387,12 @@ public class StellarParallaxManager : MonoBehaviour
         if (shouldUpdate)
         {
             UpdateVisibleStars();
-            UpdateStarRendering();
+            
+            // GPU path handles rendering differently - no need for UpdateStarRendering
+            if (!IsUsingComputeShader())
+            {
+                UpdateStarRendering();
+            }
             
             lastCameraPosition = currentCameraPos;
             lastCameraForward = currentCameraForward;
@@ -533,6 +520,9 @@ public class StellarParallaxManager : MonoBehaviour
         AllocateNativeArraysFromStarData();
         EnsureOutputArrayCapacity(maxStarsPerFrame);
         
+        // Allocate ComputeBuffers for GPU processing
+        AllocateComputeBuffers();
+        
         starsLoaded = true;
         UpdateVisibleStars();
     }
@@ -541,7 +531,11 @@ public class StellarParallaxManager : MonoBehaviour
     {
         if (!starsLoaded) return;
         
-        if (useJobs && nativeArraysAllocated)
+        if (useComputeShader && computeBuffersAllocated && starCullingShader != null)
+        {
+            UpdateVisibleStarsGPU();
+        }
+        else if (useJobs && nativeArraysAllocated)
         {
             UpdateVisibleStarsJobs();
         }
@@ -552,12 +546,79 @@ public class StellarParallaxManager : MonoBehaviour
     }
     
     // ============================================================================
+    // GPU PATH: Compute shader processing (fastest)
+    // ============================================================================
+    private void UpdateVisibleStarsGPU()
+    {
+        float starDistanceScale = GetStarDistanceScaleFactor();
+        
+        Vector3 cameraPos = playerCamera.transform.position;
+        Vector3 cameraForward = playerCamera.transform.forward;
+        float horizonRadius = solarSystemManager.HorizonRadius;
+        
+        Vector3d playerPosRelativeToSunAu = solarSystemManager.GetPlayerPositionRelativeToSun();
+        Vector3 playerPosAu = (Vector3)playerPosRelativeToSunAu;
+        Vector3 effectivePlayerPosAu = playerPosAu * starDistanceScale;
+        
+        float halfFOVWithMargin = playerCamera.fieldOfView * 0.5f + FOV_CULLING_MARGIN;
+        float cosHalfFOV = Mathf.Cos(halfFOVWithMargin * Mathf.Deg2Rad);
+        float cosRoughFOV = Mathf.Cos((halfFOVWithMargin + 30f) * Mathf.Deg2Rad);
+        
+        // Reset append buffer
+        visibleStarsBuffer.SetCounterValue(0);
+        
+        // Set compute shader uniforms
+        starCullingShader.SetBuffer(computeKernelCull, "_AllStars", starInputBuffer);
+        starCullingShader.SetBuffer(computeKernelCull, "_VisibleStars", visibleStarsBuffer);
+        
+        starCullingShader.SetVector("_CameraPos", cameraPos);
+        starCullingShader.SetVector("_CameraForward", cameraForward);
+        starCullingShader.SetVector("_PlayerPosAu", effectivePlayerPosAu);
+        starCullingShader.SetFloat("_HorizonRadius", horizonRadius);
+        starCullingShader.SetFloat("_CosHalfFOV", cosHalfFOV);
+        starCullingShader.SetFloat("_CosRoughFOV", cosRoughFOV);
+        starCullingShader.SetFloat("_AuToParsec", AU_TO_PARSEC);
+        
+        starCullingShader.SetInt("_EnableParallax", enableParallax ? 1 : 0);
+        starCullingShader.SetInt("_EnableFastParallaxApprox", enableFastParallaxApprox ? 1 : 0);
+        starCullingShader.SetFloat("_ParallaxApproxDistanceParsecs", parallaxApproxDistanceParsecs);
+        
+        starCullingShader.SetInt("_StarCount", allStars.Count);
+        
+        // Dispatch compute shader (256 threads per group)
+        int threadGroups = Mathf.CeilToInt(allStars.Count / 256f);
+        starCullingShader.Dispatch(computeKernelCull, threadGroups, 1, 1);
+        
+        // Copy visible count to indirect args buffer (GPU-side, no CPU readback!)
+        ComputeBuffer.CopyCount(visibleStarsBuffer, indirectArgsBuffer, sizeof(uint));
+    }
+    
+    private void RenderStarsGPU()
+    {
+        if (!computeBuffersAllocated || starMaterialGPU == null) return;
+        
+        // Set the visible stars buffer on the material
+        starMaterialGPU.SetBuffer("_VisibleStars", visibleStarsBuffer);
+        starMaterialGPU.SetColor("_Color", starColor);
+        starMaterialGPU.SetFloat("_Brightness", starBrightness);
+        starMaterialGPU.SetFloat("_Size", baseStarSize);
+        
+        // Render using indirect args (GPU determines instance count)
+        Graphics.DrawMeshInstancedIndirect(
+            starMesh,
+            0,
+            starMaterialGPU,
+            new Bounds(Vector3.zero, Vector3.one * 100000f), // Large bounds to always render
+            indirectArgsBuffer
+        );
+    }
+    
+    // ============================================================================
     // JOBS PATH: Burst-compiled parallel processing
     // ============================================================================
     private int lastJobVisibleCount = 0;
     private NativeArray<Matrix4x4> nativeMatrices;
     private NativeArray<float3> nativeCompactedPositions;  // Compacted visible positions for matrix building
-    private NativeArray<float> nativeCompactedBrightness;  // Compacted brightness values
     
     private void UpdateVisibleStarsJobs()
     {
@@ -623,16 +684,11 @@ public class StellarParallaxManager : MonoBehaviour
             auToParsec = AU_TO_PARSEC,
             parallaxApproxDistanceParsecs = parallaxApproxDistanceParsecs,
             
-            brightnessNearDistance = enableDistanceBrightness ? brightnessNearDistanceParsecs : 0f,
-            brightnessFarDistance = enableDistanceBrightness ? brightnessFarDistanceParsecs : 10000f,
-            brightnessExponent = enableDistanceBrightness ? brightnessFalloffExponent : 0f,
-            
             enableParallax = enableParallax,
             enableFastParallaxApprox = enableFastParallaxApprox,
             enablePlayerRelativeCulling = enablePlayerRelativeCulling,
             
             outputWorldPositions = nativeOutputWorldPositions,
-            outputBrightness = nativeOutputBrightness,
             visibilityFlags = nativeVisibilityFlags
         };
         
@@ -644,30 +700,24 @@ public class StellarParallaxManager : MonoBehaviour
         // This is fast because we're just reading flags and copying positions
         lastJobVisibleCount = 0;
         
-        // Ensure compacted arrays are ready
+        // Ensure compacted array is ready
         if (!nativeCompactedPositions.IsCreated || nativeCompactedPositions.Length < maxStarsPerFrame)
         {
             if (nativeCompactedPositions.IsCreated) nativeCompactedPositions.Dispose();
             nativeCompactedPositions = new NativeArray<float3>(maxStarsPerFrame, Allocator.Persistent);
         }
-        if (!nativeCompactedBrightness.IsCreated || nativeCompactedBrightness.Length < maxStarsPerFrame)
-        {
-            if (nativeCompactedBrightness.IsCreated) nativeCompactedBrightness.Dispose();
-            nativeCompactedBrightness = new NativeArray<float>(maxStarsPerFrame, Allocator.Persistent);
-        }
         
-        // Compact: gather visible star positions and brightness
+        // Compact: gather visible star positions
         for (int i = 0; i < starCount && lastJobVisibleCount < maxStarsPerFrame; i++)
         {
             if (nativeVisibilityFlags[i] == 1)
             {
                 nativeCompactedPositions[lastJobVisibleCount] = nativeOutputWorldPositions[i];
-                nativeCompactedBrightness[lastJobVisibleCount] = nativeOutputBrightness[i];
                 lastJobVisibleCount++;
             }
         }
         
-        // Update matrices for rendering (with brightness encoded in scale)
+        // Update matrices for rendering
         if (lastJobVisibleCount > 0)
         {
             // Ensure matrices array is properly sized
@@ -677,10 +727,9 @@ public class StellarParallaxManager : MonoBehaviour
                 nativeMatrices = new NativeArray<Matrix4x4>(Mathf.Max(lastJobVisibleCount, maxStarsPerFrame), Allocator.Persistent);
             }
             
-            var matrixJob = new BuildMatricesWithBrightnessJob
+            var matrixJob = new BuildMatricesJob
             {
                 worldPositions = nativeCompactedPositions,
-                brightness = nativeCompactedBrightness,
                 matrices = nativeMatrices
             };
             
@@ -992,6 +1041,14 @@ public class StellarParallaxManager : MonoBehaviour
     
     private void RenderStars()
     {
+        // Use GPU path if available
+        if (useComputeShader && computeBuffersAllocated && starCullingShader != null && starMaterialGPU != null)
+        {
+            RenderStarsGPU();
+            return;
+        }
+        
+        // Fallback to CPU/Jobs path
         int starCount;
         if (useJobs && nativeArraysAllocated)
         {
@@ -1064,11 +1121,6 @@ public class StellarParallaxManager : MonoBehaviour
         stoppedSpeedThresholdAuPerSec = Mathf.Max(0f, stoppedSpeedThresholdAuPerSec);
         parallaxApproxDistanceParsecs = Mathf.Max(0f, parallaxApproxDistanceParsecs);
         
-        // Brightness settings
-        brightnessNearDistanceParsecs = Mathf.Max(0.1f, brightnessNearDistanceParsecs);
-        brightnessFarDistanceParsecs = Mathf.Max(brightnessNearDistanceParsecs + 1f, brightnessFarDistanceParsecs);
-        brightnessFalloffExponent = Mathf.Clamp(brightnessFalloffExponent, 0.1f, 5f);
-        
         // Job settings
         jobBatchSize = Mathf.Clamp(jobBatchSize, 32, 2048);
     }
@@ -1081,6 +1133,7 @@ public class StellarParallaxManager : MonoBehaviour
         }
         
         DisposeNativeArrays();
+        DisposeComputeBuffers();
     }
     
     private void DisposeNativeArrays()
@@ -1095,10 +1148,8 @@ public class StellarParallaxManager : MonoBehaviour
         }
         
         if (nativeOutputWorldPositions.IsCreated) nativeOutputWorldPositions.Dispose();
-        if (nativeOutputBrightness.IsCreated) nativeOutputBrightness.Dispose();
         if (nativeVisibilityFlags.IsCreated) nativeVisibilityFlags.Dispose();
         if (nativeCompactedPositions.IsCreated) nativeCompactedPositions.Dispose();
-        if (nativeCompactedBrightness.IsCreated) nativeCompactedBrightness.Dispose();
         if (nativeMatrices.IsCreated) nativeMatrices.Dispose();
         outputArrayCapacity = 0;
     }
@@ -1129,6 +1180,84 @@ public class StellarParallaxManager : MonoBehaviour
         Debug.Log($"[StellarParallaxManager] Allocated NativeArrays for {count:N0} stars (Burst/Jobs ready)");
     }
     
+    private void AllocateComputeBuffers()
+    {
+        if (starCullingShader == null)
+        {
+            Debug.LogWarning("[StellarParallaxManager] No compute shader assigned, GPU path disabled");
+            return;
+        }
+        
+        DisposeComputeBuffers();
+        
+        int count = allStars.Count;
+        if (count == 0) return;
+        
+        // Get kernel
+        computeKernelCull = starCullingShader.FindKernel("CullStars");
+        
+        // Create input buffer (uploaded once with all star data)
+        starInputBuffer = new ComputeBuffer(count, StarInputGPU.Size);
+        
+        // Fill input buffer
+        StarInputGPU[] inputData = new StarInputGPU[count];
+        for (int i = 0; i < count; i++)
+        {
+            StarData star = allStars[i];
+            inputData[i] = new StarInputGPU
+            {
+                positionParsecs = star.positionParsecs,
+                direction = star.direction,
+                distance = star.distance,
+                invDistance = star.invDistance
+            };
+        }
+        starInputBuffer.SetData(inputData);
+        
+        // Create visible stars output buffer (AppendBuffer)
+        // Size for worst case: all stars visible
+        int maxVisible = Mathf.Min(count, maxStarsPerFrame);
+        visibleStarsBuffer = new ComputeBuffer(maxVisible, sizeof(float) * 3, ComputeBufferType.Append); // float3 worldPosition
+        
+        // Create indirect args buffer for DrawMeshInstancedIndirect
+        indirectArgsBuffer = new ComputeBuffer(1, sizeof(uint) * 5, ComputeBufferType.IndirectArguments);
+        
+        // Initialize indirect args
+        // [0] = vertex count per instance (6 for quad: 2 triangles)
+        // [1] = instance count (will be set by GPU)
+        // [2] = start vertex location
+        // [3] = start instance location
+        indirectArgs[0] = starMesh != null ? starMesh.GetIndexCount(0) : 6;
+        indirectArgs[1] = 0; // Will be overwritten by CopyCount
+        indirectArgs[2] = 0;
+        indirectArgs[3] = 0;
+        indirectArgs[4] = 0;
+        indirectArgsBuffer.SetData(indirectArgs);
+        
+        computeBuffersAllocated = true;
+        Debug.Log($"[StellarParallaxManager] Allocated ComputeBuffers for {count:N0} stars (GPU path ready)");
+    }
+    
+    private void DisposeComputeBuffers()
+    {
+        if (starInputBuffer != null)
+        {
+            starInputBuffer.Release();
+            starInputBuffer = null;
+        }
+        if (visibleStarsBuffer != null)
+        {
+            visibleStarsBuffer.Release();
+            visibleStarsBuffer = null;
+        }
+        if (indirectArgsBuffer != null)
+        {
+            indirectArgsBuffer.Release();
+            indirectArgsBuffer = null;
+        }
+        computeBuffersAllocated = false;
+    }
+    
     private void EnsureOutputArrayCapacity(int requiredCapacity)
     {
         if (outputArrayCapacity >= requiredCapacity)
@@ -1136,13 +1265,11 @@ public class StellarParallaxManager : MonoBehaviour
         
         // Dispose old arrays
         if (nativeOutputWorldPositions.IsCreated) nativeOutputWorldPositions.Dispose();
-        if (nativeOutputBrightness.IsCreated) nativeOutputBrightness.Dispose();
         if (nativeVisibilityFlags.IsCreated) nativeVisibilityFlags.Dispose();
         
         // Allocate arrays sized to star count
         outputArrayCapacity = requiredCapacity;
         nativeOutputWorldPositions = new NativeArray<float3>(outputArrayCapacity, Allocator.Persistent);
-        nativeOutputBrightness = new NativeArray<float>(outputArrayCapacity, Allocator.Persistent);
         nativeVisibilityFlags = new NativeArray<int>(outputArrayCapacity, Allocator.Persistent);
         
         // Allocate render batch buffer
@@ -1176,6 +1303,18 @@ public class StellarParallaxManager : MonoBehaviour
     
     public bool IsUsingJobs()
     {
-        return useJobs && nativeArraysAllocated;
+        return useJobs && nativeArraysAllocated && !IsUsingComputeShader();
+    }
+    
+    public bool IsUsingComputeShader()
+    {
+        return useComputeShader && computeBuffersAllocated && starCullingShader != null;
+    }
+    
+    public string GetProcessingMode()
+    {
+        if (IsUsingComputeShader()) return "GPU (Compute Shader)";
+        if (IsUsingJobs()) return "CPU (Burst/Jobs)";
+        return "CPU (Single-threaded)";
     }
 }

@@ -636,7 +636,14 @@ MonoBehaviour:
   baseStarSize: 15
   starColor: {r: 1, g: 1, b: 1, a: 1}
   starBrightness: 1
-  maxStarsPerFrame: 50000
+  maxStarsPerFrame: 2500000
+  enableDistanceBrightness: 1
+  brightnessNearDistanceParsecs: 5
+  brightnessFarDistanceParsecs: 1000
+  brightnessFalloffExponent: 1.5
+  useComputeShader: 1
+  starCullingShader: {fileID: 0}
+  starMaterialGPU: {fileID: 0}
   useJobs: 1
   jobBatchSize: 512
   enableFastParallaxApprox: 1
