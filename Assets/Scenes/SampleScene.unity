@@ -542,6 +542,7 @@ GameObject:
   - component: {fileID: 713169412}
   - component: {fileID: 713169411}
   - component: {fileID: 713169413}
+  - component: {fileID: 713169414}
   m_Layer: 0
   m_Name: GameObject
   m_TagString: Untagged
@@ -638,6 +639,23 @@ MonoBehaviour:
   starColor: {r: 1, g: 1, b: 1, a: 1}
   starBrightness: 1
   maxStarsPerFrame: 50000
+--- !u!114 &713169414
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 713169410}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7d69cf2b63f094f4088753f59378f3a1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::VRUIInteractionSetup
+  leftHand: {fileID: 8270855663187062767, guid: 1392f805216c47742996d4742c80721c, type: 3}
+  rightHand: {fileID: 3475118261464492563, guid: 9f3369e30fbd31f4bb596b1a99babe83, type: 3}
+  showRayVisual: 1
+  rayColor: {r: 0.3, g: 0.6, b: 1, a: 0.8}
+  maxRayDistance: 30
 --- !u!1 &832575517
 GameObject:
   m_ObjectHideFlags: 0
