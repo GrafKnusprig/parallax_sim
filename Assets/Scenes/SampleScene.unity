@@ -578,6 +578,9 @@ MonoBehaviour:
   accretionDiscMaterial: {fileID: 2100000, guid: 7c910d2e2a8294606b4a6eb0c37b55e5, type: 2}
   accretionDiscInnerRadius: 2.5
   accretionDiscOuterRadius: 7
+  enableGravitationalLensing: 1
+  lensingVerticalOffset: 0.8
+  lensingImageOpacity: 0.6
   enableAsteroids: 1
   asteroidMaterial: {fileID: 2100000, guid: 3b110bfe1241a412ea9c281cc689aa3c, type: 2}
   baseAsteroidSize: 5
@@ -594,11 +597,13 @@ MonoBehaviour:
   labelColor: {r: 0.11273074, g: 1, b: 0, a: 1}
   labelOffsetPixels: 20
   enableHUD: 1
-  hudFontSize: 16
+  hudFontSize: 22
   hudColor: {r: 0, g: 1, b: 1, a: 1}
-  hudPosition: {x: 20, y: -20}
-  enableVRMode: 0
-  enableLoadingScreen: 1
+  hudPosition: {x: 20, y: -200}
+  enableVRMode: 1
+  autopilotMenuAction: {fileID: -5982496924579745919, guid: c348712bda248c246b8c49b3db54643f, type: 3}
+  planetInfoAction: {fileID: 83097790271614945, guid: c348712bda248c246b8c49b3db54643f, type: 3}
+  enableLoadingScreen: 0
 --- !u!4 &713169412
 Transform:
   m_ObjectHideFlags: 0
