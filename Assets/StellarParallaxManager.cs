@@ -251,14 +251,14 @@ public class StellarParallaxManager : MonoBehaviour
         // Get player position RELATIVE TO SUN for stellar coordinates
         // Stars are positioned with Sun at origin (0,0,0), so we need player offset from Sun
         Vector3d playerPosRelativeToSunAu = solarSystemManager.GetPlayerPositionRelativeToSun();
-        Vector3 playerPosParsecs = (Vector3)(playerPosRelativeToSunAu * AU_TO_PARSEC);
+        Vector3 playerPosAu = (Vector3)playerPosRelativeToSunAu;
         
         // Calculate effective FOV with generous margin
         float halfFOVWithMargin = playerCamera.fieldOfView * 0.5f + FOV_CULLING_MARGIN;
         
         // Early exit optimization: if player is extremely far, drastically reduce search space
-        float playerDistanceFromOrigin = playerPosParsecs.magnitude;
-        bool isExtremeDistance = playerDistanceFromOrigin > 1000f; // 1000 parsecs = very far
+        float playerDistanceFromOrigin = playerPosAu.magnitude;
+        bool isExtremeDistance = playerDistanceFromOrigin > 206265f; // ~1 parsec in AU = very far
         
         int processed = 0;
         int maxToProcess = isExtremeDistance ? 100000 : 2500000; // Limit search when far out
@@ -276,7 +276,7 @@ public class StellarParallaxManager : MonoBehaviour
             // Additional distance culling when player is far from galactic center
             if (isExtremeDistance)
             {
-                Vector3 starToPlayer = playerPosParsecs - star.positionParsecs;
+                Vector3 starToPlayer = (playerPosAu * AU_TO_PARSEC) - star.positionParsecs;
                 float distanceToPlayer = starToPlayer.magnitude;
                 
                 // Only consider stars relatively close to player's position
@@ -304,7 +304,7 @@ public class StellarParallaxManager : MonoBehaviour
             }
             
             // Now do the expensive parallax calculation only for potential candidates
-            Vector3 worldPos = CalculateStarWorldPosition(star, direction, horizonRadius, playerPosParsecs);
+            Vector3 worldPos = CalculateStarWorldPosition(star, direction, horizonRadius, playerPosAu);
             
             // Skip stars with invalid world positions
             if (float.IsNaN(worldPos.x) || float.IsNaN(worldPos.y) || float.IsNaN(worldPos.z) ||
@@ -353,21 +353,21 @@ public class StellarParallaxManager : MonoBehaviour
         // Get player position RELATIVE TO SUN for stellar coordinates
         // Stars are positioned with Sun at origin (0,0,0), so we need player offset from Sun
         Vector3d playerPosRelativeToSunAu = solarSystemManager.GetPlayerPositionRelativeToSun();
-        Vector3 playerPosParsecs = (Vector3)(playerPosRelativeToSunAu * AU_TO_PARSEC);
+        Vector3 playerPosAu = (Vector3)playerPosRelativeToSunAu;
         
         // Update positions and matrices
         for (int i = 0; i < starCount; i++)
         {
             StarData star = visibleStars[i];
             Vector3 direction = star.positionParsecs.normalized;
-            Vector3 worldPos = CalculateStarWorldPosition(star, direction, horizonRadius, playerPosParsecs);
+            Vector3 worldPos = CalculateStarWorldPosition(star, direction, horizonRadius, playerPosAu);
             
             starPositions[i] = worldPos;
             starMatrices[i] = Matrix4x4.TRS(worldPos, Quaternion.identity, Vector3.one);
         }
     }
     
-    private Vector3 CalculateStarWorldPosition(StarData star, Vector3 originalDirection, float horizonRadius, Vector3 playerPosParsecs)
+    private Vector3 CalculateStarWorldPosition(StarData star, Vector3 originalDirection, float horizonRadius, Vector3 playerPosAu)
     {
         if (!enableParallax)
         {
@@ -376,31 +376,35 @@ public class StellarParallaxManager : MonoBehaviour
         }
         
         // Use double precision for accurate parallax calculations
-        double distance = System.Math.Max(star.distance, 0.1); // Distance in parsecs
+        // Star position is in parsecs, player position is in AU
+        // Convert player position to parsecs for consistent units
+        Vector3d playerPosParsecs = new Vector3d(
+            playerPosAu.x * AU_TO_PARSEC,
+            playerPosAu.y * AU_TO_PARSEC,
+            playerPosAu.z * AU_TO_PARSEC
+        );
         
-        // Convert to double precision for calculations
-        Vector3d playerPos64 = new Vector3d(playerPosParsecs.x, playerPosParsecs.y, playerPosParsecs.z);
-        Vector3d originalDir64 = new Vector3d(originalDirection.x, originalDirection.y, originalDirection.z);
+        Vector3d starPosParsecs = new Vector3d(
+            star.positionParsecs.x,
+            star.positionParsecs.y,
+            star.positionParsecs.z
+        );
         
-        // Calculate the parallax offset in angular space (radians)
-        Vector3d parallaxOffset = playerPos64 / distance;
+        // Calculate vector from PLAYER to star (not from Sun to star)
+        Vector3d playerToStar = starPosParsecs - playerPosParsecs;
         
-        // Apply realistic parallax only (no exaggeration)
-        parallaxOffset *= PARALLAX_EXAGGERATION;
-        
-        // Convert parallax offset to apparent direction change
-        // Subtract offset because parallax shifts stars opposite to player movement
-        Vector3d apparentDir64 = originalDir64 - parallaxOffset;
+        // Calculate actual distance from player to star
+        double actualDistance = playerToStar.magnitude;
         
         // Bounds checking for extreme values
-        if (apparentDir64.magnitude < 0.001)
+        if (actualDistance < 0.001)
         {
-            // If direction becomes too small, fallback to original direction
-            apparentDir64 = originalDir64;
+            // If too close or invalid, fallback to original direction
+            return originalDirection * horizonRadius;
         }
         
-        // Normalize to keep on unit sphere
-        apparentDir64 = apparentDir64.normalized;
+        // Calculate the direction from player to star
+        Vector3d apparentDir64 = playerToStar.normalized;
         
         // Convert back to Vector3 with precision check
         Vector3 apparentDirection = new Vector3(

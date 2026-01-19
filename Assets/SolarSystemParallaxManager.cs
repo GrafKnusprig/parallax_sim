@@ -1856,9 +1856,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
         else
             lightSpeedDisplay = "0% lightspeed";
         
-        // Calculate distance from Sun (origin)
-        Vector3d absolutePos = playerRealPosAu.ToAbsolutePosition(SECTOR_SIZE_AU);
-        double distanceFromSunAu = absolutePos.magnitude;
+        // Calculate distance from Sun using hierarchical position system
+        Vector3d offsetFromSun = GetPlayerPositionRelativeToSun();
+        double distanceFromSunAu = offsetFromSun.magnitude;
         double distanceFromSunKm = distanceFromSunAu * AU_KM;
         
         // Format distance display
