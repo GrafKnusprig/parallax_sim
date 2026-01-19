@@ -575,6 +575,9 @@ MonoBehaviour:
   saturnRingMaterial: {fileID: 2100000, guid: f1e2d3c4b5a6978869504a3b2c1d0e9f, type: 2}
   saturnRingInnerRadius: 1.2
   saturnRingOuterRadius: 2.3
+  accretionDiscMaterial: {fileID: 2100000, guid: 7c910d2e2a8294606b4a6eb0c37b55e5, type: 2}
+  accretionDiscInnerRadius: 2.5
+  accretionDiscOuterRadius: 7
   enableAsteroids: 1
   asteroidMaterial: {fileID: 2100000, guid: 3b110bfe1241a412ea9c281cc689aa3c, type: 2}
   baseAsteroidSize: 5

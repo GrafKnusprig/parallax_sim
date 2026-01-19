@@ -46,6 +46,20 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [SerializeField] private float saturnRingInnerRadius = 1.2f;
     [Tooltip("Outer radius of Saturn's rings (in Saturn radii)")]
     [SerializeField] private float saturnRingOuterRadius = 2.3f;
+    
+    [Header("Black Hole Accretion Disc")]
+    [Tooltip("Material for black hole accretion disc")]
+    [SerializeField] private Material accretionDiscMaterial;
+    [Tooltip("Inner radius of accretion disc (in black hole radii)")]
+    [SerializeField] private float accretionDiscInnerRadius = 2.5f;
+    [Tooltip("Outer radius of accretion disc (in black hole radii)")]
+    [SerializeField] private float accretionDiscOuterRadius = 7.0f;
+    [Tooltip("Enable gravitational lensing effect (creates secondary lensed images)")]
+    [SerializeField] private bool enableGravitationalLensing = true;
+    [Tooltip("Vertical offset for lensed disc images (in black hole radii)")]
+    [SerializeField] private float lensingVerticalOffset = 0.8f;
+    [Tooltip("Opacity multiplier for lensed images")]
+    [SerializeField] private float lensingImageOpacity = 0.6f;
 
     [Header("Asteroids")]
     [SerializeField] private bool enableAsteroids = true;
@@ -1088,6 +1102,16 @@ public class SolarSystemParallaxManager : MonoBehaviour
                     body.ringObject = CreateSaturnRings(proxy.transform, radiusKm);
                 }
             }
+            
+            // Create accretion disc for black holes
+            if (objectType == "black_hole")
+            {
+                if (accretionDiscMaterial != null)
+                {
+                    body.ringObject = CreateAccretionDisc(proxy.transform, radiusKm);
+                    Debug.Log($"Created accretion disc for {name} (NAIF ID {naifId})");
+                }
+            }
 
             if (enableLabels)
             {
@@ -1446,6 +1470,188 @@ public class SolarSystemParallaxManager : MonoBehaviour
         ringObject.transform.localScale = Vector3.one;
         
         return ringObject;
+    }
+    
+    private GameObject CreateAccretionDisc(Transform parentBlackHole, float blackHoleRadiusKm)
+    {
+        GameObject discObject = new GameObject("AccretionDisc");
+        discObject.transform.SetParent(parentBlackHole, false);
+        discObject.transform.localPosition = Vector3.zero;
+        
+        // Create disc mesh
+        MeshFilter meshFilter = discObject.AddComponent<MeshFilter>();
+        MeshRenderer meshRenderer = discObject.AddComponent<MeshRenderer>();
+        
+        // Create the disc geometry (reuse ring mesh creation)
+        Mesh discMesh = CreateRingMesh(accretionDiscInnerRadius, accretionDiscOuterRadius, 256);
+        meshFilter.mesh = discMesh;
+        
+        // Apply accretion disc material
+        if (accretionDiscMaterial != null)
+        {
+            meshRenderer.sharedMaterial = accretionDiscMaterial;
+        }
+        
+        // No rotation - disc is horizontal by default
+        discObject.transform.localRotation = Quaternion.identity;
+        discObject.transform.localScale = Vector3.one;
+        
+        return discObject;
+    }
+    
+    private void CreateGravitationalLensingRing(Transform parent, Mesh baseMesh)
+    {
+        // Create a lensing ring at the photon sphere radius (1.5 Rs)
+        // This represents light from the disc that's been bent around the black hole
+        
+        GameObject lensingRing = new GameObject("LensingRing");
+        lensingRing.transform.SetParent(parent, false);
+        lensingRing.transform.localPosition = Vector3.zero;
+        
+        MeshFilter meshFilter = lensingRing.AddComponent<MeshFilter>();
+        MeshRenderer meshRenderer = lensingRing.AddComponent<MeshRenderer>();
+        
+        // Create a toroidal/curved mesh around the photon sphere
+        Mesh bentMesh = CreateBentLensingMesh(1.5f, accretionDiscInnerRadius, accretionDiscOuterRadius);
+        meshFilter.mesh = bentMesh;
+        
+        // Create dimmer material for lensed light
+        Material lensedMaterial = new Material(accretionDiscMaterial);
+        if (lensedMaterial.HasProperty("_Intensity"))
+        {
+            float originalIntensity = lensedMaterial.GetFloat("_Intensity");
+            lensedMaterial.SetFloat("_Intensity", originalIntensity * lensingImageOpacity);
+        }
+        
+        meshRenderer.material = lensedMaterial;
+        lensingRing.transform.localRotation = Quaternion.identity;
+        lensingRing.transform.localScale = Vector3.one;
+    }
+    
+    private Mesh CreateBentLensingMesh(float photonSphereRadius, float discInner, float discOuter)
+    {
+        Mesh mesh = new Mesh();
+        mesh.name = "BentLensingMesh";
+        
+        int angularSegments = 256; // Around the ring
+        int radialSegments = 32;   // From inner to outer
+        int verticalSegments = 16; // Curve segments
+        
+        List<Vector3> vertices = new List<Vector3>();
+        List<Vector2> uvs = new List<Vector2>();
+        List<int> triangles = new List<int>();
+        
+        // Create a curved surface that wraps around the photon sphere
+        for (int r = 0; r <= radialSegments; r++)
+        {
+            float radialT = (float)r / radialSegments;
+            float radius = Mathf.Lerp(discInner, discOuter, radialT);
+            
+            for (int v = 0; v <= verticalSegments; v++)
+            {
+                // Vertical curve parameter (0 to 1, where 0.5 is the equator)
+                float verticalT = (float)v / verticalSegments;
+                
+                // Create curvature: arc from -90° to +90° around photon sphere
+                float curveAngle = (verticalT - 0.5f) * Mathf.PI; // -PI/2 to +PI/2
+                float verticalOffset = photonSphereRadius * Mathf.Sin(curveAngle);
+                float radialOffset = photonSphereRadius * (1.0f - Mathf.Cos(curveAngle));
+                
+                float adjustedRadius = radius - radialOffset;
+                
+                for (int a = 0; a <= angularSegments; a++)
+                {
+                    float angle = (float)a / angularSegments * 2f * Mathf.PI;
+                    
+                    Vector3 pos = new Vector3(
+                        Mathf.Cos(angle) * adjustedRadius,
+                        verticalOffset,
+                        Mathf.Sin(angle) * adjustedRadius
+                    );
+                    
+                    vertices.Add(pos);
+                    
+                    // UV mapping: x = radial, y = angular (for shader rotation)
+                    uvs.Add(new Vector2(radialT, (float)a / angularSegments));
+                }
+            }
+        }
+        
+        // Generate triangles
+        for (int r = 0; r < radialSegments; r++)
+        {
+            for (int v = 0; v < verticalSegments; v++)
+            {
+                int angularCount = angularSegments + 1;
+                int verticalCount = verticalSegments + 1;
+                
+                for (int a = 0; a < angularSegments; a++)
+                {
+                    int i0 = r * verticalCount * angularCount + v * angularCount + a;
+                    int i1 = r * verticalCount * angularCount + v * angularCount + (a + 1);
+                    int i2 = r * verticalCount * angularCount + (v + 1) * angularCount + a;
+                    int i3 = r * verticalCount * angularCount + (v + 1) * angularCount + (a + 1);
+                    
+                    int i4 = (r + 1) * verticalCount * angularCount + v * angularCount + a;
+                    int i5 = (r + 1) * verticalCount * angularCount + v * angularCount + (a + 1);
+                    int i6 = (r + 1) * verticalCount * angularCount + (v + 1) * angularCount + a;
+                    int i7 = (r + 1) * verticalCount * angularCount + (v + 1) * angularCount + (a + 1);
+                    
+                    // First triangle
+                    triangles.Add(i0);
+                    triangles.Add(i2);
+                    triangles.Add(i4);
+                    
+                    triangles.Add(i2);
+                    triangles.Add(i6);
+                    triangles.Add(i4);
+                    
+                    // Second triangle
+                    triangles.Add(i1);
+                    triangles.Add(i5);
+                    triangles.Add(i3);
+                    
+                    triangles.Add(i3);
+                    triangles.Add(i5);
+                    triangles.Add(i7);
+                }
+            }
+        }
+        
+        mesh.SetVertices(vertices);
+        mesh.SetUVs(0, uvs);
+        mesh.SetTriangles(triangles, 0);
+        mesh.RecalculateNormals();
+        mesh.RecalculateBounds();
+        
+        return mesh;
+    }
+    
+    private void CreateLensedDiscImage(Transform parent, Mesh discMesh, string name, 
+                                       Vector3 localPosition, float opacityMultiplier)
+    {
+        GameObject lensedDisc = new GameObject(name);
+        lensedDisc.transform.SetParent(parent, false);
+        lensedDisc.transform.localPosition = localPosition;
+        lensedDisc.transform.localRotation = Quaternion.identity;
+        lensedDisc.transform.localScale = Vector3.one;
+        
+        MeshFilter meshFilter = lensedDisc.AddComponent<MeshFilter>();
+        MeshRenderer meshRenderer = lensedDisc.AddComponent<MeshRenderer>();
+        
+        meshFilter.mesh = discMesh; // Reuse same mesh
+        
+        // Create material instance with reduced opacity
+        Material lensedMaterial = new Material(accretionDiscMaterial);
+        
+        // Reduce intensity for lensed images (they appear dimmer)
+        if (lensedMaterial.HasProperty("_Intensity"))
+        {
+            float originalIntensity = lensedMaterial.GetFloat("_Intensity");
+            lensedMaterial.SetFloat("_Intensity", originalIntensity * opacityMultiplier);
+        }
+        
+        meshRenderer.material = lensedMaterial;
     }
     
     private Mesh CreateRingMesh(float innerRadius, float outerRadius, int segments)

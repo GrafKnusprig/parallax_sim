@@ -20,7 +20,7 @@ public class StellarParallaxManager : MonoBehaviour
     private const float PARALLAX_EXAGGERATION = 1.0f;
     
     [Header("Star Rendering")]
-    [SerializeField] private Material starMaterial;
+    [SerializeField] private Material starMaterial; 
     [Tooltip("Base size for all stars (Unity units)")]
     [SerializeField] private float baseStarSize = 0.1f;
     [SerializeField] private Color starColor = Color.white;
