@@ -35,6 +35,7 @@ Shader "Custom/StarPoint"
                 float4 pos : SV_POSITION;
                 float2 uv : TEXCOORD0;
                 float3 worldPos : TEXCOORD1;
+                float instanceBrightness : TEXCOORD2;
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
@@ -50,6 +51,9 @@ Shader "Custom/StarPoint"
                 
                 // Transform vertex to world space
                 float3 worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
+                
+                // Extract per-instance brightness from matrix scale (x component)
+                float instanceBrightness = length(unity_ObjectToWorld._m00_m10_m20);
                 
                 // Calculate billboard vectors for camera-facing quads
                 float3 cameraPos = _WorldSpaceCameraPos;
@@ -72,6 +76,7 @@ Shader "Custom/StarPoint"
                 o.pos = mul(UNITY_MATRIX_VP, float4(worldPos, 1.0));
                 o.uv = v.uv;
                 o.worldPos = worldPos;
+                o.instanceBrightness = instanceBrightness;
                 
                 return o;
             }
@@ -88,15 +93,15 @@ Shader "Custom/StarPoint"
                 // Brighten the center
                 alpha = pow(alpha, 0.8);
                 
-                // Distance-based brightness
-                float brightness = _Brightness;
+                // Distance-based brightness (per-instance from matrix scale)
+                float brightness = _Brightness * i.instanceBrightness;
                 
                 fixed4 col = _Color;
                 col.rgb *= brightness;
-                col.a *= alpha;
+                col.a *= alpha * saturate(i.instanceBrightness);
                 
-                // Ensure minimum visibility
-                col.a = max(col.a, 0.1 * alpha);
+                // Ensure minimum visibility for nearby stars
+                col.a = max(col.a, 0.05 * alpha * saturate(i.instanceBrightness * 2.0));
                 
                 return col;
             }

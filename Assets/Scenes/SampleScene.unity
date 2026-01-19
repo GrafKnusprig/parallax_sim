@@ -578,6 +578,9 @@ MonoBehaviour:
   accretionDiscMaterial: {fileID: 2100000, guid: 7c910d2e2a8294606b4a6eb0c37b55e5, type: 2}
   accretionDiscInnerRadius: 2.5
   accretionDiscOuterRadius: 7
+  enableGravitationalLensing: 1
+  lensingVerticalOffset: 0.8
+  lensingImageOpacity: 0.6
   enableAsteroids: 1
   asteroidMaterial: {fileID: 2100000, guid: 3b110bfe1241a412ea9c281cc689aa3c, type: 2}
   baseAsteroidSize: 5
@@ -598,6 +601,7 @@ MonoBehaviour:
   hudColor: {r: 0, g: 1, b: 1, a: 1}
   hudPosition: {x: 20, y: -20}
   enableVRMode: 0
+  autopilotMenuAction: {fileID: 0}
   enableLoadingScreen: 1
 --- !u!4 &713169412
 Transform:
@@ -633,6 +637,29 @@ MonoBehaviour:
   starColor: {r: 1, g: 1, b: 1, a: 1}
   starBrightness: 1
   maxStarsPerFrame: 50000
+  useJobs: 1
+  jobBatchSize: 512
+  enableFastParallaxApprox: 1
+  parallaxApproxDistanceParsecs: 50
+  enablePlayerRelativeCulling: 1
+  playerCullingRadiusParsecs: 80
+  enableAdaptivePlayerCullingRadius: 1
+  playerCullingRadiusGrowthPerParsec: 0.25
+  maxPlayerCullingRadiusParsecs: 2000
+  minVisibleStars: 5000
+  enableMinVisibleStarFallback: 1
+  enableSpeedBasedStarScaling: 1
+  speedScalingStartAuPerSec: 5
+  speedScalingStrength: 0.05
+  minStarDistanceScale: 0.1
+  holdScaleWhenStopped: 1
+  stoppedSpeedThresholdAuPerSec: 0.05
+  enableFarDistanceCulling: 0
+  farCullingStartAu: 300000
+  farCullingEndAu: 2000000
+  maxStarsToProcessNear: 2500000
+  maxStarsToProcessFar: 2500000
+  farDistancePlayerRangeFactor: 0.6
 --- !u!1 &832575517
 GameObject:
   m_ObjectHideFlags: 0
