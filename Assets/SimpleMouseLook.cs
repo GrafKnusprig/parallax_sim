@@ -106,12 +106,17 @@ public class SimpleMouseLook : MonoBehaviour
         // Mouse delta / right stick etc.
         Vector2 delta = mouseLookAction.action.ReadValue<Vector2>();
 
+        if (transform.up.y < 0)
+        {
+            delta.x = -delta.x;
+        }
+
         // Horizontal: yaw, Vertical: pitch
         yaw   += delta.x * sensitivity;
         pitch -= delta.y * sensitivity;
 
         // Clamp vertical look so you don't break your neck
-        pitch = Mathf.Clamp(pitch, -89f, 89f);
+        // pitch = Mathf.Clamp(pitch, -89f, 89f);
 
         transform.localRotation = Quaternion.Euler(pitch, yaw, 0f);
     }
