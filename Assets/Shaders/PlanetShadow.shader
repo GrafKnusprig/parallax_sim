@@ -6,6 +6,11 @@ Shader "Custom/PlanetShadow"
         _SunDirection("Sun Direction", Vector) = (1, 0, 0, 0)
         _AmbientColor("Ambient Color", Color) = (0.1, 0.1, 0.1, 1)
         _ShadowStrength("Shadow Strength", Range(0, 1)) = 0.8
+
+        [Header(Stencil)]
+        _StencilRef("Stencil Reference", Float) = 0
+        [Enum(UnityEngine.Rendering.CompareFunction)] _StencilComp("Stencil Comparison", Float) = 8 // Always
+        [Enum(UnityEngine.Rendering.StencilOp)] _StencilPass("Stencil Pass", Float) = 0 // Keep
     }
 
     SubShader
@@ -17,6 +22,13 @@ Shader "Custom/PlanetShadow"
         {
             Name "ForwardLit"
             Tags { "LightMode" = "UniversalForward" }
+
+            Stencil
+            {
+                Ref [_StencilRef]
+                Comp [_StencilComp]
+                Pass [_StencilPass]
+            }
 
             HLSLPROGRAM
             #pragma vertex vert

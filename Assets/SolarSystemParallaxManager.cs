@@ -218,7 +218,14 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private bool isVRMode = false;
     private bool wasVRMode = false; // Track if mode changed
     private bool autopilotTriggerWasPressed = false; // Track trigger state for edge detection
+
     private bool planetInfoTriggerWasPressed = false; // Track planet info trigger state
+
+    // Stencil Property IDs
+    private static readonly int StencilRefId = Shader.PropertyToID("_StencilRef");
+    private static readonly int StencilCompId = Shader.PropertyToID("_StencilComp");
+    private static readonly int StencilPassId = Shader.PropertyToID("_StencilPass");
+    private MaterialPropertyBlock planetPropertyBlock;
 
     private class BodyInstance
     {
@@ -227,7 +234,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
         public string objectType; // sun, planet, moon, dwarf_planet, star, asteroid, black_hole
         public HierarchicalPosition realPosAu;
         public float radiusKm;
+
         public Transform proxy;
+        public Renderer renderer;
 
         // UI-based labels
         public GameObject labelUI;
@@ -723,6 +732,67 @@ public class SolarSystemParallaxManager : MonoBehaviour
         }
         
         // Stellar manager handles its own update based on playerRealPosAu
+        
+        UpdatePlanetStencilMaterials();
+    }
+    
+    private void UpdatePlanetStencilMaterials()
+    {
+        if (bodies.Count == 0) return;
+
+        // Find the closest body to the player's real position
+        BodyInstance closestBody = null;
+        double minDistance = double.MaxValue;
+
+        foreach (var body in bodies)
+        {
+            double dist = playerRealPosAu.OffsetTo(body.realPosAu, SECTOR_SIZE_AU).magnitude;
+            if (dist < minDistance)
+            {
+                minDistance = dist;
+                closestBody = body;
+            }
+        }
+
+        // Apply stencil properties directly to the material instance
+        // MaterialPropertyBlock DOES NOT works for Stencil/ZTest state in Unity
+        foreach (var body in bodies)
+        {
+            if (body.renderer == null) continue;
+            
+            // Accessing .material creates an instance (clone) if not already created.
+            // This is necessary to have different render states.
+            Material mat = body.renderer.material;
+
+            if (mat == null) continue;
+
+            if (body == closestBody)
+            {
+                // Closest body writes to stencil buffer
+                // Render FIRST (Lower Queue)
+                mat.renderQueue = 2000; // Geometry
+
+                if (mat.HasProperty(StencilRefId))
+                {
+                    mat.SetFloat(StencilRefId, 1);
+                    mat.SetFloat(StencilCompId, 8); // Always
+                    mat.SetFloat(StencilPassId, 2); // Replace
+                }
+            }
+            else
+            {
+                // Other bodies read from stencil buffer (masked by closest)
+                // Render SECOND (Higher Queue)
+                mat.renderQueue = 2002; // Geometry + 2
+
+                if (mat.HasProperty(StencilRefId))
+                {
+                    mat.SetFloat(StencilRefId, 1);
+                    mat.SetFloat(StencilCompId, 6); // NotEqual
+                    mat.SetFloat(StencilPassId, 0); // Keep
+                }
+            }
+        }
     }
     
     private void CreateLoadingScreen()
@@ -1217,14 +1287,16 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 }
             }
 
-            var body = new BodyInstance
+            // Cache renderer
+            BodyInstance bodyInst = new BodyInstance
             {
                 name = name,
                 naifId = naifId,
                 objectType = objectType,
                 realPosAu = realPosAu,
                 radiusKm = radiusKm,
-                proxy = proxy.transform
+                proxy = proxy.transform,
+                renderer = proxy.GetComponent<Renderer>()
             };
             
             // Create rings for Saturn (NAIF ID 699)
@@ -1235,7 +1307,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 
                 if (saturnRingMaterial != null)
                 {
-                    body.ringObject = CreateSaturnRings(proxy.transform, radiusKm);
+                    bodyInst.ringObject = CreateSaturnRings(proxy.transform, radiusKm);
                 }
             }
             
@@ -1244,18 +1316,18 @@ public class SolarSystemParallaxManager : MonoBehaviour
             {
                 if (accretionDiscMaterial != null)
                 {
-                    body.ringObject = CreateAccretionDisc(proxy.transform, radiusKm);
+                    bodyInst.ringObject = CreateAccretionDisc(proxy.transform, radiusKm);
                     Debug.Log($"Created accretion disc for {name} (NAIF ID {naifId})");
                 }
             }
 
             if (enableLabels)
             {
-                CreateLabelForBody(body);
-                Debug.Log($"Created label for {body.name}");
+                CreateLabelForBody(bodyInst);
+                Debug.Log($"Created label for {bodyInst.name}");
             }
 
-            bodies.Add(body);
+            bodies.Add(bodyInst);
 
             if (naifId == 399 && !localEarthFound)
             {
