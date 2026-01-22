@@ -237,6 +237,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
         public Transform proxy;
         public Renderer renderer;
+        public Renderer ringRenderer;
 
         // UI-based labels
         public GameObject labelUI;
@@ -784,6 +785,24 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 mat.SetFloat(StencilCompId, 6); // NotEqual
                 mat.SetFloat(StencilPassId, 2); // Replace
             }
+
+            // Apply same logic to Ring Renderer if present
+            if (body.ringRenderer != null)
+            {
+                Material ringMat = body.ringRenderer.material;
+                if (ringMat != null)
+                {
+                    // Ring shares depth logic with planet (approx)
+                    ringMat.renderQueue = 2000 + i;
+
+                    if (ringMat.HasProperty(StencilRefId))
+                    {
+                        ringMat.SetFloat(StencilRefId, 1);
+                        ringMat.SetFloat(StencilCompId, 6);
+                        ringMat.SetFloat(StencilPassId, 2);
+                    }
+                }
+            }
         }
     }
     
@@ -1300,6 +1319,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 if (saturnRingMaterial != null)
                 {
                     bodyInst.ringObject = CreateSaturnRings(proxy.transform, radiusKm);
+                    if (bodyInst.ringObject != null)
+                        bodyInst.ringRenderer = bodyInst.ringObject.GetComponent<Renderer>();
                 }
             }
             
@@ -1309,6 +1330,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 if (accretionDiscMaterial != null)
                 {
                     bodyInst.ringObject = CreateAccretionDisc(proxy.transform, radiusKm);
+                    if (bodyInst.ringObject != null)
+                        bodyInst.ringRenderer = bodyInst.ringObject.GetComponent<Renderer>();
                     Debug.Log($"Created accretion disc for {name} (NAIF ID {naifId})");
                 }
             }

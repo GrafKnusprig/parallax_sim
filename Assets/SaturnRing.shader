@@ -5,6 +5,11 @@ Shader "Custom/SaturnRing"
         _MainTex ("Ring Texture", 2D) = "white" {}
         _Color ("Tint Color", Color) = (1,1,1,1)
         _Brightness ("Brightness", Range(0, 5)) = 1.0
+
+        [Header(Stencil)]
+        _StencilRef("Stencil Reference", Float) = 0
+        [Enum(UnityEngine.Rendering.CompareFunction)] _StencilComp("Stencil Comparison", Float) = 8 // Always
+        [Enum(UnityEngine.Rendering.StencilOp)] _StencilPass("Stencil Pass", Float) = 0 // Keep
     }
     
     SubShader
@@ -20,6 +25,13 @@ Shader "Custom/SaturnRing"
         {
             Name "ForwardLit"
             Tags { "LightMode"="UniversalForward" }
+
+            Stencil
+            {
+                Ref [_StencilRef]
+                Comp [_StencilComp]
+                Pass [_StencilPass]
+            }
             
             Blend SrcAlpha OneMinusSrcAlpha
             ZWrite Off
