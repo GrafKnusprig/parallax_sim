@@ -189,14 +189,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
     public float CurrentSpeedAuPerSec => currentSpeed;
     public float ActualSpeedAuPerSec => actualSpeed;
     
-    // Planet info system
+    // Planet info system - NOTE: UI elements now managed by SolarSystemUIManager
     private Dictionary<string, PlanetData> planetInfoData = new Dictionary<string, PlanetData>();
-    private bool planetInfoVisible = false;
-    private GameObject planetInfoUI;
-    private TextMeshProUGUI planetInfoNameText;
-    private TextMeshProUGUI planetInfoDataText;
-    private float planetInfoAnimProgress = 0f;
-    private const float PLANET_INFO_ANIM_SPEED = 8f;
     
     // Loading screen
     private GameObject loadingScreenUI;
@@ -330,7 +324,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         LoadPlanetInfoData();
         CreateAutopilotMenu();
-        CreatePlanetInfoPanel();
+        uiManager.CreatePlanetInfoPanel(); // Create planet info panel via UI manager
         CreateLoadingScreen();
         
         // Initialize asteroid rendering
@@ -565,7 +559,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         {
             UpdateAutopilot();
         }
-        else if (!autopilotMenuOpen && !planetInfoVisible)
+        else if (!autopilotMenuOpen && (uiManager == null || !uiManager.IsPlanetInfoVisible))
         {
             UpdatePlayerMovement();
         }
@@ -2783,10 +2777,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
             return;
         }
         // Mutual exclusion: Close Planet Info if open
-        if (planetInfoVisible)
+        if (uiManager != null && uiManager.IsPlanetInfoVisible)
         {
-            planetInfoVisible = false;
-            UpdatePlanetInfoPanelPosition(); // Immediate hide or let update loop handle it
+            uiManager.HidePlanetInfo();
         }
         
         autopilotMenuOpen = !autopilotMenuOpen;
@@ -3129,103 +3122,12 @@ public class SolarSystemParallaxManager : MonoBehaviour
         return "Unknown";
     }
     
-    private void CreatePlanetInfoPanel()
-    {
-        if (LabelCanvas == null)
-        {
-            Debug.LogWarning("Cannot create Planet Info Panel: Label Canvas not available.");
-            return;
-        }
-        
-        // Create main panel - positioned off-screen to the right initially
-        planetInfoUI = new GameObject("PlanetInfoPanel");
-        planetInfoUI.transform.SetParent(LabelCanvas.transform, false);
-        
-        RectTransform panelRect = planetInfoUI.AddComponent<RectTransform>();
-        panelRect.anchorMin = new Vector2(0.5f, 0.5f);
-        panelRect.anchorMax = new Vector2(0.5f, 0.5f);
-        panelRect.pivot = new Vector2(0.5f, 0.5f);
-        panelRect.anchoredPosition = new Vector2(0, -1200); // Start off-screen (bottom)
-        panelRect.sizeDelta = new Vector2(600, 800);
-        
-        // Add gradient-like background (semi-transparent dark blue/purple)
-        Image panelImage = planetInfoUI.AddComponent<Image>();
-        panelImage.color = new Color(0.08f, 0.08f, 0.18f, 0.92f);
-        
-        // Add left border accent
-        GameObject borderGO = new GameObject("LeftBorder");
-        borderGO.transform.SetParent(planetInfoUI.transform, false);
-        RectTransform borderRect = borderGO.AddComponent<RectTransform>();
-        borderRect.anchorMin = new Vector2(0, 0);
-        borderRect.anchorMax = new Vector2(0, 1);
-        borderRect.pivot = new Vector2(0, 0.5f);
-        borderRect.anchoredPosition = Vector2.zero;
-        borderRect.sizeDelta = new Vector2(4, 0);
-        Image borderImage = borderGO.AddComponent<Image>();
-        borderImage.color = new Color(0.3f, 0.8f, 1f, 0.9f); // Cyan accent
-        
-        // Create title/header section
-        GameObject headerGO = new GameObject("Header");
-        headerGO.transform.SetParent(planetInfoUI.transform, false);
-        RectTransform headerRect = headerGO.AddComponent<RectTransform>();
-        headerRect.anchorMin = new Vector2(0, 1);
-        headerRect.anchorMax = new Vector2(1, 1);
-        headerRect.pivot = new Vector2(0.5f, 1);
-        headerRect.anchoredPosition = new Vector2(0, -15);
-        headerRect.sizeDelta = new Vector2(-30, 50);
-        
-        planetInfoNameText = headerGO.AddComponent<TextMeshProUGUI>();
-        planetInfoNameText.text = "PLANET INFO";
-        if (LabelFont != null) planetInfoNameText.font = LabelFont;
-        planetInfoNameText.fontSize = 42;
-        planetInfoNameText.fontStyle = FontStyles.Bold;
-        planetInfoNameText.color = new Color(0.3f, 0.9f, 1f, 1f); // Bright cyan
-        planetInfoNameText.alignment = TextAlignmentOptions.Center;
-        
-        // Create data content section
-        GameObject contentGO = new GameObject("Content");
-        contentGO.transform.SetParent(planetInfoUI.transform, false);
-        RectTransform contentRect = contentGO.AddComponent<RectTransform>();
-        contentRect.anchorMin = new Vector2(0, 0);
-        contentRect.anchorMax = new Vector2(1, 1);
-        contentRect.offsetMin = new Vector2(20, 50);
-        contentRect.offsetMax = new Vector2(-15, -75);
-        
-        planetInfoDataText = contentGO.AddComponent<TextMeshProUGUI>();
-        planetInfoDataText.text = "";
-        if (LabelFont != null) planetInfoDataText.font = LabelFont;
-        planetInfoDataText.fontSize = 24;
-        planetInfoDataText.color = new Color(0.85f, 0.9f, 1f, 1f); // Soft white-blue
-        planetInfoDataText.alignment = TextAlignmentOptions.TopLeft;
-
-        
-        // Add close hint at bottom
-        GameObject hintGO = new GameObject("CloseHint");
-        hintGO.transform.SetParent(planetInfoUI.transform, false);
-        RectTransform hintRect = hintGO.AddComponent<RectTransform>();
-        hintRect.anchorMin = new Vector2(0, 0);
-        hintRect.anchorMax = new Vector2(1, 0);
-        hintRect.pivot = new Vector2(0.5f, 0);
-        hintRect.anchoredPosition = new Vector2(0, 15);
-        hintRect.sizeDelta = new Vector2(0, 30);
-        
-        TextMeshProUGUI hintText = hintGO.AddComponent<TextMeshProUGUI>();
-        hintText.text = "Press I to close";
-        if (LabelFont != null) hintText.font = LabelFont;
-        hintText.fontSize = 14;
-        hintText.fontStyle = FontStyles.Italic;
-        hintText.color = new Color(0.5f, 0.6f, 0.7f, 0.8f);
-        hintText.alignment = TextAlignmentOptions.Center;
-        
-        // Start hidden (off-screen)
-        planetInfoAnimProgress = 0f;
-        UpdatePlanetInfoPanelPosition();
-        
-        Debug.Log("Planet info panel created successfully");
-    }
+    // NOTE: CreatePlanetInfoPanel() has been moved to SolarSystemUIManager
     
     private void TogglePlanetInfo()
     {
+        if (uiManager == null) return;
+        
         // Mutual exclusion: Close Autopilot Menu if open
         if (autopilotMenuOpen)
         {
@@ -3234,26 +3136,60 @@ public class SolarSystemParallaxManager : MonoBehaviour
             IsMenuOpen = false;
         }
 
-        planetInfoVisible = !planetInfoVisible;
+        bool wasVisible = uiManager.IsPlanetInfoVisible;
         
-        if (planetInfoVisible)
+        if (!wasVisible)
         {
             // Find the nearest body within range that has info data
             BodyInstance infoTarget = FindNearestBodyWithinRange();
             
             if (infoTarget != null)
             {
-                if (planetInfoUI != null) planetInfoUI.SetActive(true);
-                PopulatePlanetInfo(infoTarget);
+                // Convert to UI manager's data format
+                var infoData = ConvertToPlanetInfoData(infoTarget);
+                uiManager.ShowPlanetInfo(infoData);
                 Debug.Log($"Showing planet info for: {infoTarget.name}");
             }
             else
             {
-                // No valid target found, don't show panel
-                planetInfoVisible = false;
                 Debug.Log("No body with planet info data found within range");
             }
         }
+        else
+        {
+            uiManager.HidePlanetInfo();
+        }
+    }
+    
+    /// <summary>
+    /// Converts a BodyInstance to PlanetInfoData for the UI manager.
+    /// </summary>
+    private SolarSystemUIManager.PlanetInfoData ConvertToPlanetInfoData(BodyInstance body)
+    {
+        var infoData = new SolarSystemUIManager.PlanetInfoData
+        {
+            Name = body.name,
+            RadiusKm = body.radiusKm
+        };
+        
+        if (body.planetData != null)
+        {
+            infoData.Color = body.planetData.Color;
+            infoData.Mass = body.planetData.Mass;
+            infoData.Diameter = body.planetData.Diameter;
+            infoData.Density = body.planetData.Density;
+            infoData.Gravity = body.planetData.Gravity;
+            infoData.LengthOfDay = body.planetData.LengthOfDay;
+            infoData.DistanceFromSun = body.planetData.DistanceFromSun;
+            infoData.MeanTemperature = body.planetData.MeanTemperature;
+            infoData.NumberOfMoons = body.planetData.NumberOfMoons;
+            infoData.RingSystem = body.planetData.RingSystem;
+            infoData.AtmosphericComposition = body.planetData.AtmosphericComposition;
+            infoData.SurfaceFeatures = body.planetData.SurfaceFeatures;
+            infoData.Composition = body.planetData.Composition;
+        }
+        
+        return infoData;
     }
     
     /// <summary>
@@ -3297,65 +3233,14 @@ public class SolarSystemParallaxManager : MonoBehaviour
         return nearest;
     }
     
-    private void PopulatePlanetInfo(BodyInstance body)
-    {
-        if (planetInfoNameText == null || planetInfoDataText == null) return;
-        
-        planetInfoNameText.text = body.name.ToUpper();
-        
-        if (body.planetData != null)
-        {
-            PlanetData data = body.planetData;
-            planetInfoDataText.text = 
-                $"<color=#88CCFF>Color:</color>  {data.Color}\n\n" +
-                $"<color=#88CCFF>Diameter:</color>  {data.Diameter} km\n\n" +
-                $"<color=#88CCFF>Density:</color>  {data.Density} kg/m³\n\n" +
-                $"<color=#88CCFF>Surface Gravity:</color>  {data.Gravity} m/s²\n\n" +
-                $"<color=#88CCFF>Length of Day:</color>  {data.LengthOfDay} hours\n\n" +
-                $"<color=#88CCFF>Distance from Sun:</color>  {data.DistanceFromSun} M km\n\n" +
-                $"<color=#88CCFF>Mean Temperature:</color>  {data.MeanTemperature}°C\n\n" +
-                $"<color=#88CCFF>Moons:</color>  {data.NumberOfMoons}\n\n" +
-                $"<color=#88CCFF>Ring System:</color>  {data.RingSystem}\n\n" +
-                $"<color=#88CCFF>Atmosphere:</color>  {data.AtmosphericComposition}";
-        }
-        else
-        {
-            planetInfoDataText.text = "No detailed data available for this body.\n\n" +
-                $"<color=#88CCFF>Radius:</color>  {body.radiusKm:N0} km";
-        }
-    }
+    // NOTE: Planet info panel creation, population, and animation are now handled by SolarSystemUIManager.
+    // The following methods delegate to the UI manager:
     
     private void UpdatePlanetInfoPanel()
     {
-        if (planetInfoUI == null) return;
-        
-        // Animate panel position
-        float targetProgress = planetInfoVisible ? 1f : 0f;
-        planetInfoAnimProgress = Mathf.MoveTowards(planetInfoAnimProgress, targetProgress, Time.deltaTime * PLANET_INFO_ANIM_SPEED);
-        
-        UpdatePlanetInfoPanelPosition();
-        
-        // Hide GameObject if fully closed
-        if (!planetInfoVisible && planetInfoAnimProgress <= 0.01f)
+        if (uiManager != null)
         {
-            if (planetInfoUI.activeSelf) 
-                planetInfoUI.SetActive(false);
-        }
-    }
-    
-    private void UpdatePlanetInfoPanelPosition()
-    {
-        if (planetInfoUI == null) return;
-        
-        RectTransform panelRect = planetInfoUI.GetComponent<RectTransform>();
-        if (panelRect != null)
-        {
-            // Smooth easing curve
-            float easedProgress = 1f - Mathf.Pow(1f - planetInfoAnimProgress, 3f);
-            
-            // Slide in from bottom: -1200 (off-screen) to 0 (center)
-            float yPos = Mathf.Lerp(-1200, 0, easedProgress);
-            panelRect.anchoredPosition = new Vector2(0, yPos);
+            uiManager.UpdatePlanetInfoPanel();
         }
     }
     
