@@ -109,6 +109,15 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [Tooltip("VR Controller button to toggle the autopilot menu (e.g., menu button or Y/B button).")]
     [SerializeField] private InputActionReference autopilotMenuAction;
     
+    [Tooltip("VR Controller button to toggle planet info display.")]
+    [SerializeField] private InputActionReference planetInfoAction;
+    
+    [Tooltip("VR Controller thumbstick/trackpad for menu scrolling (2D axis).")]
+    [SerializeField] private InputActionReference menuScrollAction;
+    
+    [Tooltip("VR Controller button to confirm selection in menu (e.g., trigger or trackpad press).")]
+    [SerializeField] private InputActionReference menuSelectAction;
+    
     [Header("Loading Screen")]
     [Tooltip("Show loading screen while stellar data is being loaded")]
     [SerializeField] private bool enableLoadingScreen = true;
@@ -170,6 +179,13 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private GameObject autopilotUI;
     private List<Button> autopilotButtons = new List<Button>();
     
+    // VR menu navigation
+    private int menuSelectedIndex = 0;
+    private List<BodyInstance> menuSelectableBodies = new List<BodyInstance>();
+    private float menuScrollCooldown = 0f;
+    private const float MENU_SCROLL_DELAY = 0.2f; // Delay between scroll steps
+    private bool menuSelectWasPressed = false; // For edge detection
+    
     // Static property for other scripts to check menu state
     public static bool IsMenuOpen { get; private set; } = false;
     public static bool IsAutopilotActive { get; private set; } = false;
@@ -199,6 +215,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private bool isVRMode = false;
     private bool wasVRMode = false; // Track if mode changed
     private bool autopilotTriggerWasPressed = false; // Track trigger state for edge detection
+    private bool planetInfoTriggerWasPressed = false; // Track planet info trigger state
 
     private class BodyInstance
     {
@@ -268,6 +285,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
         if (moveAction != null) moveAction.action.Enable();
         if (verticalAction != null) verticalAction.action.Enable();
         if (autopilotMenuAction != null) autopilotMenuAction.action.Enable();
+        if (planetInfoAction != null) planetInfoAction.action.Enable();
+        if (menuScrollAction != null) menuScrollAction.action.Enable();
+        if (menuSelectAction != null) menuSelectAction.action.Enable();
     }
 
     private void OnDisable()
@@ -275,6 +295,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
         if (moveAction != null) moveAction.action.Disable();
         if (verticalAction != null) verticalAction.action.Disable();
         if (autopilotMenuAction != null) autopilotMenuAction.action.Disable();
+        if (planetInfoAction != null) planetInfoAction.action.Disable();
+        if (menuScrollAction != null) menuScrollAction.action.Disable();
+        if (menuSelectAction != null) menuSelectAction.action.Disable();
     }
 
     private Camera GetActiveCamera()
@@ -640,10 +663,32 @@ public class SolarSystemParallaxManager : MonoBehaviour
             ToggleAutopilotMenu();
         }
         
-        // Handle planet info toggle with I key
-        if (Keyboard.current != null && Keyboard.current.iKey.wasPressedThisFrame)
+        // Handle planet info toggle with I key or VR controller button
+        bool planetInfoTogglePressed = (Keyboard.current != null && Keyboard.current.iKey.wasPressedThisFrame);
+        
+        // Check VR controller trigger for planet info
+        if (planetInfoAction != null && planetInfoAction.action.enabled)
+        {
+            float triggerValue = planetInfoAction.action.ReadValue<float>();
+            bool triggerIsPressed = triggerValue > 0.5f;
+            
+            // Detect rising edge (trigger just pressed)
+            if (triggerIsPressed && !planetInfoTriggerWasPressed)
+            {
+                planetInfoTogglePressed = true;
+            }
+            planetInfoTriggerWasPressed = triggerIsPressed;
+        }
+        
+        if (planetInfoTogglePressed)
         {
             TogglePlanetInfo();
+        }
+        
+        // Handle VR menu navigation when autopilot menu is open
+        if (autopilotMenuOpen && menuSelectableBodies.Count > 0)
+        {
+            UpdateVRMenuNavigation();
         }
         
         UpdateDynamicBehavior();
@@ -2705,10 +2750,15 @@ public class SolarSystemParallaxManager : MonoBehaviour
         float spacing = 8f;
         int itemIndex = 0;
         
+        // Clear and populate selectable bodies list for VR navigation
+        menuSelectableBodies.Clear();
+        autopilotButtons.Clear();
+        
         // Main bodies (Sun, planets)
         foreach (var body in mainBodies)
         {
             CreateAutopilotButton(contentGO, body, itemIndex, buttonHeight, spacing, false);
+            menuSelectableBodies.Add(body); // Track for VR navigation
             itemIndex++;
         }
         
@@ -2995,6 +3045,14 @@ public class SolarSystemParallaxManager : MonoBehaviour
         autopilotMenuOpen = !autopilotMenuOpen;
         autopilotUI.SetActive(autopilotMenuOpen);
         IsMenuOpen = autopilotMenuOpen; // Update static property for other scripts
+        
+        // Reset selection when opening menu
+        if (autopilotMenuOpen)
+        {
+            menuSelectedIndex = 0;
+            menuSelectWasPressed = false;
+            UpdateMenuSelectionHighlight();
+        }
     }
     
     private void SelectAutopilotTarget(BodyInstance body)
@@ -3010,6 +3068,140 @@ public class SolarSystemParallaxManager : MonoBehaviour
             autopilotUI.SetActive(false);
         
         Debug.Log($"Autopilot: Traveling to {body.name}");
+    }
+    
+    private void UpdateVRMenuNavigation()
+    {
+        // Decrease scroll cooldown
+        if (menuScrollCooldown > 0)
+        {
+            menuScrollCooldown -= Time.deltaTime;
+        }
+        
+        // Handle scrolling with VR trackpad/thumbstick
+        float scrollInput = 0f;
+        
+        // VR Controller thumbstick/trackpad (2D axis - use Y component)
+        if (menuScrollAction != null && menuScrollAction.action.enabled)
+        {
+            Vector2 scrollValue = menuScrollAction.action.ReadValue<Vector2>();
+            scrollInput = scrollValue.y;
+        }
+        
+        // Keyboard fallback (arrow keys)
+        if (Keyboard.current != null)
+        {
+            if (Keyboard.current.upArrowKey.wasPressedThisFrame)
+            {
+                scrollInput = 1f;
+                menuScrollCooldown = 0; // Allow immediate keyboard input
+            }
+            else if (Keyboard.current.downArrowKey.wasPressedThisFrame)
+            {
+                scrollInput = -1f;
+                menuScrollCooldown = 0;
+            }
+        }
+        
+        // Process scroll input
+        if (menuScrollCooldown <= 0 && Mathf.Abs(scrollInput) > 0.5f)
+        {
+            int previousIndex = menuSelectedIndex;
+            
+            if (scrollInput > 0.5f)
+            {
+                // Scroll up (previous item)
+                menuSelectedIndex = Mathf.Max(0, menuSelectedIndex - 1);
+            }
+            else if (scrollInput < -0.5f)
+            {
+                // Scroll down (next item)
+                menuSelectedIndex = Mathf.Min(menuSelectableBodies.Count - 1, menuSelectedIndex + 1);
+            }
+            
+            if (menuSelectedIndex != previousIndex)
+            {
+                menuScrollCooldown = MENU_SCROLL_DELAY;
+                UpdateMenuSelectionHighlight();
+            }
+        }
+        
+        // Handle selection with VR trigger or trackpad press
+        bool selectPressed = false;
+        
+        // Keyboard Enter key
+        if (Keyboard.current != null && Keyboard.current.enterKey.wasPressedThisFrame)
+        {
+            selectPressed = true;
+        }
+        
+        // VR controller select button (trigger/trackpad press)
+        if (menuSelectAction != null && menuSelectAction.action.enabled)
+        {
+            float selectValue = menuSelectAction.action.ReadValue<float>();
+            bool selectIsPressed = selectValue > 0.5f;
+            
+            // Edge detection
+            if (selectIsPressed && !menuSelectWasPressed)
+            {
+                selectPressed = true;
+            }
+            menuSelectWasPressed = selectIsPressed;
+        }
+        
+        // Confirm selection
+        if (selectPressed && menuSelectedIndex >= 0 && menuSelectedIndex < menuSelectableBodies.Count)
+        {
+            SelectAutopilotTarget(menuSelectableBodies[menuSelectedIndex]);
+        }
+    }
+    
+    private void UpdateMenuSelectionHighlight()
+    {
+        // Update visual highlight on all buttons
+        for (int i = 0; i < autopilotButtons.Count && i < menuSelectableBodies.Count; i++)
+        {
+            Button btn = autopilotButtons[i];
+            if (btn == null) continue;
+            
+            Image btnImage = btn.GetComponent<Image>();
+            if (btnImage != null)
+            {
+                if (i == menuSelectedIndex)
+                {
+                    // Highlighted (selected)
+                    btnImage.color = new Color(0.3f, 0.6f, 1f, 1f); // Bright blue
+                }
+                else
+                {
+                    // Normal color
+                    btnImage.color = new Color(0.15f, 0.25f, 0.4f, 1f);
+                }
+            }
+        }
+        
+        // Scroll the list to keep selected item visible
+        if (autopilotContentRect != null && menuSelectedIndex >= 0)
+        {
+            float buttonHeight = 50f;
+            float spacing = 8f;
+            float itemHeight = buttonHeight + spacing;
+            float scrollPosition = menuSelectedIndex * itemHeight;
+            
+            // Get the scroll rect
+            ScrollRect scrollRect = autopilotUI?.GetComponentInChildren<ScrollRect>();
+            if (scrollRect != null)
+            {
+                float contentHeight = autopilotContentRect.sizeDelta.y;
+                float viewportHeight = scrollRect.viewport.rect.height;
+                
+                if (contentHeight > viewportHeight)
+                {
+                    float normalizedPosition = 1f - (scrollPosition / (contentHeight - viewportHeight));
+                    scrollRect.verticalNormalizedPosition = Mathf.Clamp01(normalizedPosition);
+                }
+            }
+        }
     }
     
     private void UpdateAutopilot()
