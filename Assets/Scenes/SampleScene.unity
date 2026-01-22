@@ -674,12 +674,13 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SolarSystemUIManager
   enableLabels: 1
-  labelCanvas: {fileID: 0}
-  labelFont: {fileID: 0}
+  labelCanvas: {fileID: 1954221931}
+  labelFont: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   labelFontSize: 24
-  labelColor: {r: 0.2794144, g: 0.32526717, b: 0.8584906, a: 1}
+  labelColor: {r: 0.8, g: 0.8, b: 0.8, a: 1}
   labelOffsetPixels: 20
   enableVRMode: 0
+  planetInfoAnimSpeed: 8
 --- !u!1 &832575517
 GameObject:
   m_ObjectHideFlags: 0
