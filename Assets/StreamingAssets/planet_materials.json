@@ -5,7 +5,7 @@
     "illuminated_by": 10
   },
   "10": {
-    "path": "Assets/HighResTextures/sun_main.jpg",
+    "path": "Assets/SunMaterial.mat",
     "emitting": true,
     "illuminated_by": null
   },

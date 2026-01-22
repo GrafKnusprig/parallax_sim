@@ -321,6 +321,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
         CreateHUD();
         LoadObjectNamesFromJson();
         LoadPlanetMaterials();
+
+        LoadShadowVectors();
         LoadBodiesFromCsv();
         if (bodies.Count == 0)
         {
@@ -1035,6 +1037,10 @@ public class SolarSystemParallaxManager : MonoBehaviour
             Debug.LogWarning($"CSV not found at {path}");
             return earthFound;
         }
+        
+        // Shadow Vector Index Tracking
+        bool useShadowVectors = fileName == "solar_dataset_plus.csv";
+        int shadowVectorIndex = 0;
 
         var lines = File.ReadAllLines(path);
         if (lines.Length <= 1)
@@ -1192,8 +1198,19 @@ public class SolarSystemParallaxManager : MonoBehaviour
                             Debug.Log($"Enabled emission for {name} (NAIF ID {naifId})");
                         }
                     }
+                    
                 }
                 
+                // Apply Shadow Direction (Sun Direction) to any material (custom or standard)
+                if (materialToUse != null && useShadowVectors && shadowVectorIndex < shadowVectors.Count)
+                {
+                    Vector4 sunDir = shadowVectors[shadowVectorIndex];
+                    if (sunDir.w > 0.5f) // Check validity
+                    {
+                         materialToUse.SetVector("_SunDirection", sunDir);
+                    }
+                }
+
                 if (materialToUse != null)
                 {
                     renderer.material = materialToUse; // Use .material (not .sharedMaterial) since we duplicated it
@@ -1240,7 +1257,6 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
             bodies.Add(body);
 
-            // Player positioned in front of Earth for good viewing
             if (naifId == 399 && !localEarthFound)
             {
                 // Position player at a good distance in front of Earth for viewing
@@ -1249,9 +1265,52 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 localEarthFound = true;
                 Debug.Log($"Player positioned in front of Earth at: {playerRealPosAu}");
             }
+            
+            // Increment shadow vector index for every valid body row processed
+            if (useShadowVectors)
+            {
+                shadowVectorIndex++;
+            }
         }
 
         return localEarthFound;
+    }
+
+    private List<Vector4> shadowVectors = new List<Vector4>();
+    
+    private void LoadShadowVectors()
+    {
+        string path = Path.Combine(Application.streamingAssetsPath, "PlanetDatasetPlus", "shadow_vectors.bytes");
+        if (!File.Exists(path))
+        {
+            Debug.LogWarning("shadow_vectors.bytes not found. Shadows may be incorrect.");
+            return;
+        }
+        
+        try
+        {
+            byte[] bytes = File.ReadAllBytes(path);
+            int vectorCount = bytes.Length / 16; // 4 floats * 4 bytes
+            
+            shadowVectors.Clear();
+            
+            for (int i = 0; i < vectorCount; i++)
+            {
+                int offset = i * 16;
+                float x = System.BitConverter.ToSingle(bytes, offset);
+                float y = System.BitConverter.ToSingle(bytes, offset + 4);
+                float z = System.BitConverter.ToSingle(bytes, offset + 8);
+                float w = System.BitConverter.ToSingle(bytes, offset + 12);
+                
+                shadowVectors.Add(new Vector4(x, y, z, w));
+            }
+            
+            Debug.Log($"Loaded {shadowVectors.Count} shadow vectors.");
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"Failed to load shadow vectors: {e.Message}");
+        }
     }
 
     private void CreateLabelForBody(BodyInstance body)
