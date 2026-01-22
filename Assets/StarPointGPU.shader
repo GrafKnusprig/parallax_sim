@@ -1,4 +1,4 @@
-Shader "Custom/StarPoint"
+Shader "Custom/StarPointGPU"
 {
     Properties
     {
@@ -20,22 +20,28 @@ Shader "Custom/StarPoint"
             CGPROGRAM
             #pragma vertex vert
             #pragma fragment frag
-            #pragma multi_compile_instancing
+            #pragma target 4.5
             #include "UnityCG.cginc"
+
+            // Star data from compute shader
+            struct StarData
+            {
+                float3 worldPosition;
+            };
+            
+            StructuredBuffer<StarData> _VisibleStars;
 
             struct appdata
             {
                 float4 vertex : POSITION;
                 float2 uv : TEXCOORD0;
-                UNITY_VERTEX_INPUT_INSTANCE_ID
+                uint instanceID : SV_InstanceID;
             };
 
             struct v2f
             {
                 float4 pos : SV_POSITION;
                 float2 uv : TEXCOORD0;
-                float3 worldPos : TEXCOORD1;
-                UNITY_VERTEX_OUTPUT_STEREO
             };
 
             fixed4 _Color;
@@ -45,11 +51,10 @@ Shader "Custom/StarPoint"
             v2f vert(appdata v)
             {
                 v2f o;
-                UNITY_SETUP_INSTANCE_ID(v);
-                UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
                 
-                // Get the center position from the matrix (translation component)
-                float3 centerWorldPos = float3(unity_ObjectToWorld._m03, unity_ObjectToWorld._m13, unity_ObjectToWorld._m23);
+                // Get star data from buffer
+                StarData star = _VisibleStars[v.instanceID];
+                float3 centerWorldPos = star.worldPosition;
                 
                 // Calculate billboard vectors for camera-facing quads
                 float3 cameraPos = _WorldSpaceCameraPos;
@@ -61,31 +66,30 @@ Shader "Custom/StarPoint"
                 float3 rightDir = normalize(cross(upDir, viewDir));
                 upDir = normalize(cross(viewDir, rightDir));
                 
-                // Scale based on distance and size parameter
+                // Scale based on distance
                 float dist = length(cameraPos - centerWorldPos);
                 float scale = _Size * max(0.1, dist * 0.0001);
                 
-                // Apply billboard transformation from center position
+                // Apply billboard transformation
                 float3 localPos = v.vertex.xyz * scale;
                 float3 worldPos = centerWorldPos + rightDir * localPos.x + upDir * localPos.y;
                 
                 o.pos = mul(UNITY_MATRIX_VP, float4(worldPos, 1.0));
                 o.uv = v.uv;
-                o.worldPos = worldPos;
                 
                 return o;
             }
 
             fixed4 frag(v2f i) : SV_Target
             {
-                // Create a circular star point with soft glow
+                // Create circular star with glow
                 float2 center = float2(0.5, 0.5);
                 float dist = distance(i.uv, center);
                 
-                // Core of the star (bright center)
+                // Core (bright center)
                 float core = 1.0 - smoothstep(0.0, 0.15, dist);
                 
-                // Outer glow (softer falloff)
+                // Outer glow
                 float glow = 1.0 - smoothstep(0.0, 0.5, dist);
                 glow = pow(glow, 1.5);
                 
@@ -96,8 +100,6 @@ Shader "Custom/StarPoint"
                 fixed4 col = _Color;
                 col.rgb *= _Brightness;
                 col.a = alpha;
-                
-                // Ensure stars are slightly visible even at edges
                 col.a = max(col.a, 0.02 * glow);
                 
                 return col;

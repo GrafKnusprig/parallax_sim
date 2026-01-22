@@ -189,6 +189,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
     // Static property for other scripts to check menu state
     public static bool IsMenuOpen { get; private set; } = false;
     public static bool IsAutopilotActive { get; private set; } = false;
+
+    public float CurrentSpeedAuPerSec => currentSpeed;
+    public float ActualSpeedAuPerSec => actualSpeed;
     
     // Planet info system
     private Dictionary<string, PlanetData> planetInfoData = new Dictionary<string, PlanetData>();

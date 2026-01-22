@@ -1,0 +1,129 @@
+// Star Culling Compute Shader
+// Processes 2.4M stars in parallel on GPU
+// Outputs visible star data for instanced rendering
+
+#pragma kernel CullStars
+#pragma kernel CopyCount
+
+// Input star data (uploaded once)
+struct StarInput
+{
+    float3 positionParsecs;
+    float3 direction;
+    float distance;
+    float invDistance;
+};
+
+// Output visible star data
+struct StarOutput
+{
+    float3 worldPosition;
+};
+
+// Buffers
+StructuredBuffer<StarInput> _AllStars;
+AppendStructuredBuffer<StarOutput> _VisibleStars;
+RWStructuredBuffer<uint> _IndirectArgs;
+
+// Uniforms
+float3 _CameraPos;
+float3 _CameraForward;
+float3 _PlayerPosAu;
+float _HorizonRadius;
+float _CosHalfFOV;
+float _CosRoughFOV;
+float _AuToParsec;
+
+// Parallax settings
+int _EnableParallax;
+int _EnableFastParallaxApprox;
+float _ParallaxApproxDistanceParsecs;
+
+uint _StarCount;
+
+// Calculate world position with parallax
+float3 CalculateWorldPosition(StarInput star, float3 playerPosAu)
+{
+    float3 originalDirection = star.direction;
+    
+    if (_EnableParallax == 0)
+    {
+        return originalDirection * _HorizonRadius;
+    }
+    
+    // Fast approximation for distant stars
+    if (_EnableFastParallaxApprox == 1 && star.distance >= _ParallaxApproxDistanceParsecs)
+    {
+        float3 playerPosParsecs = playerPosAu * _AuToParsec;
+        float3 approxDir = normalize(originalDirection - (playerPosParsecs * star.invDistance));
+        
+        if (any(isnan(approxDir)) || any(isinf(approxDir)))
+            approxDir = originalDirection;
+            
+        return approxDir * _HorizonRadius;
+    }
+    
+    // Full precision parallax
+    float3 playerPosParsecs = playerPosAu * _AuToParsec;
+    float3 playerToStar = star.positionParsecs - playerPosParsecs;
+    float actualDistance = length(playerToStar);
+    
+    if (actualDistance < 0.001)
+        return originalDirection * _HorizonRadius;
+    
+    float3 apparentDirection = playerToStar / actualDistance;
+    
+    if (any(isnan(apparentDirection)) || any(isinf(apparentDirection)))
+        apparentDirection = originalDirection;
+    
+    return apparentDirection * _HorizonRadius;
+}
+
+[numthreads(256, 1, 1)]
+void CullStars(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _StarCount)
+        return;
+    
+    StarInput star = _AllStars[id.x];
+    
+    // Rough FOV culling first (cheapest check)
+    float3 starDir = star.direction * _HorizonRadius;
+    float3 toStarRough = normalize(starDir - _CameraPos);
+    float roughDot = dot(_CameraForward, toStarRough);
+    
+    if (roughDot < _CosRoughFOV)
+        return;
+    
+    // Calculate world position with parallax
+    float3 worldPos = CalculateWorldPosition(star, _PlayerPosAu);
+    
+    // Validate
+    if (any(isnan(worldPos)) || any(isinf(worldPos)))
+        return;
+    
+    // Precise FOV culling
+    float3 toStar = normalize(worldPos - _CameraPos);
+    float dotProduct = dot(_CameraForward, toStar);
+    
+    if (dotProduct < _CosHalfFOV)
+        return;
+    
+    // Output visible star
+    StarOutput output;
+    output.worldPosition = worldPos;
+    _VisibleStars.Append(output);
+}
+
+// Copy the append buffer count to indirect args
+[numthreads(1, 1, 1)]
+void CopyCount(uint3 id : SV_DispatchThreadID)
+{
+    // IndirectArgs format for DrawMeshInstancedIndirect:
+    // [0] = index count per instance
+    // [1] = instance count (this is what we set)
+    // [2] = start index location
+    // [3] = base vertex location
+    // [4] = start instance location
+    // The count is already in args[1] from CopyCount
+}

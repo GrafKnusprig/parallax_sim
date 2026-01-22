@@ -581,6 +581,9 @@ MonoBehaviour:
   enableGravitationalLensing: 1
   lensingVerticalOffset: 0.8
   lensingImageOpacity: 0.6
+  enableGravitationalLensing: 1
+  lensingVerticalOffset: 0.8
+  lensingImageOpacity: 0.6
   enableAsteroids: 1
   asteroidMaterial: {fileID: 2100000, guid: 3b110bfe1241a412ea9c281cc689aa3c, type: 2}
   baseAsteroidSize: 5
@@ -589,7 +592,7 @@ MonoBehaviour:
   maxAsteroidsPerFrame: 100000
   targetCamera: {fileID: 1528494429}
   moveAction: {fileID: -1680190386980627800, guid: 052faaac586de48259a63d0c4782560b, type: 3}
-  verticalAction: {fileID: 0}
+  verticalAction: {fileID: -1957627301107028444, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   enableLabels: 1
   labelCanvas: {fileID: 1954221931}
   labelFont: {fileID: 12800000, guid: e3265ab4bf004d28a9537516768c1c75, type: 3}
@@ -639,7 +642,33 @@ MonoBehaviour:
   baseStarSize: 15
   starColor: {r: 1, g: 1, b: 1, a: 1}
   starBrightness: 1
-  maxStarsPerFrame: 50000
+  maxStarsPerFrame: 2500000
+  useComputeShader: 1
+  starCullingShader: {fileID: 7200000, guid: f989da71d83d24990981d5e71b865be6, type: 3}
+  starMaterialGPU: {fileID: 2100000, guid: 9b89695dc194b4ae8a4b87bb020a8e4a, type: 2}
+  useJobs: 1
+  jobBatchSize: 512
+  enableFastParallaxApprox: 1
+  parallaxApproxDistanceParsecs: 50
+  enablePlayerRelativeCulling: 1
+  playerCullingRadiusParsecs: 80
+  enableAdaptivePlayerCullingRadius: 1
+  playerCullingRadiusGrowthPerParsec: 0.25
+  maxPlayerCullingRadiusParsecs: 2000
+  minVisibleStars: 5000
+  enableMinVisibleStarFallback: 1
+  enableSpeedBasedStarScaling: 1
+  speedScalingStartAuPerSec: 5
+  speedScalingStrength: 0.05
+  minStarDistanceScale: 0.1
+  holdScaleWhenStopped: 1
+  stoppedSpeedThresholdAuPerSec: 0.05
+  enableFarDistanceCulling: 0
+  farCullingStartAu: 300000
+  farCullingEndAu: 2000000
+  maxStarsToProcessNear: 2500000
+  maxStarsToProcessFar: 2500000
+  farDistancePlayerRangeFactor: 0.6
 --- !u!1 &832575517
 GameObject:
   m_ObjectHideFlags: 0
@@ -1133,7 +1162,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::SimpleMouseLook
   vrMode: 0
   vrLookAction: {fileID: -530380113134220495, guid: c348712bda248c246b8c49b3db54643f, type: 3}
-  mouseLookAction: {fileID: -5681291154727990353, guid: 7f59cc19636f04d5cbbc64e77a20787f, type: 3}
+  mouseLookAction: {fileID: -5630151704836100654, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   sensitivity: 0.1
   lockCursor: 1
 --- !u!1 &1659267802 stripped
