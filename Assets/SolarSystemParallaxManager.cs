@@ -740,57 +740,49 @@ public class SolarSystemParallaxManager : MonoBehaviour
     {
         if (bodies.Count == 0) return;
 
-        // Find the closest body to the player's real position
-        BodyInstance closestBody = null;
-        double minDistance = double.MaxValue;
+        // Create a list of bodies paired with their distance for sorting
+        // We do this every frame to handle moving player/planets
+        var sortedBodies = new List<(BodyInstance body, double distance)>(bodies.Count);
 
         foreach (var body in bodies)
         {
             double dist = playerRealPosAu.OffsetTo(body.realPosAu, SECTOR_SIZE_AU).magnitude;
-            if (dist < minDistance)
-            {
-                minDistance = dist;
-                closestBody = body;
-            }
+            sortedBodies.Add((body, dist));
         }
 
-        // Apply stencil properties directly to the material instance
-        // MaterialPropertyBlock DOES NOT works for Stencil/ZTest state in Unity
-        foreach (var body in bodies)
+        // Sort by distance ascending (Closest First)
+        sortedBodies.Sort((a, b) => a.distance.CompareTo(b.distance));
+
+        // Apply stencil properties hierarchically
+        // Front-to-Back rendering with Stencil Masking
+        for (int i = 0; i < sortedBodies.Count; i++)
         {
+            var body = sortedBodies[i].body;
+            
             if (body.renderer == null) continue;
             
             // Accessing .material creates an instance (clone) if not already created.
-            // This is necessary to have different render states.
             Material mat = body.renderer.material;
 
             if (mat == null) continue;
 
-            if (body == closestBody)
-            {
-                // Closest body writes to stencil buffer
-                // Render FIRST (Lower Queue)
-                mat.renderQueue = 2000; // Geometry
+            // Render Queue:
+            // Render closest bodies FIRST (Lower Queue)
+            // Render furthest bodies LAST (Higher Queue)
+            // Base Geometry is 2000. We just increment by index.
+            // Ensure we don't exceed Transparent (2500) if user has THAT many planets (unlikely)
+            mat.renderQueue = 2000 + i; 
 
-                if (mat.HasProperty(StencilRefId))
-                {
-                    mat.SetFloat(StencilRefId, 1);
-                    mat.SetFloat(StencilCompId, 8); // Always
-                    mat.SetFloat(StencilPassId, 2); // Replace
-                }
-            }
-            else
+            // Stencil Logic:
+            // 1. Ref = 1
+            // 2. Comp = NotEqual (6). Only draw if Stencil != 1 (i.e. if not already drawn on by a closer body)
+            // 3. Pass = Replace (2). If we draw, write 1 to Stencil (claiming this pixel for this depth or closer)
+            
+            if (mat.HasProperty(StencilRefId))
             {
-                // Other bodies read from stencil buffer (masked by closest)
-                // Render SECOND (Higher Queue)
-                mat.renderQueue = 2002; // Geometry + 2
-
-                if (mat.HasProperty(StencilRefId))
-                {
-                    mat.SetFloat(StencilRefId, 1);
-                    mat.SetFloat(StencilCompId, 6); // NotEqual
-                    mat.SetFloat(StencilPassId, 0); // Keep
-                }
+                mat.SetFloat(StencilRefId, 1);
+                mat.SetFloat(StencilCompId, 6); // NotEqual
+                mat.SetFloat(StencilPassId, 2); // Replace
             }
         }
     }
