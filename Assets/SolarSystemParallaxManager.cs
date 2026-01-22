@@ -85,15 +85,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [Tooltip("New Input System: vertical move (float axis).")]
     [SerializeField] private InputActionReference verticalAction;
 
-    [Header("Labels (optional)")]
-    [SerializeField] private bool enableLabels = true;
-    [SerializeField] private Canvas labelCanvas;
-    [SerializeField] private TMP_FontAsset labelFont;
-    [Tooltip("Font size for planet labels (pt)")]
-    [SerializeField] private int labelFontSize = 24;
-    [SerializeField] private Color labelColor = Color.white;
-    [Tooltip("Offset from planet center (pixels)")]
-    [SerializeField] private float labelOffsetPixels = 20f; // offset from planet center in pixels
+    // NOTE: Label settings (enableLabels, labelCanvas, labelFont, labelFontSize, labelColor, labelOffsetPixels)
+    // have been moved to SolarSystemUIManager. Configure labels there.
     
     [Header("HUD (Heads-Up Display)")]
     [SerializeField] private bool enableHUD = true;
@@ -387,7 +380,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private Canvas LabelCanvas => uiManager != null ? uiManager.LabelCanvas : null;
     
     // Helper property to get label font from UI manager
-    private TMP_FontAsset LabelFont => uiManager != null ? uiManager.LabelFont : labelFont;
+    private TMP_FontAsset LabelFont => uiManager != null ? uiManager.LabelFont : null;
     
     private void CreateHUD()
     {
@@ -414,9 +407,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
         rectTransform.sizeDelta = new Vector2(800, 400); // 200% bigger than previous
         
         // Add Text component
-        // Add Text component
         hudText = hudUI.AddComponent<TextMeshProUGUI>();
-        if (labelFont != null) hudText.font = labelFont;
+        if (LabelFont != null) hudText.font = LabelFont;
         hudText.fontSize = hudFontSize;
         hudText.color = hudColor;
         hudText.alignment = TextAlignmentOptions.TopLeft;
@@ -1084,7 +1076,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 }
             }
 
-            if (enableLabels)
+            if (uiManager != null && uiManager.EnableLabels)
             {
                 CreateLabelForBody(body);
                 Debug.Log($"Created label for {body.name}");
@@ -2225,8 +2217,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
         Canvas labelCanvasRef = uiManager != null ? uiManager.LabelCanvas : null;
         RectTransform canvasRect = labelCanvasRef != null ? labelCanvasRef.GetComponent<RectTransform>() : null;
         bool isVRMode = uiManager != null && uiManager.IsVRMode;
-        float labelOffsetPx = uiManager != null ? uiManager.LabelOffsetPixels : labelOffsetPixels;
-        bool labelsEnabled = uiManager != null ? uiManager.EnableLabels : enableLabels;
+        float labelOffsetPx = uiManager != null ? uiManager.LabelOffsetPixels : 20f;
+        bool labelsEnabled = uiManager != null && uiManager.EnableLabels;
         
         // Collect label visibility data for UI manager
         List<SolarSystemUIManager.LabelVisibilityData> visibleLabels = 
@@ -2336,7 +2328,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     
     private void CreateAutopilotMenu()
     {
-        if (labelCanvas == null)
+        if (LabelCanvas == null)
         {
             Debug.LogWarning("Cannot create Autopilot Menu: Label Canvas not available.");
             return;
@@ -2344,7 +2336,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         // Create main panel
         autopilotUI = new GameObject("AutopilotMenu");
-        autopilotUI.transform.SetParent(labelCanvas.transform, false);
+        autopilotUI.transform.SetParent(LabelCanvas.transform, false);
         
         RectTransform panelRect = autopilotUI.AddComponent<RectTransform>();
         panelRect.anchorMin = new Vector2(0.5f, 0.5f);
@@ -2369,7 +2361,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         TextMeshProUGUI titleText = titleGO.AddComponent<TextMeshProUGUI>();
         titleText.text = "AUTOPILOT - Select Destination";
-        if (labelFont != null) titleText.font = labelFont;
+        if (LabelFont != null) titleText.font = LabelFont;
         titleText.fontSize = 32;
         titleText.color = Color.cyan;
         titleText.alignment = TextAlignmentOptions.Center;
@@ -2632,7 +2624,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         TextMeshProUGUI btnText = textGO.AddComponent<TextMeshProUGUI>();
         btnText.text = (isMoon ? "  " : "") + body.name;
-        if (labelFont != null) btnText.font = labelFont;
+        if (LabelFont != null) btnText.font = LabelFont;
         btnText.fontSize = isMoon ? 20 : 24;
         btnText.color = isMoon ? new Color(0.8f, 0.9f, 1f, 1f) : Color.white;
         btnText.alignment = TextAlignmentOptions.Left;
@@ -2678,7 +2670,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         TextMeshProUGUI btnText = textGO.AddComponent<TextMeshProUGUI>();
         btnText.text = "▸ Moons";
-        if (labelFont != null) btnText.font = labelFont;
+        if (LabelFont != null) btnText.font = LabelFont;
         btnText.fontSize = 24;
         btnText.color = new Color(0.9f, 0.8f, 1f, 1f); // Light purple text
         btnText.alignment = TextAlignmentOptions.Left;
@@ -2774,7 +2766,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         TextMeshProUGUI cancelText = cancelTextGO.AddComponent<TextMeshProUGUI>();
         cancelText.text = "Cancel";
-        if (labelFont != null) cancelText.font = labelFont;
+        if (LabelFont != null) cancelText.font = LabelFont;
         cancelText.fontSize = 24;
         cancelText.color = Color.white;
         cancelText.alignment = TextAlignmentOptions.Center;
@@ -3139,7 +3131,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     
     private void CreatePlanetInfoPanel()
     {
-        if (labelCanvas == null)
+        if (LabelCanvas == null)
         {
             Debug.LogWarning("Cannot create Planet Info Panel: Label Canvas not available.");
             return;
@@ -3147,7 +3139,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         // Create main panel - positioned off-screen to the right initially
         planetInfoUI = new GameObject("PlanetInfoPanel");
-        planetInfoUI.transform.SetParent(labelCanvas.transform, false);
+        planetInfoUI.transform.SetParent(LabelCanvas.transform, false);
         
         RectTransform panelRect = planetInfoUI.AddComponent<RectTransform>();
         panelRect.anchorMin = new Vector2(0.5f, 0.5f);
@@ -3184,7 +3176,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         planetInfoNameText = headerGO.AddComponent<TextMeshProUGUI>();
         planetInfoNameText.text = "PLANET INFO";
-        if (labelFont != null) planetInfoNameText.font = labelFont;
+        if (LabelFont != null) planetInfoNameText.font = LabelFont;
         planetInfoNameText.fontSize = 42;
         planetInfoNameText.fontStyle = FontStyles.Bold;
         planetInfoNameText.color = new Color(0.3f, 0.9f, 1f, 1f); // Bright cyan
@@ -3201,7 +3193,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         planetInfoDataText = contentGO.AddComponent<TextMeshProUGUI>();
         planetInfoDataText.text = "";
-        if (labelFont != null) planetInfoDataText.font = labelFont;
+        if (LabelFont != null) planetInfoDataText.font = LabelFont;
         planetInfoDataText.fontSize = 24;
         planetInfoDataText.color = new Color(0.85f, 0.9f, 1f, 1f); // Soft white-blue
         planetInfoDataText.alignment = TextAlignmentOptions.TopLeft;
@@ -3219,7 +3211,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         TextMeshProUGUI hintText = hintGO.AddComponent<TextMeshProUGUI>();
         hintText.text = "Press I to close";
-        if (labelFont != null) hintText.font = labelFont;
+        if (LabelFont != null) hintText.font = LabelFont;
         hintText.fontSize = 14;
         hintText.fontStyle = FontStyles.Italic;
         hintText.color = new Color(0.5f, 0.6f, 0.7f, 0.8f);
