@@ -172,6 +172,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
     // Stellar parallax integration
     private StellarParallaxManager stellarManager;
     
+    // UI Manager for labels and other UI elements
+    private SolarSystemUIManager uiManager;
+    
     // Autopilot system
     private bool autopilotMenuOpen = false;
     private bool autopilotActive = false;
@@ -214,9 +217,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private const float LOADING_FADE_SPEED = 2f;
     private const int ESTIMATED_TOTAL_STARS = 2400000; // Approximate total stars in GDR1 dataset
     
-    // VR/Desktop adaptive mode
-    private bool isVRMode = false;
-    private bool wasVRMode = false; // Track if mode changed
+    // VR/Desktop adaptive mode (isVRMode now accessed via uiManager.IsVRMode)
     private bool autopilotTriggerWasPressed = false; // Track trigger state for edge detection
     private bool planetInfoTriggerWasPressed = false; // Track planet info trigger state
 
@@ -316,8 +317,15 @@ public class SolarSystemParallaxManager : MonoBehaviour
         // Get reference to stellar manager if present
         stellarManager = GetComponent<StellarParallaxManager>();
         
+        // Get or add UI manager
+        uiManager = GetComponent<SolarSystemUIManager>();
+        if (uiManager == null)
+        {
+            uiManager = gameObject.AddComponent<SolarSystemUIManager>();
+        }
+        
         CreateHorizonSphere();
-        SetupLabelCanvas();
+        uiManager.Initialize(); // Setup label canvas via UI manager
         CreateHUD();
         LoadObjectNamesFromJson();
         LoadPlanetMaterials();
@@ -374,154 +382,18 @@ public class SolarSystemParallaxManager : MonoBehaviour
         HierarchicalPosition sunPos = GetSunPosition();
         return sunPos.OffsetTo(playerRealPosAu, SECTOR_SIZE_AU);
     }
-
-    private void SetupLabelCanvas()
-    {
-        // Use manual VR mode setting from Inspector
-        isVRMode = enableVRMode;
-        wasVRMode = isVRMode;
-        Debug.Log($"VR Mode enabled: {isVRMode}");
-        
-        if (enableLabels && labelCanvas == null)
-        {
-            // Create a Canvas for labels if one isn't assigned
-            GameObject canvasGO = new GameObject("LabelCanvas");
-            Canvas canvas = canvasGO.AddComponent<Canvas>();
-            
-            // Configure based on VR mode
-            if (isVRMode)
-            {
-                ConfigureCanvasForVR(canvas);
-            }
-            else
-            {
-                ConfigureCanvasForDesktop(canvas);
-            }
-            
-            // Add appropriate raycaster based on VR mode
-            if (isVRMode)
-            {
-                // Use TrackedDeviceGraphicRaycaster for VR controller interaction
-                canvasGO.AddComponent<TrackedDeviceGraphicRaycaster>();
-            }
-            else
-            {
-                canvasGO.AddComponent<GraphicRaycaster>();
-            }
-            labelCanvas = canvas;
-            Debug.Log($"Created automatic label canvas ({(isVRMode ? "World Space for VR with TrackedDeviceGraphicRaycaster" : "Screen Space for Desktop")})");
-        }
-        else if (labelCanvas != null)
-        {
-            // Configure existing canvas based on VR mode
-            if (isVRMode)
-            {
-                ConfigureCanvasForVR(labelCanvas);
-                
-                // Ensure TrackedDeviceGraphicRaycaster exists for VR controller interaction
-                if (labelCanvas.GetComponent<TrackedDeviceGraphicRaycaster>() == null)
-                {
-                    // Remove standard GraphicRaycaster if present (they conflict)
-                    var oldRaycaster = labelCanvas.GetComponent<GraphicRaycaster>();
-                    if (oldRaycaster != null && !(oldRaycaster is TrackedDeviceGraphicRaycaster))
-                    {
-                        Destroy(oldRaycaster);
-                    }
-                    labelCanvas.gameObject.AddComponent<TrackedDeviceGraphicRaycaster>();
-                    Debug.Log("Added TrackedDeviceGraphicRaycaster to existing canvas for VR controller interaction");
-                }
-            }
-            else
-            {
-                ConfigureCanvasForDesktop(labelCanvas);
-            }
-        }
-        
-        // Ensure EventSystem exists for UI interaction
-        if (UnityEngine.EventSystems.EventSystem.current == null)
-        {
-            GameObject eventSystemGO = new GameObject("EventSystem");
-            eventSystemGO.AddComponent<UnityEngine.EventSystems.EventSystem>();
-            
-            if (isVRMode)
-            {
-                // Use XRUIInputModule for VR controller input
-                eventSystemGO.AddComponent<XRUIInputModule>();
-                Debug.Log("Created EventSystem with XRUIInputModule for VR controller interaction");
-            }
-            else
-            {
-                eventSystemGO.AddComponent<UnityEngine.InputSystem.UI.InputSystemUIInputModule>();
-                Debug.Log("Created EventSystem for UI interaction");
-            }
-        }
-        else if (isVRMode)
-        {
-            // Ensure VR UI input module is present if EventSystem already exists
-            var existingEventSystem = UnityEngine.EventSystems.EventSystem.current;
-            if (existingEventSystem.GetComponent<XRUIInputModule>() == null)
-            {
-                // Remove existing input module if present
-                var existingInputModule = existingEventSystem.GetComponent<UnityEngine.EventSystems.BaseInputModule>();
-                if (existingInputModule != null)
-                {
-                    Destroy(existingInputModule);
-                }
-                existingEventSystem.gameObject.AddComponent<XRUIInputModule>();
-                Debug.Log("Added XRUIInputModule to existing EventSystem for VR controller interaction");
-            }
-        }
-    }
     
-    private void ConfigureCanvasForVR(Canvas canvas)
-    {
-        canvas.renderMode = RenderMode.WorldSpace;
-        canvas.sortingOrder = 100;
-        
-        RectTransform canvasRect = canvas.GetComponent<RectTransform>();
-        if (canvasRect != null)
-        {
-            canvasRect.sizeDelta = new Vector2(1920, 1080);
-        }
-        
-        // Scale down for world space (2 meters wide approximately)
-        canvas.transform.localScale = Vector3.one * 0.001f;
-        
-        CanvasScaler scaler = canvas.GetComponent<CanvasScaler>();
-        if (scaler == null)
-        {
-            scaler = canvas.gameObject.AddComponent<CanvasScaler>();
-        }
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
-        scaler.dynamicPixelsPerUnit = 10f;
-        
-        Debug.Log("Canvas configured for VR (World Space)");
-    }
+    // Helper property to get label canvas from UI manager
+    private Canvas LabelCanvas => uiManager != null ? uiManager.LabelCanvas : null;
     
-    private void ConfigureCanvasForDesktop(Canvas canvas)
-    {
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvas.sortingOrder = 100;
-        
-        // Reset scale for screen space
-        canvas.transform.localScale = Vector3.one;
-        
-        CanvasScaler scaler = canvas.GetComponent<CanvasScaler>();
-        if (scaler == null)
-        {
-            scaler = canvas.gameObject.AddComponent<CanvasScaler>();
-        }
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1920, 1080);
-        
-        Debug.Log("Canvas configured for Desktop (Screen Space Overlay)");
-    }
+    // Helper property to get label font from UI manager
+    private TMP_FontAsset LabelFont => uiManager != null ? uiManager.LabelFont : labelFont;
     
     private void CreateHUD()
     {
         if (!enableHUD) return;
         
-        if (labelCanvas == null)
+        if (LabelCanvas == null)
         {
             Debug.LogWarning("Cannot create HUD: Label Canvas not available. HUD requires a canvas.");
             return;
@@ -529,7 +401,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         // Create HUD GameObject
         hudUI = new GameObject("HUD");
-        hudUI.transform.SetParent(labelCanvas.transform, false);
+        hudUI.transform.SetParent(LabelCanvas.transform, false);
         
         // Add RectTransform
         RectTransform rectTransform = hudUI.AddComponent<RectTransform>();
@@ -731,7 +603,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
             return;
         }
         
-        if (labelCanvas == null)
+        if (LabelCanvas == null)
         {
             Debug.LogWarning("Cannot create loading screen: Label Canvas not available.");
             loadingComplete = true;
@@ -740,7 +612,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         // Create loading screen container
         loadingScreenUI = new GameObject("LoadingScreen");
-        loadingScreenUI.transform.SetParent(labelCanvas.transform, false);
+        loadingScreenUI.transform.SetParent(LabelCanvas.transform, false);
         
         // Set transform to cover full screen
         RectTransform rectTransform = loadingScreenUI.AddComponent<RectTransform>();
@@ -773,7 +645,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         textRect.offsetMax = Vector2.zero;
         
         loadingText = textGO.AddComponent<TextMeshProUGUI>();
-        if (labelFont != null) loadingText.font = labelFont;
+        if (LabelFont != null) loadingText.font = LabelFont;
         loadingText.fontSize = 32;
         loadingText.color = new Color(0.8f, 0.9f, 1f, 1f); // Light blue-white
         loadingText.alignment = TextAlignmentOptions.Center;
@@ -823,7 +695,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         progressTextRect.offsetMax = Vector2.zero;
         
         progressText = progressTextGO.AddComponent<TextMeshProUGUI>();
-        if (labelFont != null) progressText.font = labelFont;
+        if (LabelFont != null) progressText.font = LabelFont;
         progressText.fontSize = 16;
         progressText.color = new Color(0.6f, 0.7f, 0.8f, 0.9f);
         progressText.alignment = TextAlignmentOptions.Center;
@@ -839,7 +711,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         hintRect.offsetMax = Vector2.zero;
         
         TextMeshProUGUI hintText = hintGO.AddComponent<TextMeshProUGUI>();
-        if (labelFont != null) hintText.font = labelFont;
+        if (LabelFont != null) hintText.font = LabelFont;
         hintText.fontSize = 14;
         hintText.color = new Color(0.4f, 0.5f, 0.6f, 0.7f);
         hintText.alignment = TextAlignmentOptions.Center;
@@ -958,31 +830,11 @@ public class SolarSystemParallaxManager : MonoBehaviour
     /// </summary>
     private void UpdateVRCanvas()
     {
-        // Only update canvas position in VR mode
-        // In desktop mode, Screen Space Overlay handles positioning automatically
-        if (!isVRMode) return;
-        
-        if (labelCanvas == null) return;
-        
-        Camera cam = GetActiveCamera();
-        if (cam == null) return;
-        
-        // Position the canvas in front of the camera
-        // Distance of 2 meters is comfortable for VR viewing
-        float canvasDistance = 2f;
-        
-        Transform canvasTransform = labelCanvas.transform;
-        
-        // Position canvas in front of camera
-        canvasTransform.position = cam.transform.position + cam.transform.forward * canvasDistance;
-        
-        // Make canvas face the camera
-        canvasTransform.rotation = cam.transform.rotation;
-        
-        // Assign the world camera for proper raycasting in VR
-        if (labelCanvas.worldCamera != cam)
+        // Delegate VR canvas positioning to UI manager
+        if (uiManager != null)
         {
-            labelCanvas.worldCamera = cam;
+            Camera cam = GetActiveCamera();
+            uiManager.UpdateVRCanvasPosition(cam);
         }
     }
 
@@ -1256,33 +1108,19 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
     private void CreateLabelForBody(BodyInstance body)
     {
-        if (labelCanvas == null)
+        if (uiManager == null)
         {
-            Debug.LogWarning("Label Canvas not assigned. Please assign a Canvas for labels.");
+            Debug.LogWarning("UI Manager not available. Cannot create label.");
             return;
         }
-
-        // Create UI GameObject
-        GameObject labelGO = new GameObject(body.name + "_Label");
-        labelGO.transform.SetParent(labelCanvas.transform, false);
-
-        // Add RectTransform
-        RectTransform rectTransform = labelGO.AddComponent<RectTransform>();
-        rectTransform.sizeDelta = new Vector2(200, 30);
-
-        // Add Text component
-        // Add Text component
-        TextMeshProUGUI textComponent = labelGO.AddComponent<TextMeshProUGUI>();
-        textComponent.text = body.name;
-        if (labelFont != null) textComponent.font = labelFont;
-        textComponent.fontSize = labelFontSize;
-        textComponent.color = labelColor;
-        textComponent.alignment = TextAlignmentOptions.Left;
-        textComponent.enableWordWrapping = false;
-        textComponent.overflowMode = TextOverflowModes.Overflow;
-
-        // Store references
-        body.labelUI = labelGO;
+        
+        // Delegate label creation to UI manager
+        body.labelUI = uiManager.CreateLabelForBody(body.name);
+        
+        if (body.labelUI != null)
+        {
+            Debug.Log($"Created label for {body.name} via UI Manager");
+        }
     }
 
     private float ParseFloat(string s)
@@ -2384,11 +2222,15 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private void UpdateBodyProxies()
     {
         Camera cam = GetActiveCamera();
-        RectTransform canvasRect = labelCanvas != null ? labelCanvas.GetComponent<RectTransform>() : null;
+        Canvas labelCanvasRef = uiManager != null ? uiManager.LabelCanvas : null;
+        RectTransform canvasRect = labelCanvasRef != null ? labelCanvasRef.GetComponent<RectTransform>() : null;
+        bool isVRMode = uiManager != null && uiManager.IsVRMode;
+        float labelOffsetPx = uiManager != null ? uiManager.LabelOffsetPixels : labelOffsetPixels;
+        bool labelsEnabled = uiManager != null ? uiManager.EnableLabels : enableLabels;
         
-        // First pass: calculate positions and store label data for collision detection
-        List<(BodyInstance body, Vector2 screenPos, float distAu, Rect labelBounds)> visibleLabels = 
-            new List<(BodyInstance, Vector2, float, Rect)>();
+        // Collect label visibility data for UI manager
+        List<SolarSystemUIManager.LabelVisibilityData> visibleLabels = 
+            new List<SolarSystemUIManager.LabelVisibilityData>();
         
         foreach (var body in bodies)
         {
@@ -2428,7 +2270,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
             body.proxy.localScale = new Vector3(diameter, diameter, diameter);
 
             // --- UI label position calculation ---
-            if (enableLabels && body.labelUI != null && cam != null && canvasRect != null)
+            if (labelsEnabled && body.labelUI != null && cam != null && canvasRect != null)
             {
                 // Convert world position to viewport position (0-1 range, works better for VR)
                 Vector3 viewportPos = cam.WorldToViewportPoint(body.proxy.position);
@@ -2440,8 +2282,6 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 
                 if (isVisible)
                 {
-                    RectTransform labelRect = body.labelUI.GetComponent<RectTransform>();
-                    
                     // Convert viewport to screen position for the canvas calculation
                     Vector3 screenPos = new Vector3(
                         viewportPos.x * Screen.width,
@@ -2450,21 +2290,29 @@ public class SolarSystemParallaxManager : MonoBehaviour
                     
                     // For Screen Space Overlay (desktop), use null camera
                     // For World Space (VR), use the active camera
-                    Camera canvasCam = isVRMode ? labelCanvas.worldCamera : null;
+                    Camera canvasCam = isVRMode ? labelCanvasRef.worldCamera : null;
                     
                     Vector2 canvasPos;
                     RectTransformUtility.ScreenPointToLocalPointInRectangle(
                         canvasRect, screenPos, canvasCam, out canvasPos);
                     
                     // Add offset to position label to the right of the body
-                    canvasPos.x += labelOffsetPixels;
+                    canvasPos.x += labelOffsetPx;
                     
                     // Calculate label bounds (approximate based on text size)
                     float labelWidth = 100f;
                     float labelHeight = 25f;
                     Rect bounds = new Rect(canvasPos.x - labelWidth / 2, canvasPos.y - labelHeight / 2, labelWidth, labelHeight);
                     
-                    visibleLabels.Add((body, canvasPos, (float)distAu, bounds));
+                    // Add to visible labels for UI manager to process
+                    visibleLabels.Add(new SolarSystemUIManager.LabelVisibilityData
+                    {
+                        labelUI = body.labelUI,
+                        screenPos = canvasPos,
+                        distanceAu = (float)distAu,
+                        labelBounds = bounds,
+                        isPriority = IsProximaSystem(body)
+                    });
                 }
                 else
                 {
@@ -2473,106 +2321,10 @@ public class SolarSystemParallaxManager : MonoBehaviour
             }
         }
         
-        // Second pass: detect overlaps and hide overlapping labels
-        // Sort by priority: Proxima system first, then by distance (closest first)
-        visibleLabels.Sort((a, b) => 
+        // Delegate label collision detection and positioning to UI manager
+        if (uiManager != null)
         {
-            bool aIsProxima = IsProximaSystem(a.body);
-            bool bIsProxima = IsProximaSystem(b.body);
-            
-            // Proxima system always has priority
-            if (aIsProxima && !bIsProxima) return -1;
-            if (!aIsProxima && bIsProxima) return 1;
-            
-            // Otherwise sort by distance (closest first)
-            return a.distAu.CompareTo(b.distAu);
-        });
-        
-        List<Rect> occupiedRects = new List<Rect>();
-        
-        foreach (var labelData in visibleLabels)
-        {
-            bool hasOverlap = false;
-            
-            // Check against all already-placed labels
-            foreach (var occupied in occupiedRects)
-            {
-                if (labelData.labelBounds.Overlaps(occupied))
-                {
-                    hasOverlap = true;
-                    break;
-                }
-            }
-            
-            if (hasOverlap)
-            {
-                // Try to offset the label vertically
-                Vector2 offsetPos = labelData.screenPos;
-                Rect offsetBounds = labelData.labelBounds;
-                bool foundSpot = false;
-                
-                // Try offsetting up first, then down
-                float[] offsets = { 30f, -30f, 60f, -60f };
-                foreach (float yOffset in offsets)
-                {
-                    offsetBounds = new Rect(
-                        labelData.labelBounds.x, 
-                        labelData.labelBounds.y + yOffset, 
-                        labelData.labelBounds.width, 
-                        labelData.labelBounds.height);
-                    
-                    bool stillOverlaps = false;
-                    foreach (var occupied in occupiedRects)
-                    {
-                        if (offsetBounds.Overlaps(occupied))
-                        {
-                            stillOverlaps = true;
-                            break;
-                        }
-                    }
-                    
-                    if (!stillOverlaps)
-                    {
-                        offsetPos.y += yOffset;
-                        foundSpot = true;
-                        break;
-                    }
-                }
-                
-                if (foundSpot)
-                {
-                    // Place with offset
-                    RectTransform labelRect = labelData.body.labelUI.GetComponent<RectTransform>();
-                    labelRect.localPosition = offsetPos;
-                    labelData.body.labelUI.SetActive(true);
-                    occupiedRects.Add(offsetBounds);
-                }
-                else
-                {
-                    // No spot found - check if this is a priority object (Proxima system)
-                    if (IsProximaSystem(labelData.body))
-                    {
-                        // Proxima system labels are always shown, even if overlapping
-                        RectTransform labelRect = labelData.body.labelUI.GetComponent<RectTransform>();
-                        labelRect.localPosition = labelData.screenPos;
-                        labelData.body.labelUI.SetActive(true);
-                        occupiedRects.Add(labelData.labelBounds);
-                    }
-                    else
-                    {
-                        // No spot found - hide this label
-                        labelData.body.labelUI.SetActive(false);
-                    }
-                }
-            }
-            else
-            {
-                // No overlap - show label at original position
-                RectTransform labelRect = labelData.body.labelUI.GetComponent<RectTransform>();
-                labelRect.localPosition = labelData.screenPos;
-                labelData.body.labelUI.SetActive(true);
-                occupiedRects.Add(labelData.labelBounds);
-            }
+            uiManager.UpdateLabelPositions(visibleLabels);
         }
     }
     
