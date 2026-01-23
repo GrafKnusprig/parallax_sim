@@ -185,13 +185,14 @@ def stream_process_one_gz(
     heap: List[HeapItem],
     kept_ids: set,
     target_heap_size: int = TARGET_STARS,
-) -> Tuple[int, int]:
+) -> Tuple[int, int, int]:
     """
     Stream one gzipped CSV, update global reservoir.
-    Returns (rows_seen, rows_considered).
+    Returns (rows_seen, rows_considered, replacements).
     """
     rows_seen = 0
     rows_considered = 0
+    replacements = 0
 
     with gzip.open(gz_path, "rt", newline="", encoding="utf-8") as f:
         # Gaia CSVs often have comment lines at the start.
@@ -294,8 +295,9 @@ def stream_process_one_gz(
                     dropped = heapq.heapreplace(heap, item)
                     kept_ids.remove(dropped[1])  # dropped source_id
                     kept_ids.add(sid)
+                    replacements += 1
 
-    return rows_seen, rows_considered
+    return rows_seen, rows_considered, replacements
 
 
 def save_checkpoint(checkpoint_path: str, heap: List[HeapItem], kept_ids: set, 
@@ -486,7 +488,7 @@ def main() -> int:
                 return 1
 
             print(f"    Processing... (Current sample: {len(heap):,})")
-            seen, considered = stream_process_one_gz(gz_path, heap, kept_ids, target_heap_size)
+            seen, considered, repl = stream_process_one_gz(gz_path, heap, kept_ids, target_heap_size)
             total_seen += seen
             total_considered += considered
             processed_files.append(filename)
@@ -499,7 +501,7 @@ def main() -> int:
 
             # Periodically show stats
             if idx % 1 == 0: # Print every file for visual feedback since files are large
-                print(f"       -> Seen {seen:,} rows, Kept {len(heap):,} total.")
+                print(f"       -> Seen {seen:,} rows, Kept {len(heap):,} total, Swapped {repl:,} better candidates.")
             
             # Checkpoint
             if idx % CHECKPOINT_INTERVAL == 0:
