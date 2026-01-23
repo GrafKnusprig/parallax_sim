@@ -167,6 +167,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     // Planet-specific textures and materials
     private Dictionary<long, Texture2D> planetTextures = new Dictionary<long, Texture2D>();
     private Dictionary<long, Texture2D> planetAtmosphereTextures = new Dictionary<long, Texture2D>();
+    private Dictionary<long, Texture2D> planetNightTextures = new Dictionary<long, Texture2D>();
     private Dictionary<long, Material> planetMaterials = new Dictionary<long, Material>(); // For stars with custom materials
     private Dictionary<long, bool> bodyEmitting = new Dictionary<long, bool>(); // Whether body emits light
     private Dictionary<long, long?> bodyIlluminatedBy = new Dictionary<long, long?>(); // Which body illuminates this one
@@ -1348,6 +1349,13 @@ public class SolarSystemParallaxManager : MonoBehaviour
                             materialToUse.SetTexture("_SecondTex", atmTexture);
                             Debug.Log($"Applied atmosphere to {name}");
                         }
+
+                        // Apply night texture if available
+                        if (planetNightTextures.TryGetValue(naifId, out Texture2D nightTexture))
+                        {
+                            materialToUse.SetTexture("_NightTex", nightTexture);
+                            Debug.Log($"Applied night texture to {name}");
+                        }
                         
                         // If this body emits light, make it glow
                         if (isEmitting)
@@ -2245,6 +2253,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
                     // Extract properties
                     string assetPath = ExtractJsonStringValue(valuePart, "path");
                     string atmospherePath = ExtractJsonStringValue(valuePart, "atmosphere");
+                    string nightTexturePath = ExtractJsonStringValue(valuePart, "night-texture");
                     bool emitting = ExtractJsonBoolValue(valuePart, "emitting");
                     long? illuminatedBy = ExtractJsonLongValue(valuePart, "illuminated_by");
                     
@@ -2323,6 +2332,29 @@ public class SolarSystemParallaxManager : MonoBehaviour
                         else
                         {
                             Debug.LogWarning($"Could not load atmosphere texture at path: {atmospherePath} for NAIF ID {naifId}");
+                        }
+                    }
+
+                    // Load night texture if present
+                    if (!string.IsNullOrEmpty(nightTexturePath))
+                    {
+                        Texture2D nightTexture = null;
+#if UNITY_EDITOR
+                        nightTexture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(nightTexturePath);
+#else
+                        string nightResourcesPath = nightTexturePath.Replace("Assets/", "");
+                        int lastDotNight = nightResourcesPath.LastIndexOf('.');
+                        if (lastDotNight > 0) nightResourcesPath = nightResourcesPath.Substring(0, lastDotNight);
+                        nightTexture = Resources.Load<Texture2D>(nightResourcesPath);
+#endif
+                        if (nightTexture != null)
+                        {
+                            planetNightTextures[naifId] = nightTexture;
+                            Debug.Log($"Loaded night texture for NAIF ID {naifId}: {nightTexturePath}");
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"Could not load night texture at path: {nightTexturePath} for NAIF ID {naifId}");
                         }
                     }
                 }

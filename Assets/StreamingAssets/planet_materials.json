@@ -39,7 +39,7 @@
     "emitting": false,
     "illuminated_by": 10,
     "atmosphere": "Assets/HighResTextures/earth_clouds.jpg",
-    "night-texture": null
+    "night-texture": "Assets/HighResTextures/earth_nightmap.jpg"
   },
   "499": {
     "path": "Assets/HighResTextures/mars_main.jpg",

@@ -4,6 +4,7 @@ Shader "Custom/PlanetShadow"
     {
         _BaseMap("Base Map", 2D) = "white" {}
         _SecondTex("Second Texture", 2D) = "black" {} // Default to black for no effect
+        _NightTex("Night Texture", 2D) = "black" {}
         _SunDirection("Sun Direction", Vector) = (1, 0, 0, 0)
         _AmbientColor("Ambient Color", Color) = (0.1, 0.1, 0.1, 1)
         _ShadowStrength("Shadow Strength", Range(0, 1)) = 0.8
@@ -60,6 +61,7 @@ Shader "Custom/PlanetShadow"
 
             TEXTURE2D(_BaseMap);
             TEXTURE2D(_SecondTex);
+            TEXTURE2D(_NightTex);
             SAMPLER(sampler_BaseMap);
 
             Varyings vert(Attributes IN)
@@ -75,6 +77,7 @@ Shader "Custom/PlanetShadow"
             {
                 half4 baseColor = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, IN.uv);
                 half4 secondColor = SAMPLE_TEXTURE2D(_SecondTex, sampler_BaseMap, IN.uv);
+                half4 nightColor = SAMPLE_TEXTURE2D(_NightTex, sampler_BaseMap, IN.uv);
 
                 // Apply Screen Blend Mode: 1 - (1 - Base) * (1 - Blend)
                 // If secondColor is black (default), this results in baseColor.
@@ -90,13 +93,21 @@ Shader "Custom/PlanetShadow"
                 float3 lightDir = normalize(-_SunDirection.xyz);
 
                 // Lambertian Lighting
-                // N dot L
-                float NdotL = max(0, dot(normal, lightDir));
+                float rawNdotL = dot(normal, lightDir);
+                float NdotL = max(0, rawNdotL);
 
                 // Apply Shadow and Ambient
-                float3 lightIntensity = NdotL;
-                
-                float3 finalColor = baseColor.rgb * (_AmbientColor.rgb + lightIntensity);
+                // This applies to the day-side surface (Base + Atmosphere)
+                float3 finalColor = baseColor.rgb * (_AmbientColor.rgb + NdotL);
+
+                // Calculate Night Logic
+                // Night lights appear where rawNdotL is negative (shadow side).
+                // They should be occluded by the atmosphere (SecondTex).
+                // smoothstep(0.0, 0.2, -rawNdotL) makes it fade in as we go into shadow.
+                float nightFactor = smoothstep(0.0, 0.2, -rawNdotL);
+                float3 nightLights = nightColor.rgb * nightFactor * (1.0 - secondColor.rgb);
+
+                finalColor += nightLights;
 
                 return half4(finalColor, baseColor.a);
             }

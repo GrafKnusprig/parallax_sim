@@ -51,15 +51,15 @@ Material:
     m_Floats:
     - _BumpScale: 1
     - _Cutoff: 0.5
-    - _DistortionStrength: 2
+    - _DistortionStrength: 0
     - _EdgeGlowIntensity: 0
-    - _EdgeGlowPower: 10
-    - _HorizonRadius: 0.51
+    - _EdgeGlowPower: 0.1
+    - _HorizonRadius: 1
     - _LensingRadius: 1.5
     - _LensingStrength: 2
-    - _PhotosphereIntensity: 0.7
+    - _PhotosphereIntensity: 2.9
     - _PhotosphereRadius: 2.5
-    - _PhotosphereThickness: 0.01
+    - _PhotosphereThickness: 0.2
     - _Softness: 0.5
     m_Colors:
     - _EdgeGlowColor: {r: 1, g: 1, b: 1, a: 1}
