@@ -88,12 +88,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     // NOTE: Label settings (enableLabels, labelCanvas, labelFont, labelFontSize, labelColor, labelOffsetPixels)
     // have been moved to SolarSystemUIManager. Configure labels there.
     
-    [Header("HUD (Heads-Up Display)")]
-    [SerializeField] private bool enableHUD = true;
-    [Tooltip("Font size for HUD text (pt)")]
-    [SerializeField] private int hudFontSize = 28;
-    [SerializeField] private Color hudColor = Color.cyan;
-    [SerializeField] private Vector2 hudPosition = new Vector2(300f, -100f); // offset from top-left corner
+    // NOTE: HUD settings (enableHUD, hudFontSize, hudColor, hudPosition) have been moved to SolarSystemUIManager.
     
     // NOTE: VR input actions (autopilotMenuAction, planetInfoAction, menuScrollAction, menuSelectAction)
     // have been moved to SolarSystemUIManager. Configure VR inputs there.
@@ -143,9 +138,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private Dictionary<long, bool> bodyEmitting = new Dictionary<long, bool>(); // Whether body emits light
     private Dictionary<long, long?> bodyIlluminatedBy = new Dictionary<long, long?>(); // Which body illuminates this one
     
-    // HUD elements
-    private GameObject hudUI;
-    private TextMeshProUGUI hudText;
+    // NOTE: HUD elements (hudUI, hudText) have been moved to SolarSystemUIManager.
     
     // Stellar parallax integration
     private StellarParallaxManager stellarManager;
@@ -270,7 +263,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         CreateHorizonSphere();
         uiManager.Initialize(); // Setup label canvas via UI manager
-        CreateHUD();
+        uiManager.CreateHUD(); // Create HUD via UI manager
         LoadObjectNamesFromJson();
         LoadPlanetMaterials();
         LoadBodiesFromCsv();
@@ -288,7 +281,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         uiManager.OnPlanetInfoTogglePressed += TogglePlanetInfo;
         
         // Create loading screen via UI manager (passing HUD reference for hiding during load)
-        uiManager.CreateLoadingScreen(hudUI);
+        uiManager.CreateLoadingScreen(uiManager.HudUI);
         
         // Initialize asteroid rendering
         if (asteroidPropertyBlock == null)
@@ -339,44 +332,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     // Helper property to get label font from UI manager
     private TMP_FontAsset LabelFont => uiManager != null ? uiManager.LabelFont : null;
     
-    private void CreateHUD()
-    {
-        if (!enableHUD) return;
-        
-        if (LabelCanvas == null)
-        {
-            Debug.LogWarning("Cannot create HUD: Label Canvas not available. HUD requires a canvas.");
-            return;
-        }
-        
-        // Create HUD GameObject
-        hudUI = new GameObject("HUD");
-        hudUI.transform.SetParent(LabelCanvas.transform, false);
-        
-        // Add RectTransform
-        RectTransform rectTransform = hudUI.AddComponent<RectTransform>();
-        
-        // Position at top-left corner
-        rectTransform.anchorMin = new Vector2(0, 1);
-        rectTransform.anchorMax = new Vector2(0, 1);
-        rectTransform.pivot = new Vector2(0, 1);
-        rectTransform.anchoredPosition = hudPosition; // Use configurable position
-        rectTransform.sizeDelta = new Vector2(800, 400); // 200% bigger than previous
-        
-        // Add Text component
-        hudText = hudUI.AddComponent<TextMeshProUGUI>();
-        if (LabelFont != null) hudText.font = LabelFont;
-        hudText.fontSize = hudFontSize;
-        hudText.color = hudColor;
-        hudText.alignment = TextAlignmentOptions.TopLeft;
-        hudText.textWrappingMode = TextWrappingModes.NoWrap;
-        hudText.overflowMode = TextOverflowModes.Overflow;
-        
-        // Initial text
-        hudText.text = "Speed: 0 km/s (0% lightspeed)\nDistance from Sun: 0 km\nMode: DISTANCE-BASED";
-        
-        Debug.Log("HUD created successfully");
-    }
+    // NOTE: CreateHUD() has been moved to SolarSystemUIManager.
     
     // Origin shifting system - adaptive based on proximity to celestial bodies
     // Only shifts when near planets for precision; allows free travel at extreme distances
@@ -1690,7 +1646,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     
     private void UpdateHUD()
     {
-        if (!enableHUD || hudText == null) return;
+        if (uiManager == null || !uiManager.EnableHUD || uiManager.HudText == null) return;
         
         // Calculate speed in real units
         double speedKmPerSecond = actualSpeed * AU_KM; // Convert AU/s to km/s
@@ -1748,7 +1704,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         }
         
         // Build HUD text - simplified for distance-based speed
-        hudText.text = $"Speed: {speedDisplay} ({lightSpeedDisplay})\n" +
+        uiManager.HudText.text = $"Speed: {speedDisplay} ({lightSpeedDisplay})\n" +
                       $"Distance from Sun: {distanceDisplay}\n" +
                       $"Mode: DISTANCE-BASED";
         
@@ -1775,17 +1731,17 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 planetDistanceDisplay = $"{distanceToNearestPlanet:F6} AU";
             }
             
-            hudText.text += $"\nNearest: {nearestPlanet.name}\n" +
+            uiManager.HudText.text += $"\nNearest: {nearestPlanet.name}\n" +
                            $"Distance: {planetDistanceDisplay}";
         }
         
         // Add stellar manager info
         if (stellarManager != null)
         {
-            hudText.text += $"\nStars Visible: {stellarManager.GetVisibleStarCount()}";
+            uiManager.HudText.text += $"\nStars Visible: {stellarManager.GetVisibleStarCount()}";
             if (!stellarManager.IsDataLoaded())
             {
-                hudText.text += " (Loading...)";
+                uiManager.HudText.text += " (Loading...)";
             }
         }
         
@@ -1804,14 +1760,14 @@ public class SolarSystemParallaxManager : MonoBehaviour
             else
                 autopilotDistDisplay = $"{distKm:F0} km";
             
-            hudText.text += $"\n\n[AUTOPILOT] → {autopilotTarget.name}\nDistance: {autopilotDistDisplay}\nPress X to cancel";
+            uiManager.HudText.text += $"\n\n[AUTOPILOT] → {autopilotTarget.name}\nDistance: {autopilotDistDisplay}\nPress X to cancel";
         }
         else if (!autopilotActive && (uiManager == null || !uiManager.AutopilotMenuOpen))
         {
-            hudText.text += "\n\nPress X for Autopilot";
+            uiManager.HudText.text += "\n\nPress X for Autopilot";
             if (nearestPlanet != null && nearestPlanet.planetData != null)
             {
-                hudText.text += $" | Press I for info on {nearestPlanet.name}";
+                uiManager.HudText.text += $" | Press I for info on {nearestPlanet.name}";
             }
         }
     }

@@ -37,6 +37,13 @@ public class SolarSystemUIManager : MonoBehaviour
     [Tooltip("VR Controller button to confirm selection in menu (e.g., trigger or trackpad press).")]
     [SerializeField] private InputActionReference menuSelectAction;
     
+    [Header("HUD (Heads-Up Display)")]
+    [SerializeField] private bool enableHUD = true;
+    [Tooltip("Font size for HUD text (pt)")]
+    [SerializeField] private int hudFontSize = 28;
+    [SerializeField] private Color hudColor = Color.cyan;
+    [SerializeField] private Vector2 hudPosition = new Vector2(300f, -100f); // offset from top-left corner
+    
     // Reference to the main manager
     private SolarSystemParallaxManager parallaxManager;
     
@@ -1670,6 +1677,85 @@ public class SolarSystemUIManager : MonoBehaviour
             {
                 progressBarFill.color = new Color(0.3f * pulse, 0.6f * pulse, 1f, 1f);
             }
+        }
+    }
+    
+    // ========================
+    // HUD (HEADS-UP DISPLAY)
+    // ========================
+    
+    // HUD UI elements
+    private GameObject hudUI;
+    private TextMeshProUGUI hudText;
+    
+    // Public accessors
+    public GameObject HudUI => hudUI;
+    public bool EnableHUD => enableHUD;
+    public TextMeshProUGUI HudText => hudText;
+    
+    /// <summary>
+    /// Creates the HUD display.
+    /// </summary>
+    public void CreateHUD()
+    {
+        if (!enableHUD) return;
+        
+        if (labelCanvas == null)
+        {
+            Debug.LogWarning("[UIManager] Cannot create HUD: Label Canvas not available. HUD requires a canvas.");
+            return;
+        }
+        
+        // Create HUD GameObject
+        hudUI = new GameObject("HUD");
+        hudUI.transform.SetParent(labelCanvas.transform, false);
+        
+        // Add RectTransform
+        RectTransform rectTransform = hudUI.AddComponent<RectTransform>();
+        
+        // Position at top-left corner
+        rectTransform.anchorMin = new Vector2(0, 1);
+        rectTransform.anchorMax = new Vector2(0, 1);
+        rectTransform.pivot = new Vector2(0, 1);
+        rectTransform.anchoredPosition = hudPosition;
+        rectTransform.sizeDelta = new Vector2(800, 400);
+        
+        // Add Text component
+        hudText = hudUI.AddComponent<TextMeshProUGUI>();
+        if (labelFont != null) hudText.font = labelFont;
+        hudText.fontSize = hudFontSize;
+        hudText.color = hudColor;
+        hudText.alignment = TextAlignmentOptions.TopLeft;
+        hudText.textWrappingMode = TextWrappingModes.NoWrap;
+        hudText.overflowMode = TextOverflowModes.Overflow;
+        
+        // Initial text
+        hudText.text = "Speed: 0 km/s (0% lightspeed)\nDistance from Sun: 0 km\nMode: DISTANCE-BASED";
+        
+        Debug.Log("[UIManager] HUD created successfully");
+    }
+    
+    /// <summary>
+    /// Sets the HUD display text.
+    /// </summary>
+    /// <param name="text">Text to display</param>
+    public void SetHUDText(string text)
+    {
+        if (hudText != null)
+        {
+            hudText.text = text;
+        }
+    }
+    
+    /// <summary>
+    /// Shows or hides the HUD.
+    /// </summary>
+    /// <param name="visible">True to show, false to hide</param>
+    public void SetHUDVisible(bool visible)
+    {
+        if (hudUI != null)
+        {
+            hudUI.SetActive(visible);
         }
     }
 }
