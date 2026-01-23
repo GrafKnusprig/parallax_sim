@@ -131,6 +131,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private const double LIGHTYEAR_KM = 9_460_730_472_580.8; // km in 1 lightyear
     private const float PARSEC_TO_AU = 206264.806f;  // 1 parsec = 206,264.806 AU
     private const double SECTOR_SIZE_AU = 1_000_000.0; // Each sector is 1 million AU (approx 5 parsecs)
+    private const double MAX_DISTANCE_FROM_SUN_LY = 300_000.0; // Max travel distance in lightyears
 
     [System.NonSerialized]
     public HierarchicalPosition playerRealPosAu; // player position in AU (real space) - public for StellarParallaxManager
@@ -2828,8 +2829,27 @@ public class SolarSystemParallaxManager : MonoBehaviour
             }
         }
 
+
         Vector3d moveDirDouble = new Vector3d(moveDir.x, moveDir.y, moveDir.z);
-        playerRealPosAu = playerRealPosAu.Add(moveDirDouble * (currentSpeed * Time.deltaTime), SECTOR_SIZE_AU);
+        // Calculate tentative position
+        HierarchicalPosition tentativePos = playerRealPosAu.Add(moveDirDouble * (currentSpeed * Time.deltaTime), SECTOR_SIZE_AU);
+        
+        // Check for maximum distance from Sun (300,000 lightyears)
+        // Refined approach: Math clamp on the final position vector
+        HierarchicalPosition sunPos = GetSunPosition();
+        Vector3d sunToTentative = sunPos.OffsetTo(tentativePos, SECTOR_SIZE_AU);
+        double currentDistAu = sunToTentative.magnitude;
+        double maxDistAu = (MAX_DISTANCE_FROM_SUN_LY * LIGHTYEAR_KM) / AU_KM;
+        
+        if (currentDistAu > maxDistAu)
+        {
+             // Clamp position to the shell of the sphere
+             Vector3d clampedOffset = sunToTentative * (maxDistAu / currentDistAu);
+             tentativePos = sunPos.Add(clampedOffset, SECTOR_SIZE_AU);
+        }
+        
+        playerRealPosAu = tentativePos;
+
         
         // Track actual movement speed
         actualSpeed = currentSpeed;
