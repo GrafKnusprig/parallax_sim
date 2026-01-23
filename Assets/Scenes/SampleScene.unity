@@ -596,10 +596,6 @@ MonoBehaviour:
   hudColor: {r: 0, g: 1, b: 1, a: 1}
   hudPosition: {x: 20, y: -200}
   enableVRMode: 0
-  autopilotMenuAction: {fileID: -5982496924579745919, guid: c348712bda248c246b8c49b3db54643f, type: 3}
-  planetInfoAction: {fileID: 83097790271614945, guid: c348712bda248c246b8c49b3db54643f, type: 3}
-  menuScrollAction: {fileID: -60998027439631388, guid: c348712bda248c246b8c49b3db54643f, type: 3}
-  menuSelectAction: {fileID: -6131295136447488360, guid: c348712bda248c246b8c49b3db54643f, type: 3}
   enableLoadingScreen: 0
 --- !u!4 &713169412
 Transform:
@@ -680,10 +676,10 @@ MonoBehaviour:
   labelColor: {r: 0.8, g: 0.8, b: 0.8, a: 1}
   labelOffsetPixels: 20
   enableVRMode: 0
-  autopilotMenuAction: {fileID: 0}
-  planetInfoAction: {fileID: 0}
-  menuScrollAction: {fileID: 0}
-  menuSelectAction: {fileID: 0}
+  autopilotMenuAction: {fileID: -5982496924579745919, guid: c348712bda248c246b8c49b3db54643f, type: 3}
+  planetInfoAction: {fileID: 83097790271614945, guid: c348712bda248c246b8c49b3db54643f, type: 3}
+  menuScrollAction: {fileID: -60998027439631388, guid: c348712bda248c246b8c49b3db54643f, type: 3}
+  menuSelectAction: {fileID: -6131295136447488360, guid: c348712bda248c246b8c49b3db54643f, type: 3}
   planetInfoAnimSpeed: 8
 --- !u!1 &832575517
 GameObject:
