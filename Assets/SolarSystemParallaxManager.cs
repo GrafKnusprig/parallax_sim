@@ -76,6 +76,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [SerializeField] private int maxAsteroidsPerFrame = 100000;
     
     [Header("Player (real space)")]
+    [Tooltip("Angular velocity for orbit mode (radians/sec)")]
+    [SerializeField] private float orbitAngularVelocity = 0.2f;
     
     [Header("Camera")]
     [Tooltip("The camera to use for rendering and movement calculations. If not set, will use Camera.main.")]
@@ -191,6 +193,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     // Static property for other scripts to check menu state
     public static bool IsMenuOpen { get; private set; } = false;
     public static bool IsAutopilotActive { get; private set; } = false;
+    public static bool IsOrbiting { get; private set; } = false;
 
     public float CurrentSpeedAuPerSec => currentSpeed;
     public float ActualSpeedAuPerSec => actualSpeed;
@@ -228,6 +231,12 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private static readonly int StencilCompId = Shader.PropertyToID("_StencilComp");
     private static readonly int StencilPassId = Shader.PropertyToID("_StencilPass");
     private MaterialPropertyBlock planetPropertyBlock;
+    
+    // Orbit system
+    private BodyInstance orbitTargetBody = null;
+    private float orbitAngle = 0f;
+    private double orbitDistanceAu = 0.0;
+    private double orbitHeightAu = 0.0;
 
     private class BodyInstance
     {
@@ -704,6 +713,12 @@ public class SolarSystemParallaxManager : MonoBehaviour
         {
             TogglePlanetInfo();
         }
+
+        // Handle Orbit toggle with O key
+        if (Keyboard.current != null && Keyboard.current.oKey.wasPressedThisFrame)
+        {
+            ToggleOrbit();
+        }
         
         // Handle VR menu navigation when autopilot menu is open
         if (autopilotMenuOpen && menuSelectableBodies.Count > 0)
@@ -717,6 +732,10 @@ public class SolarSystemParallaxManager : MonoBehaviour
         if (autopilotActive)
         {
             UpdateAutopilot();
+        }
+        else if (IsOrbiting)
+        {
+            UpdateOrbitMovement();
         }
         else if (!autopilotMenuOpen && !planetInfoVisible)
         {
@@ -742,6 +761,12 @@ public class SolarSystemParallaxManager : MonoBehaviour
         UpdateBlackHoleLensing();
         
         UpdatePlanetStencilMaterials();
+
+        // Update camera look at AFTER body proxies are positioned
+        if (IsOrbiting)
+        {
+            UpdateOrbitCamera();
+        }
     }
     
     private void UpdateBlackHoleLensing()
@@ -2584,7 +2609,11 @@ public class SolarSystemParallaxManager : MonoBehaviour
         }
         
         // Add autopilot status
-        if (autopilotActive && autopilotTarget != null)
+        if (IsOrbiting && orbitTargetBody != null)
+        {
+            hudText.text += $"\n\n[ORBIT] ⟳ Orbiting {orbitTargetBody.name}\nRadius: {orbitDistanceAu:F6} AU\nPress O to disengage";
+        }
+        else if (autopilotActive && autopilotTarget != null)
         {
             Vector3d toTarget = playerRealPosAu.OffsetTo(autopilotTarget.realPosAu, SECTOR_SIZE_AU);
             double distanceAu = toTarget.magnitude;
@@ -2603,9 +2632,14 @@ public class SolarSystemParallaxManager : MonoBehaviour
         else if (!autopilotActive && !autopilotMenuOpen)
         {
             hudText.text += "\n\nPress X for Autopilot";
-            if (nearestPlanet != null && nearestPlanet.planetData != null)
+            if (nearestPlanet != null)
             {
-                hudText.text += $" | Press I for info on {nearestPlanet.name}";
+                hudText.text += $" | Press O to Orbit {nearestPlanet.name}";
+                
+                if (nearestPlanet.planetData != null)
+                {
+                    hudText.text += $" | Press I for Info";
+                }
             }
         }
     }
@@ -2631,6 +2665,74 @@ public class SolarSystemParallaxManager : MonoBehaviour
     }
 
     // --- Runtime updates ---
+
+    private void ToggleOrbit()
+    {
+        // Mutual exclusion: Cannot orbit while autopilot is active
+        if (autopilotActive) return;
+
+        if (IsOrbiting)
+        {
+            IsOrbiting = false;
+            orbitTargetBody = null;
+            Debug.Log("Orbit disengaged.");
+        }
+        else
+        {
+            if (nearestPlanet != null)
+            {
+                IsOrbiting = true;
+                orbitTargetBody = nearestPlanet;
+
+                // Calculate initial orbit parameters relative to planet
+                Vector3d relPos = orbitTargetBody.realPosAu.OffsetTo(playerRealPosAu, SECTOR_SIZE_AU);
+
+                // orbit in XZ plane relative to planet
+                orbitDistanceAu = Math.Sqrt(relPos.x * relPos.x + relPos.z * relPos.z);
+                orbitHeightAu = relPos.y;
+
+                orbitAngle = Mathf.Atan2((float)relPos.z, (float)relPos.x);
+
+                Debug.Log($"Orbit engaged around {orbitTargetBody.name}");
+            }
+            else
+            {
+                Debug.Log("Cannot orbit: nearest planet is null.");
+            }
+        }
+    }
+
+    private void UpdateOrbitMovement()
+    {
+        if (orbitTargetBody == null)
+        {
+            IsOrbiting = false;
+            return;
+        }
+
+        // Update angle
+        orbitAngle += orbitAngularVelocity * Time.deltaTime;
+        
+        // Calculate new relative position (XZ circle)
+        double newX = orbitDistanceAu * Math.Cos(orbitAngle);
+        double newZ = orbitDistanceAu * Math.Sin(orbitAngle);
+        
+        Vector3d newRelPos = new Vector3d(newX, orbitHeightAu, newZ);
+        
+        // Update player position
+        playerRealPosAu = orbitTargetBody.realPosAu.Add(newRelPos, SECTOR_SIZE_AU);
+    }
+    
+    private void UpdateOrbitCamera()
+    {
+        if (orbitTargetBody == null || orbitTargetBody.proxy == null) return;
+        
+        Camera cam = GetActiveCamera();
+        if (cam != null)
+        {
+            cam.transform.LookAt(orbitTargetBody.proxy.position);
+        }
+    }
 
     private void UpdatePlayerMovement()
     {
@@ -3350,6 +3452,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
     
     private void ToggleAutopilotMenu()
     {
+        // Mutual exclusion: Cannot use autopilot while orbiting
+        if (IsOrbiting) return;
+
         if (autopilotUI == null) return;
         
         if (autopilotActive)

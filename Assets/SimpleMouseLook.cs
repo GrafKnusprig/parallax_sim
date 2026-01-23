@@ -81,8 +81,8 @@ public class SimpleMouseLook : MonoBehaviour
             return;
         }
         
-        // Skip mouse look when autopilot is controlling the camera
-        if (SolarSystemParallaxManager.IsAutopilotActive)
+        // Skip mouse look when autopilot is controlling the camera or when Orbiting
+        if (SolarSystemParallaxManager.IsAutopilotActive || SolarSystemParallaxManager.IsOrbiting)
         {
             // Sync yaw/pitch from current rotation so there's no jump when autopilot ends
             Vector3 euler = transform.eulerAngles;
