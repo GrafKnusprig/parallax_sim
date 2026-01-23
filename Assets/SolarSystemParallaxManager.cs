@@ -760,30 +760,41 @@ public class SolarSystemParallaxManager : MonoBehaviour
         {
             var body = sortedBodies[i].body;
             
-            if (body.renderer == null) continue;
+            // Generate unique stencil ID based on sort order.
+            // Closest body gets 255, furthest gets lower values.
+            // This assumes < 255 bodies, which is true for solar system.
+            int stencilRef = Mathf.Clamp(255 - i, 1, 255);
             
-            // Accessing .material creates an instance (clone) if not already created.
-            Material mat = body.renderer.material;
-
-            if (mat == null) continue;
-
-            // Render Queue:
-            // Render closest bodies FIRST (Lower Queue)
-            // Render furthest bodies LAST (Higher Queue)
-            // Base Geometry is 2000. We just increment by index.
-            // Ensure we don't exceed Transparent (2500) if user has THAT many planets (unlikely)
-            mat.renderQueue = 2000 + i; 
-
-            // Stencil Logic:
-            // 1. Ref = 1
-            // 2. Comp = NotEqual (6). Only draw if Stencil != 1 (i.e. if not already drawn on by a closer body)
-            // 3. Pass = Replace (2). If we draw, write 1 to Stencil (claiming this pixel for this depth or closer)
+            // Stencil Logic Corrected used GreaterEqual:
+            // 1. Ref = Unique ID (decreasing with distance, e.g. Closest=255, Next=254)
+            // 2. Comp = GreaterEqual (7).
+            //    - If we draw a pixel, we check if current Stencil Buffer value <= our Ref (Ref >= Buffer).
+            //    - Default buffer is 0. 255 >= 0 is TRUE.
+            //    - Body A (Ref 255) draws: writes 255.
+            //    - Body A's Ring (Ref 255) draws over Body A: 255 >= 255 is TRUE. Allowed.
+            //    - Body B (Ref 254) draws BEHIND Body A:
+            //      - Pixel has 255. Ref is 254.
+            //      - Check: 254 >= 255? FALSE. Occluded.
+            // 3. Pass = Replace (2). If we pass Test and Depth, write our Ref to buffer.
             
-            if (mat.HasProperty(StencilRefId))
+            // Base queue for this body index. Using stride of 10 to allow space for layers.
+            int baseQueue = 2000 + (i * 10);
+
+            if (body.renderer != null)
             {
-                mat.SetFloat(StencilRefId, 1);
-                mat.SetFloat(StencilCompId, 6); // NotEqual
-                mat.SetFloat(StencilPassId, 2); // Replace
+                Material mat = body.renderer.material;
+                if (mat != null)
+                {
+                    // Render Planet FIRST (opaque, writes Z)
+                    mat.renderQueue = baseQueue; 
+
+                    if (mat.HasProperty(StencilRefId))
+                    {
+                        mat.SetFloat(StencilRefId, stencilRef);
+                        mat.SetFloat(StencilCompId, 7); // GreaterEqual
+                        mat.SetFloat(StencilPassId, 2); // Replace
+                    }
+                }
             }
 
             // Apply same logic to Ring Renderer if present
@@ -792,14 +803,16 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 Material ringMat = body.ringRenderer.material;
                 if (ringMat != null)
                 {
-                    // Ring shares depth logic with planet (approx)
-                    ringMat.renderQueue = 2000 + i;
+                    // Render Ring SECOND (transparent, usually ZWrite Off)
+                    // This allows it to pass ZTest where it is in front of planet,
+                    // and fail ZTest where it is behind planet (since planet wrote Z).
+                    ringMat.renderQueue = baseQueue + 1;
 
                     if (ringMat.HasProperty(StencilRefId))
                     {
-                        ringMat.SetFloat(StencilRefId, 1);
-                        ringMat.SetFloat(StencilCompId, 6);
-                        ringMat.SetFloat(StencilPassId, 2);
+                        ringMat.SetFloat(StencilRefId, stencilRef);
+                        ringMat.SetFloat(StencilCompId, 7); // GreaterEqual
+                        ringMat.SetFloat(StencilPassId, 2); // Replace
                     }
                 }
             }
