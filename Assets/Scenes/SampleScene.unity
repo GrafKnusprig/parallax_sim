@@ -680,6 +680,10 @@ MonoBehaviour:
   labelColor: {r: 0.8, g: 0.8, b: 0.8, a: 1}
   labelOffsetPixels: 20
   enableVRMode: 0
+  autopilotMenuAction: {fileID: 0}
+  planetInfoAction: {fileID: 0}
+  menuScrollAction: {fileID: 0}
+  menuSelectAction: {fileID: 0}
   planetInfoAnimSpeed: 8
 --- !u!1 &832575517
 GameObject:

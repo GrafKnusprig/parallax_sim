@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.InputSystem;
 using UnityEngine.XR.Interaction.Toolkit.UI;
 using TMPro;
 
@@ -24,12 +25,29 @@ public class SolarSystemUIManager : MonoBehaviour
     [Tooltip("Enable VR mode for headset display. When disabled, uses standard screen with mouse support.")]
     [SerializeField] private bool enableVRMode = false;
     
+    [Tooltip("VR Controller button to toggle the autopilot menu (e.g., menu button or Y/B button).")]
+    [SerializeField] private InputActionReference autopilotMenuAction;
+    
+    [Tooltip("VR Controller button to toggle planet info display.")]
+    [SerializeField] private InputActionReference planetInfoAction;
+    
+    [Tooltip("VR Controller thumbstick/trackpad for menu scrolling (2D axis).")]
+    [SerializeField] private InputActionReference menuScrollAction;
+    
+    [Tooltip("VR Controller button to confirm selection in menu (e.g., trigger or trackpad press).")]
+    [SerializeField] private InputActionReference menuSelectAction;
+    
     // Reference to the main manager
     private SolarSystemParallaxManager parallaxManager;
     
     // Internal state
     private bool isVRMode = false;
     private bool wasVRMode = false;
+    
+    // VR input state tracking
+    private bool autopilotTriggerWasPressed = false;
+    private bool planetInfoTriggerWasPressed = false;
+    private bool vrSelectWasPressed = false;
     
     // Public accessors
     public bool EnableLabels => enableLabels;
@@ -40,9 +58,136 @@ public class SolarSystemUIManager : MonoBehaviour
     public float LabelOffsetPixels => labelOffsetPixels;
     public bool IsVRMode => isVRMode;
     
+    // Events for input notifications - ParallaxManager subscribes to respond to input
+    public System.Action OnAutopilotTogglePressed;
+    public System.Action OnPlanetInfoTogglePressed;
+    
     private void Awake()
     {
         parallaxManager = GetComponent<SolarSystemParallaxManager>();
+    }
+    
+    private void OnEnable()
+    {
+        if (autopilotMenuAction != null) autopilotMenuAction.action.Enable();
+        if (planetInfoAction != null) planetInfoAction.action.Enable();
+        if (menuScrollAction != null) menuScrollAction.action.Enable();
+        if (menuSelectAction != null) menuSelectAction.action.Enable();
+    }
+    
+    private void OnDisable()
+    {
+        if (autopilotMenuAction != null) autopilotMenuAction.action.Disable();
+        if (planetInfoAction != null) planetInfoAction.action.Disable();
+        if (menuScrollAction != null) menuScrollAction.action.Disable();
+        if (menuSelectAction != null) menuSelectAction.action.Disable();
+    }
+    
+    /// <summary>
+    /// Updates input handling for VR controllers and keyboard. Call from Update().
+    /// </summary>
+    public void UpdateInput()
+    {
+        // Handle autopilot toggle with X key or VR controller button
+        bool autopilotTogglePressed = (Keyboard.current != null && Keyboard.current.xKey.wasPressedThisFrame);
+        
+        // Check VR controller trigger (it's an axis, so we need to detect edge)
+        if (autopilotMenuAction != null && autopilotMenuAction.action.enabled)
+        {
+            float triggerValue = autopilotMenuAction.action.ReadValue<float>();
+            bool triggerIsPressed = triggerValue > 0.5f;
+            
+            // Detect rising edge (trigger just pressed)
+            if (triggerIsPressed && !autopilotTriggerWasPressed)
+            {
+                autopilotTogglePressed = true;
+            }
+            autopilotTriggerWasPressed = triggerIsPressed;
+        }
+        
+        if (autopilotTogglePressed)
+        {
+            OnAutopilotTogglePressed?.Invoke();
+        }
+        
+        // Handle planet info toggle with I key or VR controller button
+        bool planetInfoTogglePressed = (Keyboard.current != null && Keyboard.current.iKey.wasPressedThisFrame);
+        
+        // Check VR controller trigger for planet info
+        if (planetInfoAction != null && planetInfoAction.action.enabled)
+        {
+            float triggerValue = planetInfoAction.action.ReadValue<float>();
+            bool triggerIsPressed = triggerValue > 0.5f;
+            
+            // Detect rising edge (trigger just pressed)
+            if (triggerIsPressed && !planetInfoTriggerWasPressed)
+            {
+                planetInfoTogglePressed = true;
+            }
+            planetInfoTriggerWasPressed = triggerIsPressed;
+        }
+        
+        if (planetInfoTogglePressed)
+        {
+            OnPlanetInfoTogglePressed?.Invoke();
+        }
+        
+        // Handle VR menu navigation when autopilot menu is open
+        if (autopilotMenuOpen)
+        {
+            HandleVRMenuNavigation();
+        }
+    }
+    
+    /// <summary>
+    /// Handles VR controller and keyboard input for menu navigation.
+    /// </summary>
+    private void HandleVRMenuNavigation()
+    {
+        float scrollInput = 0f;
+        bool selectPressed = false;
+        
+        // VR Controller thumbstick/trackpad (2D axis - use Y component)
+        if (menuScrollAction != null && menuScrollAction.action.enabled)
+        {
+            Vector2 scrollValue = menuScrollAction.action.ReadValue<Vector2>();
+            scrollInput = scrollValue.y;
+        }
+        
+        // Keyboard fallback (arrow keys)
+        if (Keyboard.current != null)
+        {
+            if (Keyboard.current.upArrowKey.wasPressedThisFrame)
+            {
+                scrollInput = 1f;
+            }
+            else if (Keyboard.current.downArrowKey.wasPressedThisFrame)
+            {
+                scrollInput = -1f;
+            }
+            
+            if (Keyboard.current.enterKey.wasPressedThisFrame)
+            {
+                selectPressed = true;
+            }
+        }
+        
+        // VR controller select button (trigger/trackpad press)
+        if (menuSelectAction != null && menuSelectAction.action.enabled)
+        {
+            float selectValue = menuSelectAction.action.ReadValue<float>();
+            bool selectIsPressed = selectValue > 0.5f;
+            
+            // Edge detection for select press
+            if (selectIsPressed && !vrSelectWasPressed)
+            {
+                selectPressed = true;
+            }
+            vrSelectWasPressed = selectIsPressed;
+        }
+        
+        // Process the input
+        UpdateVRMenuNavigation(scrollInput, selectPressed);
     }
     
     /// <summary>
@@ -237,7 +382,7 @@ public class SolarSystemUIManager : MonoBehaviour
         textComponent.fontSize = labelFontSize;
         textComponent.color = labelColor;
         textComponent.alignment = TextAlignmentOptions.Left;
-        textComponent.enableWordWrapping = false;
+        textComponent.textWrappingMode = TextWrappingModes.NoWrap;
         textComponent.overflowMode = TextOverflowModes.Overflow;
 
         return labelGO;
@@ -638,6 +783,624 @@ public class SolarSystemUIManager : MonoBehaviour
             // Slide in from bottom: -1200 (off-screen) to 0 (center)
             float yPos = Mathf.Lerp(-1200, 0, easedProgress);
             panelRect.anchoredPosition = new Vector2(0, yPos);
+        }
+    }
+    
+    // ========================
+    // AUTOPILOT MENU
+    // ========================
+    
+    // Autopilot menu UI elements
+    private GameObject autopilotUI;
+    private List<Button> autopilotButtons = new List<Button>();
+    private bool autopilotMenuOpen = false;
+    private bool moonsExpanded = false;
+    private GameObject moonsContainer;
+    private RectTransform autopilotContentRect;
+    
+    // VR menu navigation
+    private int menuSelectedIndex = 0;
+    private float menuScrollCooldown = 0f;
+    private const float MENU_SCROLL_DELAY = 0.2f;
+    
+    // Static properties for other scripts
+    public static bool IsMenuOpen { get; private set; } = false;
+    
+    // Public accessors
+    public bool AutopilotMenuOpen => autopilotMenuOpen;
+    
+    // Events for menu interactions - ParallaxManager subscribes to these
+    public System.Action<AutopilotBodyInfo> OnAutopilotTargetSelected;
+    public System.Action OnAutopilotMenuToggled;
+    public System.Action OnAutopilotCancelled;
+    
+    /// <summary>
+    /// Data structure for body information passed to the menu.
+    /// </summary>
+    public class AutopilotBodyInfo
+    {
+        public string name;
+        public long naifId;
+        public bool isMoon;
+        public bool isProximaSystem;
+        public object bodyReference; // Reference back to BodyInstance
+    }
+    
+    // Cached body info for the menu
+    private List<AutopilotBodyInfo> menuBodies = new List<AutopilotBodyInfo>();
+    private List<AutopilotBodyInfo> menuSelectableBodies = new List<AutopilotBodyInfo>();
+    
+    /// <summary>
+    /// Creates the autopilot menu UI. Call from Start() after the body list is loaded.
+    /// </summary>
+    /// <param name="bodies">List of bodies to populate the menu with</param>
+    public void CreateAutopilotMenu(List<AutopilotBodyInfo> bodies)
+    {
+        if (labelCanvas == null)
+        {
+            Debug.LogWarning("[UIManager] Cannot create Autopilot Menu: Label Canvas not available.");
+            return;
+        }
+        
+        menuBodies = bodies;
+        
+        // Create main panel
+        autopilotUI = new GameObject("AutopilotMenu");
+        autopilotUI.transform.SetParent(labelCanvas.transform, false);
+        
+        RectTransform panelRect = autopilotUI.AddComponent<RectTransform>();
+        panelRect.anchorMin = new Vector2(0.5f, 0.5f);
+        panelRect.anchorMax = new Vector2(0.5f, 0.5f);
+        panelRect.pivot = new Vector2(0.5f, 0.5f);
+        panelRect.anchoredPosition = Vector2.zero;
+        panelRect.sizeDelta = new Vector2(500, 700);
+        
+        // Add semi-transparent background
+        Image panelImage = autopilotUI.AddComponent<Image>();
+        panelImage.color = new Color(0.1f, 0.1f, 0.2f, 0.95f);
+        
+        // Add title
+        GameObject titleGO = new GameObject("Title");
+        titleGO.transform.SetParent(autopilotUI.transform, false);
+        RectTransform titleRect = titleGO.AddComponent<RectTransform>();
+        titleRect.anchorMin = new Vector2(0, 1);
+        titleRect.anchorMax = new Vector2(1, 1);
+        titleRect.pivot = new Vector2(0.5f, 1);
+        titleRect.anchoredPosition = new Vector2(0, -15);
+        titleRect.sizeDelta = new Vector2(0, 60);
+        
+        TextMeshProUGUI titleText = titleGO.AddComponent<TextMeshProUGUI>();
+        titleText.text = "AUTOPILOT - Select Destination";
+        if (labelFont != null) titleText.font = labelFont;
+        titleText.fontSize = 32;
+        titleText.color = Color.cyan;
+        titleText.alignment = TextAlignmentOptions.Center;
+        
+        // Create scroll view for body list
+        GameObject scrollViewGO = new GameObject("ScrollView");
+        scrollViewGO.transform.SetParent(autopilotUI.transform, false);
+        RectTransform scrollViewRect = scrollViewGO.AddComponent<RectTransform>();
+        scrollViewRect.anchorMin = new Vector2(0, 0);
+        scrollViewRect.anchorMax = new Vector2(1, 1);
+        scrollViewRect.offsetMin = new Vector2(15, 80);
+        scrollViewRect.offsetMax = new Vector2(-15, -70);
+        
+        ScrollRect scroll = scrollViewGO.AddComponent<ScrollRect>();
+        scroll.horizontal = false;
+        scroll.vertical = true;
+        scroll.scrollSensitivity = 30f;
+        
+        // Viewport - leave room for scrollbar
+        GameObject viewportGO = new GameObject("Viewport");
+        viewportGO.transform.SetParent(scrollViewGO.transform, false);
+        RectTransform viewportRect = viewportGO.AddComponent<RectTransform>();
+        viewportRect.anchorMin = Vector2.zero;
+        viewportRect.anchorMax = Vector2.one;
+        viewportRect.offsetMin = Vector2.zero;
+        viewportRect.offsetMax = new Vector2(-15, 0);
+        
+        Image viewportMask = viewportGO.AddComponent<Image>();
+        viewportMask.color = new Color(1, 1, 1, 0.01f);
+        Mask mask = viewportGO.AddComponent<Mask>();
+        mask.showMaskGraphic = false;
+        
+        scroll.viewport = viewportRect;
+        
+        // Content container
+        GameObject contentGO = new GameObject("Content");
+        contentGO.transform.SetParent(viewportGO.transform, false);
+        autopilotContentRect = contentGO.AddComponent<RectTransform>();
+        autopilotContentRect.anchorMin = new Vector2(0, 1);
+        autopilotContentRect.anchorMax = new Vector2(1, 1);
+        autopilotContentRect.pivot = new Vector2(0.5f, 1);
+        autopilotContentRect.anchoredPosition = Vector2.zero;
+        
+        scroll.content = autopilotContentRect;
+        
+        // Create visible scrollbar
+        CreateScrollbar(scrollViewGO, scroll);
+        
+        // Separate bodies into main bodies and moons
+        List<AutopilotBodyInfo> mainBodies = new List<AutopilotBodyInfo>();
+        List<AutopilotBodyInfo> moons = new List<AutopilotBodyInfo>();
+        
+        foreach (var body in bodies)
+        {
+            if (body.isMoon)
+                moons.Add(body);
+            else
+                mainBodies.Add(body);
+        }
+        
+        // Sort main bodies: Proxima system first, then Sun, then by position (already sorted by caller)
+        mainBodies.Sort((a, b) =>
+        {
+            if (a.isProximaSystem && !b.isProximaSystem) return -1;
+            if (!a.isProximaSystem && b.isProximaSystem) return 1;
+            bool aIsSun = a.naifId == 10;
+            bool bIsSun = b.naifId == 10;
+            if (aIsSun && !bIsSun) return -1;
+            if (!aIsSun && bIsSun) return 1;
+            return 0;
+        });
+        
+        // Add buttons for main bodies
+        float buttonHeight = 50f;
+        float spacing = 8f;
+        int itemIndex = 0;
+        
+        menuSelectableBodies.Clear();
+        autopilotButtons.Clear();
+        
+        foreach (var body in mainBodies)
+        {
+            CreateAutopilotButton(contentGO, body, itemIndex, buttonHeight, spacing, false);
+            menuSelectableBodies.Add(body);
+            itemIndex++;
+        }
+        
+        // Moons category header
+        if (moons.Count > 0)
+        {
+            CreateMoonsCategoryButton(contentGO, itemIndex, buttonHeight, spacing);
+            itemIndex++;
+            
+            // Create moons container (initially hidden)
+            moonsContainer = new GameObject("MoonsContainer");
+            moonsContainer.transform.SetParent(contentGO.transform, false);
+            RectTransform moonsContainerRect = moonsContainer.AddComponent<RectTransform>();
+            moonsContainerRect.anchorMin = new Vector2(0, 1);
+            moonsContainerRect.anchorMax = new Vector2(1, 1);
+            moonsContainerRect.pivot = new Vector2(0.5f, 1);
+            moonsContainerRect.anchoredPosition = new Vector2(0, -itemIndex * (buttonHeight + spacing));
+            moonsContainerRect.sizeDelta = new Vector2(0, moons.Count * (buttonHeight + spacing));
+            
+            int moonIndex = 0;
+            foreach (var moon in moons)
+            {
+                CreateAutopilotButton(moonsContainer, moon, moonIndex, buttonHeight, spacing, true);
+                moonIndex++;
+            }
+            
+            moonsContainer.SetActive(false);
+        }
+        
+        // Calculate content size
+        int visibleCount = mainBodies.Count + (moons.Count > 0 ? 1 : 0);
+        autopilotContentRect.sizeDelta = new Vector2(0, visibleCount * (buttonHeight + spacing));
+        
+        // Cancel button
+        CreateCancelButton();
+        
+        // Start hidden
+        autopilotUI.SetActive(false);
+        
+        Debug.Log($"[UIManager] Autopilot menu created: {mainBodies.Count} planets, {moons.Count} moons");
+    }
+    
+    private void CreateScrollbar(GameObject scrollViewGO, ScrollRect scroll)
+    {
+        GameObject scrollbarGO = new GameObject("Scrollbar");
+        scrollbarGO.transform.SetParent(scrollViewGO.transform, false);
+        RectTransform scrollbarRect = scrollbarGO.AddComponent<RectTransform>();
+        scrollbarRect.anchorMin = new Vector2(1, 0);
+        scrollbarRect.anchorMax = new Vector2(1, 1);
+        scrollbarRect.pivot = new Vector2(1, 0.5f);
+        scrollbarRect.anchoredPosition = Vector2.zero;
+        scrollbarRect.sizeDelta = new Vector2(20, 0);
+        
+        Image scrollbarBg = scrollbarGO.AddComponent<Image>();
+        scrollbarBg.color = new Color(0.15f, 0.15f, 0.25f, 0.8f);
+        
+        Scrollbar scrollbar = scrollbarGO.AddComponent<Scrollbar>();
+        scrollbar.direction = Scrollbar.Direction.BottomToTop;
+        
+        // Handle area
+        GameObject handleAreaGO = new GameObject("Handle Slide Area");
+        handleAreaGO.transform.SetParent(scrollbarGO.transform, false);
+        RectTransform handleAreaRect = handleAreaGO.AddComponent<RectTransform>();
+        handleAreaRect.anchorMin = Vector2.zero;
+        handleAreaRect.anchorMax = Vector2.one;
+        handleAreaRect.offsetMin = new Vector2(2, 2);
+        handleAreaRect.offsetMax = new Vector2(-2, -2);
+        
+        GameObject handleGO = new GameObject("Handle");
+        handleGO.transform.SetParent(handleAreaGO.transform, false);
+        RectTransform handleRect = handleGO.AddComponent<RectTransform>();
+        handleRect.anchorMin = Vector2.zero;
+        handleRect.anchorMax = Vector2.one;
+        handleRect.sizeDelta = Vector2.zero;
+        
+        Image handleImage = handleGO.AddComponent<Image>();
+        handleImage.color = new Color(0.4f, 0.6f, 0.9f, 0.9f);
+        
+        scrollbar.handleRect = handleRect;
+        scrollbar.targetGraphic = handleImage;
+        
+        ColorBlock scrollColors = scrollbar.colors;
+        scrollColors.normalColor = new Color(0.4f, 0.6f, 0.9f, 0.9f);
+        scrollColors.highlightedColor = new Color(0.5f, 0.7f, 1f, 1f);
+        scrollColors.pressedColor = new Color(0.3f, 0.5f, 0.8f, 1f);
+        scrollbar.colors = scrollColors;
+        
+        scroll.verticalScrollbar = scrollbar;
+        scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
+    }
+    
+    private void CreateAutopilotButton(GameObject parent, AutopilotBodyInfo body, int index, float buttonHeight, float spacing, bool isMoon)
+    {
+        GameObject buttonGO = new GameObject(body.name + "_Button");
+        buttonGO.transform.SetParent(parent.transform, false);
+        
+        RectTransform buttonRect = buttonGO.AddComponent<RectTransform>();
+        buttonRect.anchorMin = new Vector2(0, 1);
+        buttonRect.anchorMax = new Vector2(1, 1);
+        buttonRect.pivot = new Vector2(0.5f, 1);
+        buttonRect.anchoredPosition = new Vector2(0, -index * (buttonHeight + spacing));
+        buttonRect.sizeDelta = new Vector2(isMoon ? -40 : -20, buttonHeight);
+        
+        Image buttonImage = buttonGO.AddComponent<Image>();
+        Color btnColor = isMoon ? new Color(0.12f, 0.2f, 0.35f, 1f) : new Color(0.15f, 0.25f, 0.4f, 1f);
+        buttonImage.color = btnColor;
+        
+        Button button = buttonGO.AddComponent<Button>();
+        button.targetGraphic = buttonImage;
+        ColorBlock colors = button.colors;
+        colors.normalColor = btnColor;
+        colors.highlightedColor = new Color(0.3f, 0.6f, 1f, 1f);
+        colors.pressedColor = new Color(0.1f, 0.3f, 0.6f, 1f);
+        colors.selectedColor = new Color(0.25f, 0.45f, 0.7f, 1f);
+        colors.colorMultiplier = 1f;
+        colors.fadeDuration = 0.15f;
+        button.colors = colors;
+        
+        AutopilotBodyInfo capturedBody = body;
+        button.onClick.AddListener(() => SelectAutopilotTarget(capturedBody));
+        
+        autopilotButtons.Add(button);
+        
+        // Button text
+        GameObject textGO = new GameObject("Text");
+        textGO.transform.SetParent(buttonGO.transform, false);
+        RectTransform textRect = textGO.AddComponent<RectTransform>();
+        textRect.anchorMin = Vector2.zero;
+        textRect.anchorMax = Vector2.one;
+        textRect.sizeDelta = Vector2.zero;
+        textRect.offsetMin = new Vector2(10, 0);
+        textRect.offsetMax = Vector2.zero;
+        
+        TextMeshProUGUI btnText = textGO.AddComponent<TextMeshProUGUI>();
+        btnText.text = (isMoon ? "  " : "") + body.name;
+        if (labelFont != null) btnText.font = labelFont;
+        btnText.fontSize = isMoon ? 20 : 24;
+        btnText.color = isMoon ? new Color(0.8f, 0.9f, 1f, 1f) : Color.white;
+        btnText.alignment = TextAlignmentOptions.Left;
+    }
+    
+    private void CreateMoonsCategoryButton(GameObject parent, int index, float buttonHeight, float spacing)
+    {
+        GameObject buttonGO = new GameObject("Moons_Category");
+        buttonGO.transform.SetParent(parent.transform, false);
+        
+        RectTransform buttonRect = buttonGO.AddComponent<RectTransform>();
+        buttonRect.anchorMin = new Vector2(0, 1);
+        buttonRect.anchorMax = new Vector2(1, 1);
+        buttonRect.pivot = new Vector2(0.5f, 1);
+        buttonRect.anchoredPosition = new Vector2(0, -index * (buttonHeight + spacing));
+        buttonRect.sizeDelta = new Vector2(-20, buttonHeight);
+        
+        Image buttonImage = buttonGO.AddComponent<Image>();
+        buttonImage.color = new Color(0.2f, 0.15f, 0.3f, 1f);
+        
+        Button button = buttonGO.AddComponent<Button>();
+        button.targetGraphic = buttonImage;
+        ColorBlock colors = button.colors;
+        colors.normalColor = new Color(0.2f, 0.15f, 0.3f, 1f);
+        colors.highlightedColor = new Color(0.35f, 0.25f, 0.5f, 1f);
+        colors.pressedColor = new Color(0.15f, 0.1f, 0.25f, 1f);
+        colors.selectedColor = new Color(0.25f, 0.2f, 0.4f, 1f);
+        colors.colorMultiplier = 1f;
+        colors.fadeDuration = 0.15f;
+        button.colors = colors;
+        
+        button.onClick.AddListener(ToggleMoonsCategory);
+        
+        // Button text with arrow
+        GameObject textGO = new GameObject("Text");
+        textGO.transform.SetParent(buttonGO.transform, false);
+        RectTransform textRect = textGO.AddComponent<RectTransform>();
+        textRect.anchorMin = Vector2.zero;
+        textRect.anchorMax = Vector2.one;
+        textRect.sizeDelta = Vector2.zero;
+        textRect.offsetMin = new Vector2(10, 0);
+        textRect.offsetMax = Vector2.zero;
+        
+        TextMeshProUGUI btnText = textGO.AddComponent<TextMeshProUGUI>();
+        btnText.text = "▸ Moons";
+        if (labelFont != null) btnText.font = labelFont;
+        btnText.fontSize = 24;
+        btnText.color = new Color(0.9f, 0.8f, 1f, 1f);
+        btnText.alignment = TextAlignmentOptions.Left;
+    }
+    
+    private void ToggleMoonsCategory()
+    {
+        moonsExpanded = !moonsExpanded;
+        
+        if (moonsContainer != null)
+        {
+            moonsContainer.SetActive(moonsExpanded);
+            
+            // Update arrow in category button
+            foreach (Transform child in autopilotContentRect)
+            {
+                if (child.name == "Moons_Category")
+                {
+                    TextMeshProUGUI txt = child.GetComponentInChildren<TextMeshProUGUI>();
+                    if (txt != null)
+                    {
+                        txt.text = moonsExpanded ? "▾ Moons" : "▸ Moons";
+                    }
+                    break;
+                }
+            }
+            
+            // Recalculate content size
+            float buttonHeight = 50f;
+            float spacing = 8f;
+            
+            int mainCount = 0;
+            int moonCount = 0;
+            foreach (var body in menuBodies)
+            {
+                if (body.isMoon) moonCount++;
+                else mainCount++;
+            }
+            
+            int visibleCount = mainCount + 1; // +1 for moons category header
+            if (moonsExpanded)
+            {
+                visibleCount += moonCount;
+            }
+            
+            autopilotContentRect.sizeDelta = new Vector2(0, visibleCount * (buttonHeight + spacing));
+            
+            // Reposition moons container
+            if (moonsExpanded && moonsContainer != null)
+            {
+                RectTransform moonsRect = moonsContainer.GetComponent<RectTransform>();
+                moonsRect.anchoredPosition = new Vector2(0, -(mainCount + 1) * (buttonHeight + spacing));
+            }
+        }
+    }
+    
+    private void CreateCancelButton()
+    {
+        GameObject cancelGO = new GameObject("CancelButton");
+        cancelGO.transform.SetParent(autopilotUI.transform, false);
+        RectTransform cancelRect = cancelGO.AddComponent<RectTransform>();
+        cancelRect.anchorMin = new Vector2(0.5f, 0);
+        cancelRect.anchorMax = new Vector2(0.5f, 0);
+        cancelRect.pivot = new Vector2(0.5f, 0);
+        cancelRect.anchoredPosition = new Vector2(0, 15);
+        cancelRect.sizeDelta = new Vector2(180, 50);
+        
+        Image cancelImage = cancelGO.AddComponent<Image>();
+        cancelImage.color = new Color(0.5f, 0.2f, 0.2f, 1f);
+        
+        Button cancelBtn = cancelGO.AddComponent<Button>();
+        cancelBtn.targetGraphic = cancelImage;
+        ColorBlock cancelColors = cancelBtn.colors;
+        cancelColors.normalColor = new Color(0.5f, 0.2f, 0.2f, 1f);
+        cancelColors.highlightedColor = new Color(0.8f, 0.3f, 0.3f, 1f);
+        cancelColors.pressedColor = new Color(0.3f, 0.1f, 0.1f, 1f);
+        cancelColors.selectedColor = new Color(0.6f, 0.25f, 0.25f, 1f);
+        cancelColors.fadeDuration = 0.15f;
+        cancelBtn.colors = cancelColors;
+        cancelBtn.onClick.AddListener(() => ToggleAutopilotMenu());
+        
+        GameObject cancelTextGO = new GameObject("Text");
+        cancelTextGO.transform.SetParent(cancelGO.transform, false);
+        RectTransform cancelTextRect = cancelTextGO.AddComponent<RectTransform>();
+        cancelTextRect.anchorMin = Vector2.zero;
+        cancelTextRect.anchorMax = Vector2.one;
+        cancelTextRect.sizeDelta = Vector2.zero;
+        
+        TextMeshProUGUI cancelText = cancelTextGO.AddComponent<TextMeshProUGUI>();
+        cancelText.text = "Cancel";
+        if (labelFont != null) cancelText.font = labelFont;
+        cancelText.fontSize = 24;
+        cancelText.color = Color.white;
+        cancelText.alignment = TextAlignmentOptions.Center;
+    }
+    
+    /// <summary>
+    /// Toggles the autopilot menu visibility.
+    /// </summary>
+    /// <param name="forceClose">If true, force close the menu (used when autopilot is cancelled)</param>
+    public void ToggleAutopilotMenu(bool forceClose = false)
+    {
+        if (autopilotUI == null) return;
+        
+        if (forceClose)
+        {
+            autopilotMenuOpen = false;
+            autopilotUI.SetActive(false);
+            IsMenuOpen = false;
+            OnAutopilotCancelled?.Invoke();
+            return;
+        }
+        
+        // Mutual exclusion: Close Planet Info if open
+        if (planetInfoVisible)
+        {
+            HidePlanetInfo();
+        }
+        
+        autopilotMenuOpen = !autopilotMenuOpen;
+        autopilotUI.SetActive(autopilotMenuOpen);
+        IsMenuOpen = autopilotMenuOpen;
+        
+        // Reset selection when opening
+        if (autopilotMenuOpen)
+        {
+            menuSelectedIndex = 0;
+            UpdateMenuSelectionHighlight();
+        }
+        
+        OnAutopilotMenuToggled?.Invoke();
+    }
+    
+    /// <summary>
+    /// Shows the autopilot menu.
+    /// </summary>
+    public void ShowAutopilotMenu()
+    {
+        if (autopilotUI == null) return;
+        
+        if (planetInfoVisible)
+        {
+            HidePlanetInfo();
+        }
+        
+        autopilotMenuOpen = true;
+        autopilotUI.SetActive(true);
+        IsMenuOpen = true;
+        menuSelectedIndex = 0;
+        UpdateMenuSelectionHighlight();
+    }
+    
+    /// <summary>
+    /// Hides the autopilot menu.
+    /// </summary>
+    public void HideAutopilotMenu()
+    {
+        if (autopilotUI == null) return;
+        
+        autopilotMenuOpen = false;
+        autopilotUI.SetActive(false);
+        IsMenuOpen = false;
+    }
+    
+    private void SelectAutopilotTarget(AutopilotBodyInfo body)
+    {
+        // Close the menu
+        autopilotMenuOpen = false;
+        IsMenuOpen = false;
+        if (autopilotUI != null)
+            autopilotUI.SetActive(false);
+        
+        // Notify listeners
+        OnAutopilotTargetSelected?.Invoke(body);
+        
+        Debug.Log($"[UIManager] Autopilot destination selected: {body.name}");
+    }
+    
+    /// <summary>
+    /// Updates VR menu navigation. Call from Update() when menu is open.
+    /// </summary>
+    /// <param name="scrollInput">Scroll input value (-1 to 1)</param>
+    /// <param name="selectPressed">Whether the select button was pressed this frame</param>
+    public void UpdateVRMenuNavigation(float scrollInput, bool selectPressed)
+    {
+        if (!autopilotMenuOpen || menuSelectableBodies.Count == 0) return;
+        
+        // Decrease scroll cooldown
+        if (menuScrollCooldown > 0)
+        {
+            menuScrollCooldown -= Time.deltaTime;
+        }
+        
+        // Process scroll input
+        if (menuScrollCooldown <= 0 && Mathf.Abs(scrollInput) > 0.5f)
+        {
+            int previousIndex = menuSelectedIndex;
+            
+            if (scrollInput > 0.5f)
+            {
+                menuSelectedIndex = Mathf.Max(0, menuSelectedIndex - 1);
+            }
+            else if (scrollInput < -0.5f)
+            {
+                menuSelectedIndex = Mathf.Min(menuSelectableBodies.Count - 1, menuSelectedIndex + 1);
+            }
+            
+            if (menuSelectedIndex != previousIndex)
+            {
+                menuScrollCooldown = MENU_SCROLL_DELAY;
+                UpdateMenuSelectionHighlight();
+            }
+        }
+        
+        // Confirm selection
+        if (selectPressed && menuSelectedIndex >= 0 && menuSelectedIndex < menuSelectableBodies.Count)
+        {
+            SelectAutopilotTarget(menuSelectableBodies[menuSelectedIndex]);
+        }
+    }
+    
+    private void UpdateMenuSelectionHighlight()
+    {
+        // Update visual highlight on all buttons
+        for (int i = 0; i < autopilotButtons.Count && i < menuSelectableBodies.Count; i++)
+        {
+            Button btn = autopilotButtons[i];
+            if (btn == null) continue;
+            
+            Image btnImage = btn.GetComponent<Image>();
+            if (btnImage != null)
+            {
+                if (i == menuSelectedIndex)
+                {
+                    btnImage.color = new Color(0.3f, 0.6f, 1f, 1f); // Highlighted
+                }
+                else
+                {
+                    btnImage.color = new Color(0.15f, 0.25f, 0.4f, 1f); // Normal
+                }
+            }
+        }
+        
+        // Scroll list to keep selection visible
+        if (autopilotContentRect != null && menuSelectedIndex >= 0)
+        {
+            float buttonHeight = 50f;
+            float spacing = 8f;
+            float itemHeight = buttonHeight + spacing;
+            float scrollPosition = menuSelectedIndex * itemHeight;
+            
+            ScrollRect scrollRect = autopilotUI?.GetComponentInChildren<ScrollRect>();
+            if (scrollRect != null)
+            {
+                float contentHeight = autopilotContentRect.sizeDelta.y;
+                float viewportHeight = scrollRect.viewport.rect.height;
+                
+                if (contentHeight > viewportHeight)
+                {
+                    float normalizedPosition = 1f - (scrollPosition / (contentHeight - viewportHeight));
+                    scrollRect.verticalNormalizedPosition = Mathf.Clamp01(normalizedPosition);
+                }
+            }
         }
     }
 }

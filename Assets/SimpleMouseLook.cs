@@ -56,7 +56,7 @@ public class SimpleMouseLook : MonoBehaviour
     private void UpdateCursorState()
     {
         // Check if a UI menu is open
-        bool menuOpen = SolarSystemParallaxManager.IsMenuOpen;
+        bool menuOpen = SolarSystemUIManager.IsMenuOpen;
         
         if (lockCursor && !menuOpen)
         {
@@ -76,7 +76,7 @@ public class SimpleMouseLook : MonoBehaviour
         UpdateCursorState();
         
         // Skip mouse look when menu is open
-        if (SolarSystemParallaxManager.IsMenuOpen)
+        if (SolarSystemUIManager.IsMenuOpen)
         {
             return;
         }
