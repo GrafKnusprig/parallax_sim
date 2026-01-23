@@ -63,10 +63,6 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [SerializeField] private float lensingImageOpacity = 0.6f;
     [Header("Black Hole Lensing Torus")]
     [SerializeField] private Material lensingRefractionMaterial;
-    [Tooltip("Radius of the lensing torus relative to Schwarzchild radius")]
-    [SerializeField] private float lensingTorusRadius = 3.0f;
-    [Tooltip("Thickness of the lensing torus tube")]
-    [SerializeField] private float lensingTorusThickness = 2.0f;
 
     [Header("Asteroids")]
     [SerializeField] private bool enableAsteroids = true;
@@ -769,7 +765,6 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 // Let's assume Torus is created in XZ plane.
                 // We want the circle to be perpendicular to the view vector.
                 body.lensingTorus.transform.LookAt(cam.transform);
-                body.lensingTorus.transform.Rotate(90f, 0f, 0f);
             }
         }
     }
@@ -2041,45 +2036,38 @@ public class SolarSystemParallaxManager : MonoBehaviour
         MeshFilter mf = torus.AddComponent<MeshFilter>();
         MeshRenderer mr = torus.AddComponent<MeshRenderer>();
         
-        // Scale parameters: radiusKm is the "size" of the black hole proxy (Schwarzschild radius approx)
-        // lensingTorusRadius is multiplier
-        // Scale unit is 1 = 1 radiusKm
+        // Dimensions per user request:
+        // "inner radius should be the radius of the black hole" -> 1.0
+        // "z: radius of accretion disc" -> Thickness = accretionDiscOuterRadius
+        // "x and y 1,5 times that size" -> Outer Radius = 1.5 * accretionDiscOuterRadius
         
-        float mainRadius = lensingTorusRadius * planetRadiusKm; // This would be in km... wait.
-        // The CreateSphere uses radius 0.5 (diameter 1) scaled by transform?
-        // No, CreatePrimitive sphere diameter is 1.
-        // body.proxy scale is likely 1 initially or handled?
+        float innerRadius = 1.0f;
+        float outerRadius = accretionDiscOuterRadius * 1.5f;
+        float thickness = accretionDiscOuterRadius;
         
-        // Wait, body.proxy is created with radiusKm? LoadBodiesFromCsv:
-        // if highQuality: CreateHighQualitySphere -> CreateIcosphereMesh creates unit sphere (radius 1).
-        // Then proxy.transform.localScale = Vector3.one;
-        // The actual scaling happens in UpdateBodyProxies.
-        // So the mesh should be created relative to "unit" size if we want it to scale with the body.
-        
-        // Let's create a unit-relative torus.
-        // If body radius is 1 unit (in local space of proxy? No proxy is scaled).
-        // If we attach to proxy, and proxy is scaled to RadiusKm, then Torus with radius 1 = RadiusKm.
-        
-        float r = lensingTorusRadius; // e.g. 3.0 times the body radius
-        float tube = lensingTorusThickness; // e.g. 2.0 times body radius? Or absolute? 
-        // Relative is better.
-        
-        Mesh mesh = CreateTorusMesh(lensingTorusRadius, lensingTorusThickness, 64, 32);
+        Mesh mesh = CreateLensTorusMesh(innerRadius, outerRadius, thickness, 64, 32);
         mf.mesh = mesh;
         mr.sharedMaterial = lensingRefractionMaterial;
+        
+        // No scaling needed, mesh is generated to size
+        torus.transform.localScale = Vector3.one;
         
         body.lensingTorus = torus;
     }
     
-    private Mesh CreateTorusMesh(float radius, float tube, int radialSegments, int tubularSegments)
+    private Mesh CreateLensTorusMesh(float innerRadius, float outerRadius, float thickness, int radialSegments, int tubularSegments)
     {
         Mesh mesh = new Mesh();
-        mesh.name = "Torus";
+        mesh.name = "LensTorus";
 
         Vector3[] vertices = new Vector3[(radialSegments + 1) * (tubularSegments + 1)];
         Vector3[] normals = new Vector3[vertices.Length];
         Vector2[] uvs = new Vector2[vertices.Length];
         int[] triangles = new int[radialSegments * tubularSegments * 6];
+
+        float mainRadius = (innerRadius + outerRadius) * 0.5f;
+        float tubeWidth = (outerRadius - innerRadius) * 0.5f;
+        float tubeHeight = thickness * 0.5f;
 
         for (int j = 0; j <= radialSegments; j++)
         {
@@ -2088,19 +2076,42 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 float u = (float)i / tubularSegments * Mathf.PI * 2.0f;
                 float v = (float)j / radialSegments * Mathf.PI * 2.0f;
 
-                float centerX = radius * Mathf.Cos(v);
-                float centerZ = radius * Mathf.Sin(v);
-                float centerY = 0.0f;
-
-                float x = (radius + tube * Mathf.Cos(u)) * Mathf.Cos(v);
-                float z = (radius + tube * Mathf.Cos(u)) * Mathf.Sin(v);
-                float y = tube * Mathf.Sin(u);
+                // Elliptical Cross Section:
+                // Width derived from tubeWidth
+                // Height derived from tubeHeight
+                
+                float cx = Mathf.Cos(v);
+                float cy = Mathf.Sin(v);
+                
+                // Tube Offset from main radius
+                float tubeXOffset = tubeWidth * Mathf.Cos(u);
+                float tubeZOffset = tubeHeight * Mathf.Sin(u);
+                
+                // Vertex Position
+                float x = (mainRadius + tubeXOffset) * cx;
+                float y = (mainRadius + tubeXOffset) * cy;
+                float z = tubeZOffset;
 
                 int index = j * (tubularSegments + 1) + i;
                 vertices[index] = new Vector3(x, y, z);
                 
-                Vector3 center = new Vector3(centerX, centerY, centerZ);
-                normals[index] = (vertices[index] - center).normalized;
+                // Normal Calculation (Ellipsoidal Normal)
+                // Tangent vector along tube ring (dT/du)
+                float dxdu = -tubeWidth * Mathf.Sin(u) * cx;
+                float dydu = -tubeWidth * Mathf.Sin(u) * cy;
+                float dzdu = tubeHeight * Mathf.Cos(u);
+                Vector3 tangentU = new Vector3(dxdu, dydu, dzdu).normalized;
+                
+                // Tangent vector along main ring (dT/dv)
+                float dxdv = -(mainRadius + tubeXOffset) * cy;
+                float dydv = (mainRadius + tubeXOffset) * cx;
+                float dzdv = 0;
+                Vector3 tangentV = new Vector3(dxdv, dydv, dzdv).normalized;
+                
+                // Normal is cross product
+                normals[index] = Vector3.Cross(tangentV, tangentU).normalized; // Or U x V? Standard is U corresponds to "wrapping"
+                // Check orientation: U goes 0..2PI. V goes 0..2PI.
+                // Standard torus normals point OUT.
                 
                 uvs[index] = new Vector2((float)j / radialSegments, (float)i / tubularSegments);
             }

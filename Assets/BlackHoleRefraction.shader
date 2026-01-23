@@ -33,6 +33,7 @@ Shader "Custom/BlackHoleRefraction"
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareOpaqueTexture.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
 
             struct Attributes
             {
@@ -53,6 +54,7 @@ Shader "Custom/BlackHoleRefraction"
             float4 _Color;
             float  _Distortion;
             float  _SmoothEdges;
+            float  _VisibilityUVLimit; // New property
             CBUFFER_END
 
             Varyings vert (Attributes IN)
@@ -70,43 +72,37 @@ Shader "Custom/BlackHoleRefraction"
 
             half4 frag (Varyings IN) : SV_Target
             {
+                // 1. Transparency Mask based on Radial UV (IN.uv.y)
+                // We physically generated the mesh larger (1.5x) but only want to render/refract
+                // the inner part covering the accretion disc.
+                // If uv.y is beyond the limit, we are in the "Star Field" zone -> Invisible.
+                
+                float limit = _VisibilityUVLimit; 
+                // Default to 1.0 if not set (safe fallback) but ideally set by script.
+                if (limit <= 0.001) limit = 1.0; 
+                
+                // Soft mask for nicer edge
+                float mask = 1.0 - smoothstep(limit - 0.05, limit, IN.uv.y);
+                
+                if (mask < 0.01) discard; // Optimization
+                
+                // 2. Refraction Logic
                 float2 screenUV = IN.screenPos.xy / IN.screenPos.w;
-                
-                // Calculate distortion offset based on normal
-                // We project the normal to view space to get XY distortion direction
-                float3 normalVS = TransformWorldToViewDir(IN.normalWS); // Actually gives ViewDir? No, we need View Space Normal.
-                // TransformWorldToView(dir) transforms direction.
-                // TransformWorldToViewNormal transforms normal.
-                
-                // Note: URP doesn't always expose TransformWorldToViewNormal easily without full matrix.
-                // Let's approximate: simple view space normal.
-                // But wait, the previous code snippet used `float2 offset = nor * ...`. 
-                // That was object space or tangent space normal from texture. 
-                // Here we operate on vertex normals of a torus.
-                
-                // We want the torus to act like a lens. The normal determines the bend.
-                
-                // GrabTexelSize is needed for pixel-perfect offsets, but we can just use UV scale.
+                float3 normalVS = TransformWorldToViewDir(IN.normalWS); 
                 float2 offset = normalVS.xy * _Distortion * 0.01; 
                 
-                // Sample Scene Color
-                float3 sceneColor = SampleSceneColor(screenUV + offset);
+                // Apply Mask to Distortion Strength as well? 
+                // Yes, unwanted distortion at the fade edge looks bad.
+                float2 finalOffset = offset * mask;
                 
-                // Soft edges: fade out alpha at UV edges for the torus if desired
-                float alpha = _Color.a;
+                float3 sceneColor = SampleSceneColor(screenUV + finalOffset);
                 
-                if (_SmoothEdges > 0.5)
-                {
-                    // Assuming UV.v goes around the tube cross-section (0..1)
-                    // We want to fade at 0 and 1? Or maybe just simple fresnel-like falloff?
-                    // Let's rely on the mesh UVs if we had them correctly.
-                    // For now, let's just make it fully visible but maybe fresnel-based alpha?
-                    float NdotV = saturate(dot(IN.normalWS, normalize(GetCameraPositionWS() - IN.positionHCS.xyz))); 
-                    // Wait, positionHCS is clip space. Recalculate world pos if needed? 
-                    // Let's just return solid alpha for now as standard glass usually implies full refraction.
-                }
-
-                return half4(sceneColor * _Color.rgb, alpha);
+                // 3. Output
+                // We want the torus itself to be transparent (alpha * mask).
+                // Actually, if mask is 0, we discared.
+                // The visible part applies refraction.
+                
+                return half4(sceneColor * _Color.rgb, _Color.a * mask);
             }
             ENDHLSL
         }
