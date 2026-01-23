@@ -3,6 +3,7 @@ Shader "Custom/PlanetShadow"
     Properties
     {
         _BaseMap("Base Map", 2D) = "white" {}
+        _SecondTex("Second Texture", 2D) = "black" {} // Default to black for no effect
         _SunDirection("Sun Direction", Vector) = (1, 0, 0, 0)
         _AmbientColor("Ambient Color", Color) = (0.1, 0.1, 0.1, 1)
         _ShadowStrength("Shadow Strength", Range(0, 1)) = 0.8
@@ -58,6 +59,7 @@ Shader "Custom/PlanetShadow"
             CBUFFER_END
 
             TEXTURE2D(_BaseMap);
+            TEXTURE2D(_SecondTex);
             SAMPLER(sampler_BaseMap);
 
             Varyings vert(Attributes IN)
@@ -72,6 +74,13 @@ Shader "Custom/PlanetShadow"
             half4 frag(Varyings IN) : SV_Target
             {
                 half4 baseColor = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, IN.uv);
+                half4 secondColor = SAMPLE_TEXTURE2D(_SecondTex, sampler_BaseMap, IN.uv);
+
+                // Apply Screen Blend Mode: 1 - (1 - Base) * (1 - Blend)
+                // If secondColor is black (default), this results in baseColor.
+                half3 blendedColor = 1.0 - (1.0 - baseColor.rgb) * (1.0 - secondColor.rgb);
+                
+                baseColor.rgb = blendedColor;
 
                 float3 normal = normalize(IN.normalWS);
                 
@@ -85,26 +94,7 @@ Shader "Custom/PlanetShadow"
                 float NdotL = max(0, dot(normal, lightDir));
 
                 // Apply Shadow and Ambient
-                // When NdotL is 1 (facing sun), we want full color.
-                // When NdotL is 0 (facing away), we want ambient + (1-shadowStrength) * color?
-                // Simple model: LightIntensity = Ambient + NdotL
-                
-                float3 lighting = _AmbientColor.rgb + (NdotL * (1.0 - _ShadowStrength * 0.0)) + (1.0 - _ShadowStrength) * (1.0 - NdotL) * 0.1; 
-                // Let's refine:
-                // Shadowed area should be dark.
-                // Light area should be bright.
-                
-                float lightIntensity = NdotL;
-                
-                // We want:
-                // Value = Ambient + Light * (1 - ShadowStrength if shadowed) -- wait shadows are implicit here by N dot L
-                
-                // Better approach:
-                // Direct Light = max(0, dot(N, L))
-                // Final = Ambient + Direct * BaseColor
-                
-                // However user requested "shoud have a shadow". That implies the dark side is dark.
-                // Base NdotL gives 0 on the back.
+                float3 lightIntensity = NdotL;
                 
                 float3 finalColor = baseColor.rgb * (_AmbientColor.rgb + lightIntensity);
 

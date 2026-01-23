@@ -165,6 +165,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     
     // Planet-specific textures and materials
     private Dictionary<long, Texture2D> planetTextures = new Dictionary<long, Texture2D>();
+    private Dictionary<long, Texture2D> planetAtmosphereTextures = new Dictionary<long, Texture2D>();
     private Dictionary<long, Material> planetMaterials = new Dictionary<long, Material>(); // For stars with custom materials
     private Dictionary<long, bool> bodyEmitting = new Dictionary<long, bool>(); // Whether body emits light
     private Dictionary<long, long?> bodyIlluminatedBy = new Dictionary<long, long?>(); // Which body illuminates this one
@@ -1339,6 +1340,13 @@ public class SolarSystemParallaxManager : MonoBehaviour
                     {
                         materialToUse.SetTexture("_BaseMap", textureToUse);
                         materialToUse.SetTexture("_MainTex", textureToUse); // Legacy shader support
+
+                        // Apply atmosphere texture if available
+                        if (planetAtmosphereTextures.TryGetValue(naifId, out Texture2D atmTexture))
+                        {
+                            materialToUse.SetTexture("_SecondTex", atmTexture);
+                            Debug.Log($"Applied atmosphere to {name}");
+                        }
                         
                         // If this body emits light, make it glow
                         if (isEmitting)
@@ -2235,6 +2243,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
                     
                     // Extract properties
                     string assetPath = ExtractJsonStringValue(valuePart, "path");
+                    string atmospherePath = ExtractJsonStringValue(valuePart, "atmosphere");
                     bool emitting = ExtractJsonBoolValue(valuePart, "emitting");
                     long? illuminatedBy = ExtractJsonLongValue(valuePart, "illuminated_by");
                     
@@ -2290,6 +2299,29 @@ public class SolarSystemParallaxManager : MonoBehaviour
                         else
                         {
                             Debug.LogWarning($"Could not load texture at path: {assetPath} for NAIF ID {naifId}");
+                        }
+                    }
+
+                    // Load atmosphere texture if present
+                    if (!string.IsNullOrEmpty(atmospherePath))
+                    {
+                        Texture2D atmTexture = null;
+#if UNITY_EDITOR
+                        atmTexture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(atmospherePath);
+#else
+                        string atmResourcesPath = atmospherePath.Replace("Assets/", "");
+                        int lastDotAtm = atmResourcesPath.LastIndexOf('.');
+                        if (lastDotAtm > 0) atmResourcesPath = atmResourcesPath.Substring(0, lastDotAtm);
+                        atmTexture = Resources.Load<Texture2D>(atmResourcesPath);
+#endif
+                        if (atmTexture != null)
+                        {
+                            planetAtmosphereTextures[naifId] = atmTexture;
+                            Debug.Log($"Loaded atmosphere texture for NAIF ID {naifId}: {atmospherePath}");
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"Could not load atmosphere texture at path: {atmospherePath} for NAIF ID {naifId}");
                         }
                     }
                 }
