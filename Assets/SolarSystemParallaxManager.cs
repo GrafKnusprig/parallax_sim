@@ -61,6 +61,12 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [SerializeField] private float lensingVerticalOffset = 0.8f;
     [Tooltip("Opacity multiplier for lensed images")]
     [SerializeField] private float lensingImageOpacity = 0.6f;
+    [Header("Black Hole Lensing Torus")]
+    [SerializeField] private Material lensingRefractionMaterial;
+    [Tooltip("Radius of the lensing torus relative to Schwarzchild radius")]
+    [SerializeField] private float lensingTorusRadius = 3.0f;
+    [Tooltip("Thickness of the lensing torus tube")]
+    [SerializeField] private float lensingTorusThickness = 2.0f;
 
     [Header("Asteroids")]
     [SerializeField] private bool enableAsteroids = true;
@@ -247,6 +253,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         // Ring system (for Saturn, etc.)
         public GameObject ringObject;
+        
+        // Lensing Torus (for Black Hole)
+        public GameObject lensingTorus;
     }
     
     // Planet data from CSV dataset
@@ -734,7 +743,35 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         // Stellar manager handles its own update based on playerRealPosAu
         
+        UpdateBlackHoleLensing();
+        
         UpdatePlanetStencilMaterials();
+    }
+    
+    private void UpdateBlackHoleLensing()
+    {
+        Camera cam = GetActiveCamera();
+        if (cam == null) return;
+        
+        foreach (var body in bodies)
+        {
+            if (body.lensingTorus != null)
+            {
+                // Billboard: Look at camera
+                body.lensingTorus.transform.LookAt(cam.transform);
+                // Adjust rotation if needed (Torus usually lies on XZ plane, LookAt aligns Z axis)
+                // If Torus is flat on XZ, LookAt makes top face camera. That's usually what we want for a "ring" facing us.
+                // Actually, LookAt aligns +Z to face target.
+                // If Torus is built in XZ plane, we want its "face" (Y axis) to point at camera?
+                // Standard Unity LookAt makes +Z point at target.
+                // If Torus is XZ, we want to rotate 90 deg around X? 
+                
+                // Let's assume Torus is created in XZ plane.
+                // We want the circle to be perpendicular to the view vector.
+                body.lensingTorus.transform.LookAt(cam.transform);
+                body.lensingTorus.transform.Rotate(90f, 0f, 0f);
+            }
+        }
     }
     
     private void UpdatePlanetStencilMaterials()
@@ -1346,6 +1383,13 @@ public class SolarSystemParallaxManager : MonoBehaviour
                     if (bodyInst.ringObject != null)
                         bodyInst.ringRenderer = bodyInst.ringObject.GetComponent<Renderer>();
                     Debug.Log($"Created accretion disc for {name} (NAIF ID {naifId})");
+                }
+                
+                // Create Lensing Torus
+                if (lensingRefractionMaterial != null)
+                {
+                    CreateLensingTorus(bodyInst, radiusKm);
+                    Debug.Log($"Created lensing torus for {name}");
                 }
             }
 
@@ -1988,6 +2032,112 @@ public class SolarSystemParallaxManager : MonoBehaviour
         return mesh;
     }
     
+    private void CreateLensingTorus(BodyInstance body, float planetRadiusKm)
+    {
+        GameObject torus = new GameObject("LensingTorus");
+        torus.transform.SetParent(body.proxy, false);
+        torus.transform.localPosition = Vector3.zero;
+        
+        MeshFilter mf = torus.AddComponent<MeshFilter>();
+        MeshRenderer mr = torus.AddComponent<MeshRenderer>();
+        
+        // Scale parameters: radiusKm is the "size" of the black hole proxy (Schwarzschild radius approx)
+        // lensingTorusRadius is multiplier
+        // Scale unit is 1 = 1 radiusKm
+        
+        float mainRadius = lensingTorusRadius * planetRadiusKm; // This would be in km... wait.
+        // The CreateSphere uses radius 0.5 (diameter 1) scaled by transform?
+        // No, CreatePrimitive sphere diameter is 1.
+        // body.proxy scale is likely 1 initially or handled?
+        
+        // Wait, body.proxy is created with radiusKm? LoadBodiesFromCsv:
+        // if highQuality: CreateHighQualitySphere -> CreateIcosphereMesh creates unit sphere (radius 1).
+        // Then proxy.transform.localScale = Vector3.one;
+        // The actual scaling happens in UpdateBodyProxies.
+        // So the mesh should be created relative to "unit" size if we want it to scale with the body.
+        
+        // Let's create a unit-relative torus.
+        // If body radius is 1 unit (in local space of proxy? No proxy is scaled).
+        // If we attach to proxy, and proxy is scaled to RadiusKm, then Torus with radius 1 = RadiusKm.
+        
+        float r = lensingTorusRadius; // e.g. 3.0 times the body radius
+        float tube = lensingTorusThickness; // e.g. 2.0 times body radius? Or absolute? 
+        // Relative is better.
+        
+        Mesh mesh = CreateTorusMesh(lensingTorusRadius, lensingTorusThickness, 64, 32);
+        mf.mesh = mesh;
+        mr.sharedMaterial = lensingRefractionMaterial;
+        
+        body.lensingTorus = torus;
+    }
+    
+    private Mesh CreateTorusMesh(float radius, float tube, int radialSegments, int tubularSegments)
+    {
+        Mesh mesh = new Mesh();
+        mesh.name = "Torus";
+
+        Vector3[] vertices = new Vector3[(radialSegments + 1) * (tubularSegments + 1)];
+        Vector3[] normals = new Vector3[vertices.Length];
+        Vector2[] uvs = new Vector2[vertices.Length];
+        int[] triangles = new int[radialSegments * tubularSegments * 6];
+
+        for (int j = 0; j <= radialSegments; j++)
+        {
+            for (int i = 0; i <= tubularSegments; i++)
+            {
+                float u = (float)i / tubularSegments * Mathf.PI * 2.0f;
+                float v = (float)j / radialSegments * Mathf.PI * 2.0f;
+
+                float centerX = radius * Mathf.Cos(v);
+                float centerZ = radius * Mathf.Sin(v);
+                float centerY = 0.0f;
+
+                float x = (radius + tube * Mathf.Cos(u)) * Mathf.Cos(v);
+                float z = (radius + tube * Mathf.Cos(u)) * Mathf.Sin(v);
+                float y = tube * Mathf.Sin(u);
+
+                int index = j * (tubularSegments + 1) + i;
+                vertices[index] = new Vector3(x, y, z);
+                
+                Vector3 center = new Vector3(centerX, centerY, centerZ);
+                normals[index] = (vertices[index] - center).normalized;
+                
+                uvs[index] = new Vector2((float)j / radialSegments, (float)i / tubularSegments);
+            }
+        }
+
+        int t = 0;
+        for (int j = 0; j < radialSegments; j++)
+        {
+            for (int i = 0; i < tubularSegments; i++)
+            {
+                int nextI = i + 1;
+                int nextJ = j + 1;
+
+                int a = j * (tubularSegments + 1) + i;
+                int b = j * (tubularSegments + 1) + nextI;
+                int c = nextJ * (tubularSegments + 1) + i;
+                int d = nextJ * (tubularSegments + 1) + nextI;
+
+                triangles[t++] = a;
+                triangles[t++] = c;
+                triangles[t++] = b;
+
+                triangles[t++] = b;
+                triangles[t++] = c;
+                triangles[t++] = d;
+            }
+        }
+
+        mesh.vertices = vertices;
+        mesh.normals = normals;
+        mesh.uv = uvs;
+        mesh.triangles = triangles;
+        mesh.RecalculateBounds();
+
+        return mesh;
+    }
+
     private void LoadPlanetMaterials()
     {
         string path = Path.Combine(Application.streamingAssetsPath, planetMaterialsJsonFileName);
