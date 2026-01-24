@@ -68,6 +68,7 @@ public class SolarSystemUIManager : MonoBehaviour
     // Events for input notifications - ParallaxManager subscribes to respond to input
     public System.Action OnAutopilotTogglePressed;
     public System.Action OnPlanetInfoTogglePressed;
+    public System.Action OnOrbitTogglePressed;
     
     private void Awake()
     {
@@ -137,6 +138,14 @@ public class SolarSystemUIManager : MonoBehaviour
         if (planetInfoTogglePressed)
         {
             OnPlanetInfoTogglePressed?.Invoke();
+        }
+        
+        // Handle orbit toggle with O key
+        bool orbitTogglePressed = (Keyboard.current != null && Keyboard.current.oKey.wasPressedThisFrame);
+        
+        if (orbitTogglePressed)
+        {
+            OnOrbitTogglePressed?.Invoke();
         }
         
         // Handle VR menu navigation when autopilot menu is open

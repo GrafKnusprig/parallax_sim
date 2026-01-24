@@ -307,6 +307,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         // Subscribe to UIManager input events
         uiManager.OnAutopilotTogglePressed += HandleAutopilotToggle;
         uiManager.OnPlanetInfoTogglePressed += TogglePlanetInfo;
+        uiManager.OnOrbitTogglePressed += ToggleOrbit;
         
         // Create loading screen via UI manager (passing HUD reference for hiding during load)
         uiManager.CreateLoadingScreen(uiManager.HudUI);
@@ -467,7 +468,10 @@ public class SolarSystemParallaxManager : MonoBehaviour
         {
             UpdateAutopilot();
         }
-        
+        else if (IsOrbiting)
+        {
+            UpdateOrbitMovement();
+        }
         else if (uiManager != null && !uiManager.AutopilotMenuOpen && !uiManager.IsPlanetInfoVisible)
         {
             UpdatePlayerMovement();
@@ -475,10 +479,6 @@ public class SolarSystemParallaxManager : MonoBehaviour
         else if (uiManager == null)
         {
             UpdatePlayerMovement();
-        }
-        else if (IsOrbiting)
-        {
-            UpdateOrbitMovement();
         }
         
         // Check for origin shift (keep player near sector origin for precision)
@@ -2152,7 +2152,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         // Add autopilot status
         if (IsOrbiting && orbitTargetBody != null)
         {
-            hudText.text += $"\n\n[ORBIT] ⟳ Orbiting {orbitTargetBody.name}\nRadius: {orbitDistanceAu:F6} AU\nPress O to disengage";
+            uiManager.HudText.text += $"\n\n[ORBIT] ⟳ Orbiting {orbitTargetBody.name}\nRadius: {orbitDistanceAu:F6} AU\nPress O to disengage";
         }
         else if (autopilotActive && autopilotTarget != null)
         {
@@ -2175,7 +2175,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
             uiManager.HudText.text += "\n\nPress X for Autopilot";
             if (nearestPlanet != null)
             {
-                uiManager.HudText.text = $" | Press O to Orbit {nearestPlanet.name}";
+                uiManager.HudText.text += $" | Press O to Orbit {nearestPlanet.name}";
                 if (nearestPlanet.planetData != null)
                 {
                   uiManager.HudText.text += $" | Press I for info on {nearestPlanet.name}";
