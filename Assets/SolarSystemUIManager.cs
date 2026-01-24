@@ -912,9 +912,37 @@ public class SolarSystemUIManager : MonoBehaviour
         panelRect.anchoredPosition = Vector2.zero;
         panelRect.sizeDelta = new Vector2(500, 700);
         
-        // Add semi-transparent background
+        // === BACKGROUND PANEL === (Match HUD/Planet Info style)
         Image panelImage = autopilotUI.AddComponent<Image>();
-        panelImage.color = new Color(0.1f, 0.1f, 0.2f, 0.95f);
+        panelImage.color = new Color(0.02f, 0.05f, 0.12f, 0.85f); // Same as HUD background
+        
+        // === BORDER FRAME === (Match HUD style)
+        // Top border
+        CreateBorderEdge(autopilotUI.transform, "BorderTop", new Vector2(0, 1), new Vector2(1, 1), 
+            new Vector2(0, 0), new Vector2(0, -3), new Color(0.2f, 0.8f, 1f, 0.9f));
+        // Bottom border
+        CreateBorderEdge(autopilotUI.transform, "BorderBottom", new Vector2(0, 0), new Vector2(1, 0), 
+            new Vector2(0, 3), new Vector2(0, 0), new Color(0.2f, 0.8f, 1f, 0.9f));
+        // Left border
+        CreateBorderEdge(autopilotUI.transform, "BorderLeft", new Vector2(0, 0), new Vector2(0, 1), 
+            new Vector2(3, 0), new Vector2(0, 0), new Color(0.2f, 0.8f, 1f, 0.9f));
+        // Right border
+        CreateBorderEdge(autopilotUI.transform, "BorderRight", new Vector2(1, 0), new Vector2(1, 1), 
+            new Vector2(0, 0), new Vector2(-3, 0), new Color(0.2f, 0.8f, 1f, 0.9f));
+        
+        // === CORNER BRACKETS === (Match HUD style)
+        Color bracketColor = new Color(0.3f, 0.9f, 1f, 1f); // Bright cyan
+        float bracketSize = 30f;
+        float bracketThickness = 3f;
+        
+        // Top-left corner
+        CreateCornerBracket(autopilotUI.transform, "CornerTL", new Vector2(0, 1), bracketSize, bracketThickness, bracketColor, true, true);
+        // Top-right corner
+        CreateCornerBracket(autopilotUI.transform, "CornerTR", new Vector2(1, 1), bracketSize, bracketThickness, bracketColor, false, true);
+        // Bottom-left corner
+        CreateCornerBracket(autopilotUI.transform, "CornerBL", new Vector2(0, 0), bracketSize, bracketThickness, bracketColor, true, false);
+        // Bottom-right corner
+        CreateCornerBracket(autopilotUI.transform, "CornerBR", new Vector2(1, 0), bracketSize, bracketThickness, bracketColor, false, false);
         
         // Add title
         GameObject titleGO = new GameObject("Title");
@@ -930,8 +958,22 @@ public class SolarSystemUIManager : MonoBehaviour
         titleText.text = "AUTOPILOT - Select Destination";
         if (labelFont != null) titleText.font = labelFont;
         titleText.fontSize = 32;
-        titleText.color = Color.cyan;
+        titleText.fontStyle = FontStyles.Bold;
+        titleText.color = new Color(0.4f, 0.9f, 1f, 1f); // Match HUD header color
         titleText.alignment = TextAlignmentOptions.Center;
+        titleText.characterSpacing = 2f; // Add spacing like HUD header
+        
+        // === HEADER LINE === (Match HUD/Planet Info style)
+        GameObject headerLine = new GameObject("HeaderLine");
+        headerLine.transform.SetParent(autopilotUI.transform, false);
+        RectTransform headerLineRect = headerLine.AddComponent<RectTransform>();
+        headerLineRect.anchorMin = new Vector2(0, 1);
+        headerLineRect.anchorMax = new Vector2(1, 1);
+        headerLineRect.pivot = new Vector2(0.5f, 1);
+        headerLineRect.anchoredPosition = new Vector2(0, -80);
+        headerLineRect.sizeDelta = new Vector2(-30, 1);
+        Image headerLineImg = headerLine.AddComponent<Image>();
+        headerLineImg.color = new Color(0.2f, 0.6f, 0.8f, 0.5f);
         
         // Create scroll view for body list
         GameObject scrollViewGO = new GameObject("ScrollView");
@@ -939,8 +981,8 @@ public class SolarSystemUIManager : MonoBehaviour
         RectTransform scrollViewRect = scrollViewGO.AddComponent<RectTransform>();
         scrollViewRect.anchorMin = new Vector2(0, 0);
         scrollViewRect.anchorMax = new Vector2(1, 1);
-        scrollViewRect.offsetMin = new Vector2(15, 80);
-        scrollViewRect.offsetMax = new Vector2(-15, -70);
+        scrollViewRect.offsetMin = new Vector2(15, 60); // Bottom padding
+        scrollViewRect.offsetMax = new Vector2(-15, -90); // Top padding for header line + title
         
         ScrollRect scroll = scrollViewGO.AddComponent<ScrollRect>();
         scroll.horizontal = false;
@@ -1193,7 +1235,7 @@ public class SolarSystemUIManager : MonoBehaviour
         textRect.offsetMax = Vector2.zero;
         
         TextMeshProUGUI btnText = textGO.AddComponent<TextMeshProUGUI>();
-        btnText.text = "▸ Moons";
+        btnText.text = "[+] Moons";
         if (labelFont != null) btnText.font = labelFont;
         btnText.fontSize = 24;
         btnText.color = new Color(0.9f, 0.8f, 1f, 1f);
@@ -1216,7 +1258,7 @@ public class SolarSystemUIManager : MonoBehaviour
                     TextMeshProUGUI txt = child.GetComponentInChildren<TextMeshProUGUI>();
                     if (txt != null)
                     {
-                        txt.text = moonsExpanded ? "▾ Moons" : "▸ Moons";
+                        txt.text = moonsExpanded ? "[-] Moons" : "[+] Moons";
                     }
                     break;
                 }
@@ -1305,6 +1347,12 @@ public class SolarSystemUIManager : MonoBehaviour
             autopilotUI.SetActive(false);
             IsMenuOpen = false;
             OnAutopilotCancelled?.Invoke();
+            
+            // Show HUD again when force closing
+            if (hudUI != null && enableHUD)
+            {
+                hudUI.SetActive(true);
+            }
             return;
         }
         
@@ -1317,6 +1365,12 @@ public class SolarSystemUIManager : MonoBehaviour
         autopilotMenuOpen = !autopilotMenuOpen;
         autopilotUI.SetActive(autopilotMenuOpen);
         IsMenuOpen = autopilotMenuOpen;
+        
+        // Hide/show HUD to prevent overlap
+        if (hudUI != null && enableHUD)
+        {
+            hudUI.SetActive(!autopilotMenuOpen);
+        }
         
         // Reset selection when opening
         if (autopilotMenuOpen)
@@ -1345,6 +1399,12 @@ public class SolarSystemUIManager : MonoBehaviour
         IsMenuOpen = true;
         menuSelectedIndex = 0;
         UpdateMenuSelectionHighlight();
+        
+        // Hide HUD to prevent overlap
+        if (hudUI != null && enableHUD)
+        {
+            hudUI.SetActive(false);
+        }
     }
     
     /// <summary>
@@ -1357,6 +1417,12 @@ public class SolarSystemUIManager : MonoBehaviour
         autopilotMenuOpen = false;
         autopilotUI.SetActive(false);
         IsMenuOpen = false;
+        
+        // Show HUD again when closing autopilot menu
+        if (hudUI != null && enableHUD)
+        {
+            hudUI.SetActive(true);
+        }
     }
     
     private void SelectAutopilotTarget(AutopilotBodyInfo body)
@@ -1367,7 +1433,13 @@ public class SolarSystemUIManager : MonoBehaviour
         if (autopilotUI != null)
             autopilotUI.SetActive(false);
         
-        // Notify listeners
+        // Show HUD again when selecting a target
+        if (hudUI != null && enableHUD)
+        {
+            hudUI.SetActive(true);
+        }
+        
+        // Invoke callback with selected body
         OnAutopilotTargetSelected?.Invoke(body);
         
         Debug.Log($"[UIManager] Autopilot destination selected: {body.name}");
