@@ -415,6 +415,7 @@ GameObject:
   - component: {fileID: 713169412}
   - component: {fileID: 713169411}
   - component: {fileID: 713169413}
+  - component: {fileID: 713169414}
   m_Layer: 0
   m_Name: GameObject
   m_TagString: Untagged
@@ -465,21 +466,11 @@ MonoBehaviour:
   targetCamera: {fileID: 1528494429}
   moveAction: {fileID: -1680190386980627800, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   verticalAction: {fileID: -1957627301107028444, guid: 052faaac586de48259a63d0c4782560b, type: 3}
-  enableLabels: 1
-  labelCanvas: {fileID: 1954221931}
-  labelFont: {fileID: 12800000, guid: e3265ab4bf004d28a9537516768c1c75, type: 3}
-  labelFontSize: 14
-  labelColor: {r: 0.11273074, g: 1, b: 0, a: 1}
-  labelOffsetPixels: 20
   enableHUD: 1
   hudFontSize: 22
   hudColor: {r: 0, g: 1, b: 1, a: 1}
   hudPosition: {x: 20, y: -200}
   enableVRMode: 0
-  autopilotMenuAction: {fileID: -5982496924579745919, guid: c348712bda248c246b8c49b3db54643f, type: 3}
-  planetInfoAction: {fileID: 83097790271614945, guid: c348712bda248c246b8c49b3db54643f, type: 3}
-  menuScrollAction: {fileID: -60998027439631388, guid: c348712bda248c246b8c49b3db54643f, type: 3}
-  menuSelectAction: {fileID: -6131295136447488360, guid: c348712bda248c246b8c49b3db54643f, type: 3}
   enableLoadingScreen: 0
 --- !u!4 &713169412
 Transform:
@@ -541,6 +532,30 @@ MonoBehaviour:
   maxStarsToProcessNear: 2500000
   maxStarsToProcessFar: 2500000
   farDistancePlayerRangeFactor: 0.6
+--- !u!114 &713169414
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 713169410}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1aa004dc1ee24874c8a12cf40e414a5a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SolarSystemUIManager
+  enableLabels: 1
+  labelCanvas: {fileID: 1954221931}
+  labelFont: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  labelFontSize: 24
+  labelColor: {r: 0.8, g: 0.8, b: 0.8, a: 1}
+  labelOffsetPixels: 20
+  enableVRMode: 0
+  autopilotMenuAction: {fileID: -5982496924579745919, guid: c348712bda248c246b8c49b3db54643f, type: 3}
+  planetInfoAction: {fileID: 83097790271614945, guid: c348712bda248c246b8c49b3db54643f, type: 3}
+  menuScrollAction: {fileID: -60998027439631388, guid: c348712bda248c246b8c49b3db54643f, type: 3}
+  menuSelectAction: {fileID: -6131295136447488360, guid: c348712bda248c246b8c49b3db54643f, type: 3}
+  planetInfoAnimSpeed: 8
 --- !u!1 &832575517
 GameObject:
   m_ObjectHideFlags: 0

@@ -89,42 +89,15 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [Tooltip("New Input System: vertical move (float axis).")]
     [SerializeField] private InputActionReference verticalAction;
 
-    [Header("Labels (optional)")]
-    [SerializeField] private bool enableLabels = true;
-    [SerializeField] private Canvas labelCanvas;
-    [SerializeField] private TMP_FontAsset labelFont;
-    [Tooltip("Font size for planet labels (pt)")]
-    [SerializeField] private int labelFontSize = 24;
-    [SerializeField] private Color labelColor = Color.white;
-    [Tooltip("Offset from planet center (pixels)")]
-    [SerializeField] private float labelOffsetPixels = 20f; // offset from planet center in pixels
+    // NOTE: Label settings (enableLabels, labelCanvas, labelFont, labelFontSize, labelColor, labelOffsetPixels)
+    // have been moved to SolarSystemUIManager. Configure labels there.
     
-    [Header("HUD (Heads-Up Display)")]
-    [SerializeField] private bool enableHUD = true;
-    [Tooltip("Font size for HUD text (pt)")]
-    [SerializeField] private int hudFontSize = 28;
-    [SerializeField] private Color hudColor = Color.cyan;
-    [SerializeField] private Vector2 hudPosition = new Vector2(300f, -100f); // offset from top-left corner
+    // NOTE: HUD settings (enableHUD, hudFontSize, hudColor, hudPosition) have been moved to SolarSystemUIManager.
     
-    [Header("VR Mode")]
-    [Tooltip("Enable VR mode for headset display. When disabled, uses standard screen with mouse support.")]
-    [SerializeField] private bool enableVRMode = false;
+    // NOTE: VR input actions (autopilotMenuAction, planetInfoAction, menuScrollAction, menuSelectAction)
+    // have been moved to SolarSystemUIManager. Configure VR inputs there.
     
-    [Tooltip("VR Controller button to toggle the autopilot menu (e.g., menu button or Y/B button).")]
-    [SerializeField] private InputActionReference autopilotMenuAction;
-    
-    [Tooltip("VR Controller button to toggle planet info display.")]
-    [SerializeField] private InputActionReference planetInfoAction;
-    
-    [Tooltip("VR Controller thumbstick/trackpad for menu scrolling (2D axis).")]
-    [SerializeField] private InputActionReference menuScrollAction;
-    
-    [Tooltip("VR Controller button to confirm selection in menu (e.g., trigger or trackpad press).")]
-    [SerializeField] private InputActionReference menuSelectAction;
-    
-    [Header("Loading Screen")]
-    [Tooltip("Show loading screen while stellar data is being loaded")]
-    [SerializeField] private bool enableLoadingScreen = true;
+    // NOTE: Loading screen settings (enableLoadingScreen) have been moved to SolarSystemUIManager.
 
     private const double AU_KM = 149_597_870.7;
     private const double SPEED_OF_LIGHT_KM_S = 299_792_458.0; // km/s (exact value)
@@ -172,62 +145,32 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private Dictionary<long, bool> bodyEmitting = new Dictionary<long, bool>(); // Whether body emits light
     private Dictionary<long, long?> bodyIlluminatedBy = new Dictionary<long, long?>(); // Which body illuminates this one
     
-    // HUD elements
-    private GameObject hudUI;
-    private TextMeshProUGUI hudText;
+    // NOTE: HUD elements (hudUI, hudText) have been moved to SolarSystemUIManager.
     
     // Stellar parallax integration
     private StellarParallaxManager stellarManager;
     
-    // Autopilot system
-    private bool autopilotMenuOpen = false;
+    // UI Manager for labels and other UI elements
+    private SolarSystemUIManager uiManager;
+    
+    // Autopilot system - UI managed by SolarSystemUIManager
     private bool autopilotActive = false;
     private BodyInstance autopilotTarget = null;
-    private GameObject autopilotUI;
-    private List<Button> autopilotButtons = new List<Button>();
     
-    // VR menu navigation
-    private int menuSelectedIndex = 0;
-    private List<BodyInstance> menuSelectableBodies = new List<BodyInstance>();
-    private float menuScrollCooldown = 0f;
-    private const float MENU_SCROLL_DELAY = 0.2f; // Delay between scroll steps
-    private bool menuSelectWasPressed = false; // For edge detection
-    
-    // Static property for other scripts to check menu state
-    public static bool IsMenuOpen { get; private set; } = false;
+    // Static property for other scripts to check autopilot state
     public static bool IsAutopilotActive { get; private set; } = false;
     public static bool IsOrbiting { get; private set; } = false;
 
     public float CurrentSpeedAuPerSec => currentSpeed;
     public float ActualSpeedAuPerSec => actualSpeed;
     
-    // Planet info system
+    // Planet info system - NOTE: UI elements now managed by SolarSystemUIManager
     private Dictionary<string, PlanetData> planetInfoData = new Dictionary<string, PlanetData>();
-    private bool planetInfoVisible = false;
-    private GameObject planetInfoUI;
-    private TextMeshProUGUI planetInfoNameText;
-    private TextMeshProUGUI planetInfoDataText;
-    private float planetInfoAnimProgress = 0f;
-    private const float PLANET_INFO_ANIM_SPEED = 8f;
     
-    // Loading screen
-    private GameObject loadingScreenUI;
-    private TextMeshProUGUI loadingText;
-    private Image loadingBackground;
-    private Image progressBarBackground;
-    private Image progressBarFill;
-    private TextMeshProUGUI progressText;
-    private bool loadingComplete = false;
-    private float loadingFadeProgress = 0f;
-    private const float LOADING_FADE_SPEED = 2f;
-    private const int ESTIMATED_TOTAL_STARS = 2400000; // Approximate total stars in GDR1 dataset
+    // NOTE: Loading screen UI elements have been moved to SolarSystemUIManager.
     
-    // VR/Desktop adaptive mode
-    private bool isVRMode = false;
-    private bool wasVRMode = false; // Track if mode changed
-    private bool autopilotTriggerWasPressed = false; // Track trigger state for edge detection
-
-    private bool planetInfoTriggerWasPressed = false; // Track planet info trigger state
+    // NOTE: VR input state tracking (autopilotTriggerWasPressed, planetInfoTriggerWasPressed, vrSelectWasPressed)
+    // has been moved to SolarSystemUIManager.
 
     // Stencil Property IDs
     private static readonly int StencilRefId = Shader.PropertyToID("_StencilRef");
@@ -314,20 +257,14 @@ public class SolarSystemParallaxManager : MonoBehaviour
     {
         if (moveAction != null) moveAction.action.Enable();
         if (verticalAction != null) verticalAction.action.Enable();
-        if (autopilotMenuAction != null) autopilotMenuAction.action.Enable();
-        if (planetInfoAction != null) planetInfoAction.action.Enable();
-        if (menuScrollAction != null) menuScrollAction.action.Enable();
-        if (menuSelectAction != null) menuSelectAction.action.Enable();
+        // VR input actions are now handled by UIManager
     }
 
     private void OnDisable()
     {
         if (moveAction != null) moveAction.action.Disable();
         if (verticalAction != null) verticalAction.action.Disable();
-        if (autopilotMenuAction != null) autopilotMenuAction.action.Disable();
-        if (planetInfoAction != null) planetInfoAction.action.Disable();
-        if (menuScrollAction != null) menuScrollAction.action.Disable();
-        if (menuSelectAction != null) menuSelectAction.action.Disable();
+        // VR input actions are now handled by UIManager
     }
 
     private Camera GetActiveCamera()
@@ -343,9 +280,16 @@ public class SolarSystemParallaxManager : MonoBehaviour
         // Get reference to stellar manager if present
         stellarManager = GetComponent<StellarParallaxManager>();
         
+        // Get or add UI manager
+        uiManager = GetComponent<SolarSystemUIManager>();
+        if (uiManager == null)
+        {
+            uiManager = gameObject.AddComponent<SolarSystemUIManager>();
+        }
+        
         CreateHorizonSphere();
-        SetupLabelCanvas();
-        CreateHUD();
+        uiManager.Initialize(); // Setup label canvas via UI manager
+        uiManager.CreateHUD(); // Create HUD via UI manager
         LoadObjectNamesFromJson();
         LoadPlanetMaterials();
 
@@ -357,9 +301,16 @@ public class SolarSystemParallaxManager : MonoBehaviour
         }
         
         LoadPlanetInfoData();
-        CreateAutopilotMenu();
-        CreatePlanetInfoPanel();
-        CreateLoadingScreen();
+        CreateAutopilotMenuViaUIManager(); // Create autopilot menu via UI manager
+        uiManager.CreatePlanetInfoPanel(); // Create planet info panel via UI manager
+        
+        // Subscribe to UIManager input events
+        uiManager.OnAutopilotTogglePressed += HandleAutopilotToggle;
+        uiManager.OnPlanetInfoTogglePressed += TogglePlanetInfo;
+        uiManager.OnOrbitTogglePressed += ToggleOrbit;
+        
+        // Create loading screen via UI manager (passing HUD reference for hiding during load)
+        uiManager.CreateLoadingScreen(uiManager.HudUI);
         
         // Initialize asteroid rendering
         if (asteroidPropertyBlock == null)
@@ -403,188 +354,14 @@ public class SolarSystemParallaxManager : MonoBehaviour
         HierarchicalPosition sunPos = GetSunPosition();
         return sunPos.OffsetTo(playerRealPosAu, SECTOR_SIZE_AU);
     }
-
-    private void SetupLabelCanvas()
-    {
-        // Use manual VR mode setting from Inspector
-        isVRMode = enableVRMode;
-        wasVRMode = isVRMode;
-        Debug.Log($"VR Mode enabled: {isVRMode}");
-        
-        if (enableLabels && labelCanvas == null)
-        {
-            // Create a Canvas for labels if one isn't assigned
-            GameObject canvasGO = new GameObject("LabelCanvas");
-            Canvas canvas = canvasGO.AddComponent<Canvas>();
-            
-            // Configure based on VR mode
-            if (isVRMode)
-            {
-                ConfigureCanvasForVR(canvas);
-            }
-            else
-            {
-                ConfigureCanvasForDesktop(canvas);
-            }
-            
-            // Add appropriate raycaster based on VR mode
-            if (isVRMode)
-            {
-                // Use TrackedDeviceGraphicRaycaster for VR controller interaction
-                canvasGO.AddComponent<TrackedDeviceGraphicRaycaster>();
-            }
-            else
-            {
-                canvasGO.AddComponent<GraphicRaycaster>();
-            }
-            labelCanvas = canvas;
-            Debug.Log($"Created automatic label canvas ({(isVRMode ? "World Space for VR with TrackedDeviceGraphicRaycaster" : "Screen Space for Desktop")})");
-        }
-        else if (labelCanvas != null)
-        {
-            // Configure existing canvas based on VR mode
-            if (isVRMode)
-            {
-                ConfigureCanvasForVR(labelCanvas);
-                
-                // Ensure TrackedDeviceGraphicRaycaster exists for VR controller interaction
-                if (labelCanvas.GetComponent<TrackedDeviceGraphicRaycaster>() == null)
-                {
-                    // Remove standard GraphicRaycaster if present (they conflict)
-                    var oldRaycaster = labelCanvas.GetComponent<GraphicRaycaster>();
-                    if (oldRaycaster != null && !(oldRaycaster is TrackedDeviceGraphicRaycaster))
-                    {
-                        Destroy(oldRaycaster);
-                    }
-                    labelCanvas.gameObject.AddComponent<TrackedDeviceGraphicRaycaster>();
-                    Debug.Log("Added TrackedDeviceGraphicRaycaster to existing canvas for VR controller interaction");
-                }
-            }
-            else
-            {
-                ConfigureCanvasForDesktop(labelCanvas);
-            }
-        }
-        
-        // Ensure EventSystem exists for UI interaction
-        if (UnityEngine.EventSystems.EventSystem.current == null)
-        {
-            GameObject eventSystemGO = new GameObject("EventSystem");
-            eventSystemGO.AddComponent<UnityEngine.EventSystems.EventSystem>();
-            
-            if (isVRMode)
-            {
-                // Use XRUIInputModule for VR controller input
-                eventSystemGO.AddComponent<XRUIInputModule>();
-                Debug.Log("Created EventSystem with XRUIInputModule for VR controller interaction");
-            }
-            else
-            {
-                eventSystemGO.AddComponent<UnityEngine.InputSystem.UI.InputSystemUIInputModule>();
-                Debug.Log("Created EventSystem for UI interaction");
-            }
-        }
-        else if (isVRMode)
-        {
-            // Ensure VR UI input module is present if EventSystem already exists
-            var existingEventSystem = UnityEngine.EventSystems.EventSystem.current;
-            if (existingEventSystem.GetComponent<XRUIInputModule>() == null)
-            {
-                // Remove existing input module if present
-                var existingInputModule = existingEventSystem.GetComponent<UnityEngine.EventSystems.BaseInputModule>();
-                if (existingInputModule != null)
-                {
-                    Destroy(existingInputModule);
-                }
-                existingEventSystem.gameObject.AddComponent<XRUIInputModule>();
-                Debug.Log("Added XRUIInputModule to existing EventSystem for VR controller interaction");
-            }
-        }
-    }
     
-    private void ConfigureCanvasForVR(Canvas canvas)
-    {
-        canvas.renderMode = RenderMode.WorldSpace;
-        canvas.sortingOrder = 100;
-        
-        RectTransform canvasRect = canvas.GetComponent<RectTransform>();
-        if (canvasRect != null)
-        {
-            canvasRect.sizeDelta = new Vector2(1920, 1080);
-        }
-        
-        // Scale down for world space (2 meters wide approximately)
-        canvas.transform.localScale = Vector3.one * 0.001f;
-        
-        CanvasScaler scaler = canvas.GetComponent<CanvasScaler>();
-        if (scaler == null)
-        {
-            scaler = canvas.gameObject.AddComponent<CanvasScaler>();
-        }
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
-        scaler.dynamicPixelsPerUnit = 10f;
-        
-        Debug.Log("Canvas configured for VR (World Space)");
-    }
+    // Helper property to get label canvas from UI manager
+    private Canvas LabelCanvas => uiManager != null ? uiManager.LabelCanvas : null;
     
-    private void ConfigureCanvasForDesktop(Canvas canvas)
-    {
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvas.sortingOrder = 100;
-        
-        // Reset scale for screen space
-        canvas.transform.localScale = Vector3.one;
-        
-        CanvasScaler scaler = canvas.GetComponent<CanvasScaler>();
-        if (scaler == null)
-        {
-            scaler = canvas.gameObject.AddComponent<CanvasScaler>();
-        }
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1920, 1080);
-        
-        Debug.Log("Canvas configured for Desktop (Screen Space Overlay)");
-    }
+    // Helper property to get label font from UI manager
+    private TMP_FontAsset LabelFont => uiManager != null ? uiManager.LabelFont : null;
     
-    private void CreateHUD()
-    {
-        if (!enableHUD) return;
-        
-        if (labelCanvas == null)
-        {
-            Debug.LogWarning("Cannot create HUD: Label Canvas not available. HUD requires a canvas.");
-            return;
-        }
-        
-        // Create HUD GameObject
-        hudUI = new GameObject("HUD");
-        hudUI.transform.SetParent(labelCanvas.transform, false);
-        
-        // Add RectTransform
-        RectTransform rectTransform = hudUI.AddComponent<RectTransform>();
-        
-        // Position at top-left corner
-        rectTransform.anchorMin = new Vector2(0, 1);
-        rectTransform.anchorMax = new Vector2(0, 1);
-        rectTransform.pivot = new Vector2(0, 1);
-        rectTransform.anchoredPosition = hudPosition; // Use configurable position
-        rectTransform.sizeDelta = new Vector2(800, 400); // 200% bigger than previous
-        
-        // Add Text component
-        // Add Text component
-        hudText = hudUI.AddComponent<TextMeshProUGUI>();
-        if (labelFont != null) hudText.font = labelFont;
-        hudText.fontSize = hudFontSize;
-        hudText.color = hudColor;
-        hudText.alignment = TextAlignmentOptions.TopLeft;
-        hudText.enableWordWrapping = false;
-        hudText.overflowMode = TextOverflowModes.Overflow;
-        
-        // Initial text
-        hudText.text = "Speed: 0 km/s (0% lightspeed)\nDistance from Sun: 0 km\nMode: DISTANCE-BASED";
-        
-        Debug.Log("HUD created successfully");
-    }
+    // NOTE: CreateHUD() has been moved to SolarSystemUIManager.
     
     // Origin shifting system - adaptive based on proximity to celestial bodies
     // Only shifts when near planets for precision; allows free travel at extreme distances
@@ -661,72 +438,27 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
     private void Update()
     {
-        // Handle loading screen
-        UpdateLoadingScreen();
+        // Handle loading screen via UIManager
+        if (uiManager != null)
+        {
+            bool starsReady = stellarManager == null || stellarManager.IsDataLoaded();
+            int starCount = stellarManager != null ? stellarManager.GetLoadedStarCount() : 0;
+            uiManager.UpdateLoadingScreen(starsReady, starCount);
+        }
         
         // Always update VR canvas position (needed for loading screen visibility in VR)
         UpdateVRCanvas();
         
         // Don't allow gameplay until loading is complete
-        if (!loadingComplete)
+        if (uiManager != null && !uiManager.IsLoadingComplete)
         {
             return;
         }
         
-        // Handle autopilot toggle with X key or VR controller button
-        bool autopilotTogglePressed = (Keyboard.current != null && Keyboard.current.xKey.wasPressedThisFrame);
-        
-        // Check VR controller trigger (it's an axis, so we need to detect edge)
-        if (autopilotMenuAction != null && autopilotMenuAction.action.enabled)
+        // Delegate input handling to UIManager (handles keyboard X/I keys, VR controller buttons, menu navigation)
+        if (uiManager != null)
         {
-            float triggerValue = autopilotMenuAction.action.ReadValue<float>();
-            bool triggerIsPressed = triggerValue > 0.5f;
-            
-            // Detect rising edge (trigger just pressed)
-            if (triggerIsPressed && !autopilotTriggerWasPressed)
-            {
-                autopilotTogglePressed = true;
-            }
-            autopilotTriggerWasPressed = triggerIsPressed;
-        }
-        
-        if (autopilotTogglePressed)
-        {
-            ToggleAutopilotMenu();
-        }
-        
-        // Handle planet info toggle with I key or VR controller button
-        bool planetInfoTogglePressed = (Keyboard.current != null && Keyboard.current.iKey.wasPressedThisFrame);
-        
-        // Check VR controller trigger for planet info
-        if (planetInfoAction != null && planetInfoAction.action.enabled)
-        {
-            float triggerValue = planetInfoAction.action.ReadValue<float>();
-            bool triggerIsPressed = triggerValue > 0.5f;
-            
-            // Detect rising edge (trigger just pressed)
-            if (triggerIsPressed && !planetInfoTriggerWasPressed)
-            {
-                planetInfoTogglePressed = true;
-            }
-            planetInfoTriggerWasPressed = triggerIsPressed;
-        }
-        
-        if (planetInfoTogglePressed)
-        {
-            TogglePlanetInfo();
-        }
-
-        // Handle Orbit toggle with O key
-        if (Keyboard.current != null && Keyboard.current.oKey.wasPressedThisFrame)
-        {
-            ToggleOrbit();
-        }
-        
-        // Handle VR menu navigation when autopilot menu is open
-        if (autopilotMenuOpen && menuSelectableBodies.Count > 0)
-        {
-            UpdateVRMenuNavigation();
+            uiManager.UpdateInput();
         }
         
         UpdateDynamicBehavior();
@@ -740,7 +472,11 @@ public class SolarSystemParallaxManager : MonoBehaviour
         {
             UpdateOrbitMovement();
         }
-        else if (!autopilotMenuOpen && !planetInfoVisible)
+        else if (uiManager != null && !uiManager.AutopilotMenuOpen && !uiManager.IsPlanetInfoVisible)
+        {
+            UpdatePlayerMovement();
+        }
+        else if (uiManager == null)
         {
             UpdatePlayerMovement();
         }
@@ -879,233 +615,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         }
     }
     
-    private void CreateLoadingScreen()
-    {
-        if (!enableLoadingScreen)
-        {
-            loadingComplete = true; // Mark as complete so gameplay isn't blocked
-            return;
-        }
-        
-        if (labelCanvas == null)
-        {
-            Debug.LogWarning("Cannot create loading screen: Label Canvas not available.");
-            loadingComplete = true;
-            return;
-        }
-        
-        // Create loading screen container
-        loadingScreenUI = new GameObject("LoadingScreen");
-        loadingScreenUI.transform.SetParent(labelCanvas.transform, false);
-        
-        // Set transform to cover full screen
-        RectTransform rectTransform = loadingScreenUI.AddComponent<RectTransform>();
-        rectTransform.anchorMin = Vector2.zero;
-        rectTransform.anchorMax = Vector2.one;
-        rectTransform.offsetMin = Vector2.zero;
-        rectTransform.offsetMax = Vector2.zero;
-        
-        // Add dark background
-        loadingBackground = loadingScreenUI.AddComponent<Image>();
-        loadingBackground.color = new Color(0.02f, 0.02f, 0.05f, 1f); // Very dark blue-black
-        
-        // Create center container for loading content
-        GameObject centerContainer = new GameObject("CenterContainer");
-        centerContainer.transform.SetParent(loadingScreenUI.transform, false);
-        RectTransform centerRect = centerContainer.AddComponent<RectTransform>();
-        centerRect.anchorMin = new Vector2(0.5f, 0.5f);
-        centerRect.anchorMax = new Vector2(0.5f, 0.5f);
-        centerRect.pivot = new Vector2(0.5f, 0.5f);
-        centerRect.anchoredPosition = Vector2.zero;
-        centerRect.sizeDelta = new Vector2(600, 250);
-        
-        // Create loading text
-        GameObject textGO = new GameObject("LoadingText");
-        textGO.transform.SetParent(centerContainer.transform, false);
-        RectTransform textRect = textGO.AddComponent<RectTransform>();
-        textRect.anchorMin = new Vector2(0, 0.6f);
-        textRect.anchorMax = new Vector2(1, 1f);
-        textRect.offsetMin = Vector2.zero;
-        textRect.offsetMax = Vector2.zero;
-        
-        loadingText = textGO.AddComponent<TextMeshProUGUI>();
-        if (labelFont != null) loadingText.font = labelFont;
-        loadingText.fontSize = 32;
-        loadingText.color = new Color(0.8f, 0.9f, 1f, 1f); // Light blue-white
-        loadingText.alignment = TextAlignmentOptions.Center;
-        loadingText.text = "Loading Stellar Data...";
-        
-        // Create progress bar container
-        GameObject progressContainer = new GameObject("ProgressBarContainer");
-        progressContainer.transform.SetParent(centerContainer.transform, false);
-        RectTransform progressContainerRect = progressContainer.AddComponent<RectTransform>();
-        progressContainerRect.anchorMin = new Vector2(0.1f, 0.35f);
-        progressContainerRect.anchorMax = new Vector2(0.9f, 0.45f);
-        progressContainerRect.offsetMin = Vector2.zero;
-        progressContainerRect.offsetMax = Vector2.zero;
-        
-        // Progress bar background (dark)
-        GameObject progressBgGO = new GameObject("ProgressBarBackground");
-        progressBgGO.transform.SetParent(progressContainer.transform, false);
-        RectTransform progressBgRect = progressBgGO.AddComponent<RectTransform>();
-        progressBgRect.anchorMin = Vector2.zero;
-        progressBgRect.anchorMax = Vector2.one;
-        progressBgRect.offsetMin = Vector2.zero;
-        progressBgRect.offsetMax = Vector2.zero;
-        
-        progressBarBackground = progressBgGO.AddComponent<Image>();
-        progressBarBackground.color = new Color(0.1f, 0.12f, 0.18f, 1f); // Dark blue-gray
-        
-        // Progress bar fill (bright gradient-like effect)
-        GameObject progressFillGO = new GameObject("ProgressBarFill");
-        progressFillGO.transform.SetParent(progressContainer.transform, false);
-        RectTransform progressFillRect = progressFillGO.AddComponent<RectTransform>();
-        progressFillRect.anchorMin = Vector2.zero;
-        progressFillRect.anchorMax = new Vector2(0f, 1f); // Start with 0 width
-        progressFillRect.pivot = new Vector2(0f, 0.5f);
-        progressFillRect.offsetMin = new Vector2(2, 2);
-        progressFillRect.offsetMax = new Vector2(-2, -2);
-        
-        progressBarFill = progressFillGO.AddComponent<Image>();
-        progressBarFill.color = new Color(0.3f, 0.6f, 1f, 1f); // Bright blue
-        
-        // Progress percentage text
-        GameObject progressTextGO = new GameObject("ProgressText");
-        progressTextGO.transform.SetParent(centerContainer.transform, false);
-        RectTransform progressTextRect = progressTextGO.AddComponent<RectTransform>();
-        progressTextRect.anchorMin = new Vector2(0, 0.15f);
-        progressTextRect.anchorMax = new Vector2(1, 0.32f);
-        progressTextRect.offsetMin = Vector2.zero;
-        progressTextRect.offsetMax = Vector2.zero;
-        
-        progressText = progressTextGO.AddComponent<TextMeshProUGUI>();
-        if (labelFont != null) progressText.font = labelFont;
-        progressText.fontSize = 16;
-        progressText.color = new Color(0.6f, 0.7f, 0.8f, 0.9f);
-        progressText.alignment = TextAlignmentOptions.Center;
-        progressText.text = "0% - 0 / 2,400,000 stars";
-        
-        // Sub-text hint
-        GameObject hintGO = new GameObject("LoadingHint");
-        hintGO.transform.SetParent(centerContainer.transform, false);
-        RectTransform hintRect = hintGO.AddComponent<RectTransform>();
-        hintRect.anchorMin = new Vector2(0, 0f);
-        hintRect.anchorMax = new Vector2(1, 0.15f);
-        hintRect.offsetMin = Vector2.zero;
-        hintRect.offsetMax = Vector2.zero;
-        
-        TextMeshProUGUI hintText = hintGO.AddComponent<TextMeshProUGUI>();
-        if (labelFont != null) hintText.font = labelFont;
-        hintText.fontSize = 14;
-        hintText.color = new Color(0.4f, 0.5f, 0.6f, 0.7f);
-        hintText.alignment = TextAlignmentOptions.Center;
-        hintText.text = "Processing Gaia GDR1 stellar catalog...";
-        
-        // Hide HUD during loading
-        if (hudUI != null)
-        {
-            hudUI.SetActive(false);
-        }
-        
-        Debug.Log("Loading screen created with progress bar");
-    }
-    
-    private void UpdateLoadingScreen()
-    {
-        if (loadingScreenUI == null) return;
-        
-        bool starsReady = stellarManager == null || stellarManager.IsDataLoaded();
-        int starCount = stellarManager != null ? stellarManager.GetLoadedStarCount() : 0;
-        float progress = Mathf.Clamp01((float)starCount / ESTIMATED_TOTAL_STARS);
-        
-        if (starsReady && !loadingComplete)
-        {
-            // Stars are ready, start fading out
-            loadingFadeProgress += Time.deltaTime * LOADING_FADE_SPEED;
-            
-            // Ensure progress bar shows 100% when complete
-            if (progressBarFill != null)
-            {
-                RectTransform fillRect = progressBarFill.GetComponent<RectTransform>();
-                fillRect.anchorMax = new Vector2(1f, 1f);
-            }
-            if (progressText != null)
-            {
-                progressText.text = $"100% - {starCount:N0} / {ESTIMATED_TOTAL_STARS:N0} stars";
-            }
-            
-            if (loadingFadeProgress >= 1f)
-            {
-                loadingComplete = true;
-                loadingScreenUI.SetActive(false);
-                
-                // Show HUD now that loading is complete
-                if (hudUI != null)
-                {
-                    hudUI.SetActive(true);
-                }
-                
-                Debug.Log("Loading complete - stars ready!");
-            }
-            else
-            {
-                // Fade out the loading screen
-                float alpha = 1f - loadingFadeProgress;
-                if (loadingBackground != null)
-                {
-                    loadingBackground.color = new Color(0.02f, 0.02f, 0.05f, alpha);
-                }
-                if (loadingText != null)
-                {
-                    loadingText.color = new Color(0.8f, 0.9f, 1f, alpha);
-                }
-                if (progressBarBackground != null)
-                {
-                    progressBarBackground.color = new Color(0.1f, 0.12f, 0.18f, alpha);
-                }
-                if (progressBarFill != null)
-                {
-                    progressBarFill.color = new Color(0.3f, 0.6f, 1f, alpha);
-                }
-                if (progressText != null)
-                {
-                    progressText.color = new Color(0.6f, 0.7f, 0.8f, alpha * 0.9f);
-                }
-            }
-        }
-        else if (!starsReady)
-        {
-            // Animate loading text with dots
-            int dotCount = (int)(Time.time * 2f) % 4;
-            string dots = new string('.', dotCount);
-            loadingText.text = $"Loading Stellar Data{dots}";
-            
-            // Update progress bar fill
-            if (progressBarFill != null)
-            {
-                RectTransform fillRect = progressBarFill.GetComponent<RectTransform>();
-                // Smoothly animate the progress bar
-                float currentProgress = fillRect.anchorMax.x;
-                float targetProgress = progress;
-                float smoothProgress = Mathf.Lerp(currentProgress, targetProgress, Time.deltaTime * 5f);
-                fillRect.anchorMax = new Vector2(smoothProgress, 1f);
-            }
-            
-            // Update progress text
-            if (progressText != null)
-            {
-                int percentage = Mathf.RoundToInt(progress * 100f);
-                progressText.text = $"{percentage}% - {starCount:N0} / {ESTIMATED_TOTAL_STARS:N0} stars";
-            }
-            
-            // Subtle pulsing effect on progress bar color
-            float pulse = 0.9f + 0.1f * Mathf.Sin(Time.time * 3f);
-            if (progressBarFill != null)
-            {
-                progressBarFill.color = new Color(0.3f * pulse, 0.6f * pulse, 1f, 1f);
-            }
-        }
-    }
+    // NOTE: CreateLoadingScreen() and UpdateLoadingScreen() have been moved to SolarSystemUIManager.
     
     /// <summary>
     /// Updates the World Space canvas position to follow the VR camera.
@@ -1114,31 +624,11 @@ public class SolarSystemParallaxManager : MonoBehaviour
     /// </summary>
     private void UpdateVRCanvas()
     {
-        // Only update canvas position in VR mode
-        // In desktop mode, Screen Space Overlay handles positioning automatically
-        if (!isVRMode) return;
-        
-        if (labelCanvas == null) return;
-        
-        Camera cam = GetActiveCamera();
-        if (cam == null) return;
-        
-        // Position the canvas in front of the camera
-        // Distance of 2 meters is comfortable for VR viewing
-        float canvasDistance = 2f;
-        
-        Transform canvasTransform = labelCanvas.transform;
-        
-        // Position canvas in front of camera
-        canvasTransform.position = cam.transform.position + cam.transform.forward * canvasDistance;
-        
-        // Make canvas face the camera
-        canvasTransform.rotation = cam.transform.rotation;
-        
-        // Assign the world camera for proper raycasting in VR
-        if (labelCanvas.worldCamera != cam)
+        // Delegate VR canvas positioning to UI manager
+        if (uiManager != null)
         {
-            labelCanvas.worldCamera = cam;
+            Camera cam = GetActiveCamera();
+            uiManager.UpdateVRCanvasPosition(cam);
         }
     }
 
@@ -1430,7 +920,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 }
             }
 
-            if (enableLabels)
+            if (uiManager != null && uiManager.EnableLabels)
             {
                 CreateLabelForBody(bodyInst);
                 Debug.Log($"Created label for {bodyInst.name}");
@@ -1496,33 +986,19 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
     private void CreateLabelForBody(BodyInstance body)
     {
-        if (labelCanvas == null)
+        if (uiManager == null)
         {
-            Debug.LogWarning("Label Canvas not assigned. Please assign a Canvas for labels.");
+            Debug.LogWarning("UI Manager not available. Cannot create label.");
             return;
         }
-
-        // Create UI GameObject
-        GameObject labelGO = new GameObject(body.name + "_Label");
-        labelGO.transform.SetParent(labelCanvas.transform, false);
-
-        // Add RectTransform
-        RectTransform rectTransform = labelGO.AddComponent<RectTransform>();
-        rectTransform.sizeDelta = new Vector2(200, 30);
-
-        // Add Text component
-        // Add Text component
-        TextMeshProUGUI textComponent = labelGO.AddComponent<TextMeshProUGUI>();
-        textComponent.text = body.name;
-        if (labelFont != null) textComponent.font = labelFont;
-        textComponent.fontSize = labelFontSize;
-        textComponent.color = labelColor;
-        textComponent.alignment = TextAlignmentOptions.Left;
-        textComponent.enableWordWrapping = false;
-        textComponent.overflowMode = TextOverflowModes.Overflow;
-
-        // Store references
-        body.labelUI = labelGO;
+        
+        // Delegate label creation to UI manager
+        body.labelUI = uiManager.CreateLabelForBody(body.name);
+        
+        if (body.labelUI != null)
+        {
+            Debug.Log($"Created label for {body.name} via UI Manager");
+        }
     }
 
     private float ParseFloat(string s)
@@ -2574,7 +2050,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     
     private void UpdateHUD()
     {
-        if (!enableHUD || hudText == null) return;
+        if (uiManager == null || !uiManager.EnableHUD || uiManager.HudText == null) return;
         
         // Calculate speed in real units
         double speedKmPerSecond = actualSpeed * AU_KM; // Convert AU/s to km/s
@@ -2632,7 +2108,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         }
         
         // Build HUD text - simplified for distance-based speed
-        hudText.text = $"Speed: {speedDisplay} ({lightSpeedDisplay})\n" +
+        uiManager.HudText.text = $"Speed: {speedDisplay} ({lightSpeedDisplay})\n" +
                       $"Distance from Sun: {distanceDisplay}\n" +
                       $"Mode: DISTANCE-BASED";
         
@@ -2659,24 +2135,24 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 planetDistanceDisplay = $"{distanceToNearestPlanet:F6} AU";
             }
             
-            hudText.text += $"\nNearest: {nearestPlanet.name}\n" +
+            uiManager.HudText.text += $"\nNearest: {nearestPlanet.name}\n" +
                            $"Distance: {planetDistanceDisplay}";
         }
         
         // Add stellar manager info
         if (stellarManager != null)
         {
-            hudText.text += $"\nStars Visible: {stellarManager.GetVisibleStarCount()}";
+            uiManager.HudText.text += $"\nStars Visible: {stellarManager.GetVisibleStarCount()}";
             if (!stellarManager.IsDataLoaded())
             {
-                hudText.text += " (Loading...)";
+                uiManager.HudText.text += " (Loading...)";
             }
         }
         
         // Add autopilot status
         if (IsOrbiting && orbitTargetBody != null)
         {
-            hudText.text += $"\n\n[ORBIT] ⟳ Orbiting {orbitTargetBody.name}\nRadius: {orbitDistanceAu:F6} AU\nPress O to disengage";
+            uiManager.HudText.text += $"\n\n[ORBIT] ⟳ Orbiting {orbitTargetBody.name}\nRadius: {orbitDistanceAu:F6} AU\nPress O to disengage";
         }
         else if (autopilotActive && autopilotTarget != null)
         {
@@ -2692,18 +2168,17 @@ public class SolarSystemParallaxManager : MonoBehaviour
             else
                 autopilotDistDisplay = $"{distKm:F0} km";
             
-            hudText.text += $"\n\n[AUTOPILOT] → {autopilotTarget.name}\nDistance: {autopilotDistDisplay}\nPress X to cancel";
+            uiManager.HudText.text += $"\n\n[AUTOPILOT] → {autopilotTarget.name}\nDistance: {autopilotDistDisplay}\nPress X to cancel";
         }
-        else if (!autopilotActive && !autopilotMenuOpen)
+        else if (!autopilotActive && (uiManager == null || !uiManager.AutopilotMenuOpen))
         {
-            hudText.text += "\n\nPress X for Autopilot";
+            uiManager.HudText.text += "\n\nPress X for Autopilot";
             if (nearestPlanet != null)
             {
-                hudText.text += $" | Press O to Orbit {nearestPlanet.name}";
-                
+                uiManager.HudText.text += $" | Press O to Orbit {nearestPlanet.name}";
                 if (nearestPlanet.planetData != null)
                 {
-                    hudText.text += $" | Press I for Info";
+                  uiManager.HudText.text += $" | Press I for info on {nearestPlanet.name}";
                 }
             }
         }
@@ -2890,11 +2365,15 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private void UpdateBodyProxies()
     {
         Camera cam = GetActiveCamera();
-        RectTransform canvasRect = labelCanvas != null ? labelCanvas.GetComponent<RectTransform>() : null;
+        Canvas labelCanvasRef = uiManager != null ? uiManager.LabelCanvas : null;
+        RectTransform canvasRect = labelCanvasRef != null ? labelCanvasRef.GetComponent<RectTransform>() : null;
+        bool isVRMode = uiManager != null && uiManager.IsVRMode;
+        float labelOffsetPx = uiManager != null ? uiManager.LabelOffsetPixels : 20f;
+        bool labelsEnabled = uiManager != null && uiManager.EnableLabels;
         
-        // First pass: calculate positions and store label data for collision detection
-        List<(BodyInstance body, Vector2 screenPos, float distAu, Rect labelBounds)> visibleLabels = 
-            new List<(BodyInstance, Vector2, float, Rect)>();
+        // Collect label visibility data for UI manager
+        List<SolarSystemUIManager.LabelVisibilityData> visibleLabels = 
+            new List<SolarSystemUIManager.LabelVisibilityData>();
         
         foreach (var body in bodies)
         {
@@ -2934,7 +2413,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
             body.proxy.localScale = new Vector3(diameter, diameter, diameter);
 
             // --- UI label position calculation ---
-            if (enableLabels && body.labelUI != null && cam != null && canvasRect != null)
+            if (labelsEnabled && body.labelUI != null && cam != null && canvasRect != null)
             {
                 // Convert world position to viewport position (0-1 range, works better for VR)
                 Vector3 viewportPos = cam.WorldToViewportPoint(body.proxy.position);
@@ -2946,8 +2425,6 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 
                 if (isVisible)
                 {
-                    RectTransform labelRect = body.labelUI.GetComponent<RectTransform>();
-                    
                     // Convert viewport to screen position for the canvas calculation
                     Vector3 screenPos = new Vector3(
                         viewportPos.x * Screen.width,
@@ -2956,21 +2433,29 @@ public class SolarSystemParallaxManager : MonoBehaviour
                     
                     // For Screen Space Overlay (desktop), use null camera
                     // For World Space (VR), use the active camera
-                    Camera canvasCam = isVRMode ? labelCanvas.worldCamera : null;
+                    Camera canvasCam = isVRMode ? labelCanvasRef.worldCamera : null;
                     
                     Vector2 canvasPos;
                     RectTransformUtility.ScreenPointToLocalPointInRectangle(
                         canvasRect, screenPos, canvasCam, out canvasPos);
                     
                     // Add offset to position label to the right of the body
-                    canvasPos.x += labelOffsetPixels;
+                    canvasPos.x += labelOffsetPx;
                     
                     // Calculate label bounds (approximate based on text size)
                     float labelWidth = 100f;
                     float labelHeight = 25f;
                     Rect bounds = new Rect(canvasPos.x - labelWidth / 2, canvasPos.y - labelHeight / 2, labelWidth, labelHeight);
                     
-                    visibleLabels.Add((body, canvasPos, (float)distAu, bounds));
+                    // Add to visible labels for UI manager to process
+                    visibleLabels.Add(new SolarSystemUIManager.LabelVisibilityData
+                    {
+                        labelUI = body.labelUI,
+                        screenPos = canvasPos,
+                        distanceAu = (float)distAu,
+                        labelBounds = bounds,
+                        isPriority = IsProximaSystem(body)
+                    });
                 }
                 else
                 {
@@ -2979,336 +2464,97 @@ public class SolarSystemParallaxManager : MonoBehaviour
             }
         }
         
-        // Second pass: detect overlaps and hide overlapping labels
-        // Sort by priority: Proxima system first, then by distance (closest first)
-        visibleLabels.Sort((a, b) => 
+        // Delegate label collision detection and positioning to UI manager
+        if (uiManager != null)
         {
-            bool aIsProxima = IsProximaSystem(a.body);
-            bool bIsProxima = IsProximaSystem(b.body);
-            
-            // Proxima system always has priority
-            if (aIsProxima && !bIsProxima) return -1;
-            if (!aIsProxima && bIsProxima) return 1;
-            
-            // Otherwise sort by distance (closest first)
-            return a.distAu.CompareTo(b.distAu);
-        });
-        
-        List<Rect> occupiedRects = new List<Rect>();
-        
-        foreach (var labelData in visibleLabels)
-        {
-            bool hasOverlap = false;
-            
-            // Check against all already-placed labels
-            foreach (var occupied in occupiedRects)
-            {
-                if (labelData.labelBounds.Overlaps(occupied))
-                {
-                    hasOverlap = true;
-                    break;
-                }
-            }
-            
-            if (hasOverlap)
-            {
-                // Try to offset the label vertically
-                Vector2 offsetPos = labelData.screenPos;
-                Rect offsetBounds = labelData.labelBounds;
-                bool foundSpot = false;
-                
-                // Try offsetting up first, then down
-                float[] offsets = { 30f, -30f, 60f, -60f };
-                foreach (float yOffset in offsets)
-                {
-                    offsetBounds = new Rect(
-                        labelData.labelBounds.x, 
-                        labelData.labelBounds.y + yOffset, 
-                        labelData.labelBounds.width, 
-                        labelData.labelBounds.height);
-                    
-                    bool stillOverlaps = false;
-                    foreach (var occupied in occupiedRects)
-                    {
-                        if (offsetBounds.Overlaps(occupied))
-                        {
-                            stillOverlaps = true;
-                            break;
-                        }
-                    }
-                    
-                    if (!stillOverlaps)
-                    {
-                        offsetPos.y += yOffset;
-                        foundSpot = true;
-                        break;
-                    }
-                }
-                
-                if (foundSpot)
-                {
-                    // Place with offset
-                    RectTransform labelRect = labelData.body.labelUI.GetComponent<RectTransform>();
-                    labelRect.localPosition = offsetPos;
-                    labelData.body.labelUI.SetActive(true);
-                    occupiedRects.Add(offsetBounds);
-                }
-                else
-                {
-                    // No spot found - check if this is a priority object (Proxima system)
-                    if (IsProximaSystem(labelData.body))
-                    {
-                        // Proxima system labels are always shown, even if overlapping
-                        RectTransform labelRect = labelData.body.labelUI.GetComponent<RectTransform>();
-                        labelRect.localPosition = labelData.screenPos;
-                        labelData.body.labelUI.SetActive(true);
-                        occupiedRects.Add(labelData.labelBounds);
-                    }
-                    else
-                    {
-                        // No spot found - hide this label
-                        labelData.body.labelUI.SetActive(false);
-                    }
-                }
-            }
-            else
-            {
-                // No overlap - show label at original position
-                RectTransform labelRect = labelData.body.labelUI.GetComponent<RectTransform>();
-                labelRect.localPosition = labelData.screenPos;
-                labelData.body.labelUI.SetActive(true);
-                occupiedRects.Add(labelData.labelBounds);
-            }
+            uiManager.UpdateLabelPositions(visibleLabels);
         }
     }
     
     // --- Autopilot System ---
     
-    private bool moonsExpanded = false;
-    private GameObject moonsContainer;
-    private RectTransform autopilotContentRect;
-    
-    private void CreateAutopilotMenu()
+    /// <summary>
+    /// Creates the autopilot menu via UIManager and subscribes to events.
+    /// </summary>
+    private void CreateAutopilotMenuViaUIManager()
     {
-        if (labelCanvas == null)
+        if (uiManager == null)
         {
-            Debug.LogWarning("Cannot create Autopilot Menu: Label Canvas not available.");
+            Debug.LogWarning("Cannot create Autopilot Menu: UIManager not available.");
             return;
         }
         
-        // Create main panel
-        autopilotUI = new GameObject("AutopilotMenu");
-        autopilotUI.transform.SetParent(labelCanvas.transform, false);
-        
-        RectTransform panelRect = autopilotUI.AddComponent<RectTransform>();
-        panelRect.anchorMin = new Vector2(0.5f, 0.5f);
-        panelRect.anchorMax = new Vector2(0.5f, 0.5f);
-        panelRect.pivot = new Vector2(0.5f, 0.5f);
-        panelRect.anchoredPosition = Vector2.zero;
-        panelRect.sizeDelta = new Vector2(500, 700);
-        
-        // Add semi-transparent background
-        Image panelImage = autopilotUI.AddComponent<Image>();
-        panelImage.color = new Color(0.1f, 0.1f, 0.2f, 0.95f);
-        
-        // Add title
-        GameObject titleGO = new GameObject("Title");
-        titleGO.transform.SetParent(autopilotUI.transform, false);
-        RectTransform titleRect = titleGO.AddComponent<RectTransform>();
-        titleRect.anchorMin = new Vector2(0, 1);
-        titleRect.anchorMax = new Vector2(1, 1);
-        titleRect.pivot = new Vector2(0.5f, 1);
-        titleRect.anchoredPosition = new Vector2(0, -15);
-        titleRect.sizeDelta = new Vector2(0, 60);
-        
-        TextMeshProUGUI titleText = titleGO.AddComponent<TextMeshProUGUI>();
-        titleText.text = "AUTOPILOT - Select Destination";
-        if (labelFont != null) titleText.font = labelFont;
-        titleText.fontSize = 32;
-        titleText.color = Color.cyan;
-        titleText.alignment = TextAlignmentOptions.Center;
-        
-        // Create scroll view for body list - leave room for scrollbar
-        GameObject scrollViewGO = new GameObject("ScrollView");
-        scrollViewGO.transform.SetParent(autopilotUI.transform, false);
-        RectTransform scrollViewRect = scrollViewGO.AddComponent<RectTransform>();
-        scrollViewRect.anchorMin = new Vector2(0, 0);
-        scrollViewRect.anchorMax = new Vector2(1, 1);
-        scrollViewRect.offsetMin = new Vector2(15, 80);
-        scrollViewRect.offsetMax = new Vector2(-15, -70);
-        
-        ScrollRect scroll = scrollViewGO.AddComponent<ScrollRect>();
-        scroll.horizontal = false;
-        scroll.vertical = true;
-        scroll.scrollSensitivity = 30f;
-        
-        // Viewport - leave room for scrollbar on right
-        GameObject viewportGO = new GameObject("Viewport");
-        viewportGO.transform.SetParent(scrollViewGO.transform, false);
-        RectTransform viewportRect = viewportGO.AddComponent<RectTransform>();
-        viewportRect.anchorMin = Vector2.zero;
-        viewportRect.anchorMax = Vector2.one;
-        viewportRect.offsetMin = Vector2.zero;
-        viewportRect.offsetMax = new Vector2(-15, 0); // Room for scrollbar
-        
-        Image viewportMask = viewportGO.AddComponent<Image>();
-        viewportMask.color = new Color(1, 1, 1, 0.01f);
-        Mask mask = viewportGO.AddComponent<Mask>();
-        mask.showMaskGraphic = false;
-        
-        scroll.viewport = viewportRect;
-        
-        // Content container
-        GameObject contentGO = new GameObject("Content");
-        contentGO.transform.SetParent(viewportGO.transform, false);
-        autopilotContentRect = contentGO.AddComponent<RectTransform>();
-        autopilotContentRect.anchorMin = new Vector2(0, 1);
-        autopilotContentRect.anchorMax = new Vector2(1, 1);
-        autopilotContentRect.pivot = new Vector2(0.5f, 1);
-        autopilotContentRect.anchoredPosition = Vector2.zero;
-        
-        scroll.content = autopilotContentRect;
-        
-        // Create visible scrollbar
-        GameObject scrollbarGO = new GameObject("Scrollbar");
-        scrollbarGO.transform.SetParent(scrollViewGO.transform, false);
-        RectTransform scrollbarRect = scrollbarGO.AddComponent<RectTransform>();
-        scrollbarRect.anchorMin = new Vector2(1, 0);
-        scrollbarRect.anchorMax = new Vector2(1, 1);
-        scrollbarRect.pivot = new Vector2(1, 0.5f);
-        scrollbarRect.anchoredPosition = Vector2.zero;
-        scrollbarRect.sizeDelta = new Vector2(20, 0);
-        
-        Image scrollbarBg = scrollbarGO.AddComponent<Image>();
-        scrollbarBg.color = new Color(0.15f, 0.15f, 0.25f, 0.8f);
-        
-        Scrollbar scrollbar = scrollbarGO.AddComponent<Scrollbar>();
-        scrollbar.direction = Scrollbar.Direction.BottomToTop;
-        
-        // Scrollbar handle
-        GameObject handleAreaGO = new GameObject("Handle Slide Area");
-        handleAreaGO.transform.SetParent(scrollbarGO.transform, false);
-        RectTransform handleAreaRect = handleAreaGO.AddComponent<RectTransform>();
-        handleAreaRect.anchorMin = Vector2.zero;
-        handleAreaRect.anchorMax = Vector2.one;
-        handleAreaRect.offsetMin = new Vector2(2, 2);
-        handleAreaRect.offsetMax = new Vector2(-2, -2);
-        
-        GameObject handleGO = new GameObject("Handle");
-        handleGO.transform.SetParent(handleAreaGO.transform, false);
-        RectTransform handleRect = handleGO.AddComponent<RectTransform>();
-        handleRect.anchorMin = Vector2.zero;
-        handleRect.anchorMax = Vector2.one;
-        handleRect.sizeDelta = Vector2.zero;
-        
-        Image handleImage = handleGO.AddComponent<Image>();
-        handleImage.color = new Color(0.4f, 0.6f, 0.9f, 0.9f);
-        
-        scrollbar.handleRect = handleRect;
-        scrollbar.targetGraphic = handleImage;
-        
-        ColorBlock scrollColors = scrollbar.colors;
-        scrollColors.normalColor = new Color(0.4f, 0.6f, 0.9f, 0.9f);
-        scrollColors.highlightedColor = new Color(0.5f, 0.7f, 1f, 1f);
-        scrollColors.pressedColor = new Color(0.3f, 0.5f, 0.8f, 1f);
-        scrollbar.colors = scrollColors;
-        
-        scroll.verticalScrollbar = scrollbar;
-        scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
-        
-        // Separate bodies into planets/sun and moons
-        List<BodyInstance> mainBodies = new List<BodyInstance>();
-        List<BodyInstance> moons = new List<BodyInstance>();
+        // Convert bodies to AutopilotBodyInfo list
+        var bodyInfoList = new List<SolarSystemUIManager.AutopilotBodyInfo>();
         
         foreach (var body in bodies)
         {
-            if (IsMoon(body.naifId))
+            var info = new SolarSystemUIManager.AutopilotBodyInfo
             {
-                moons.Add(body);
-            }
-            else
-            {
-                mainBodies.Add(body);
-            }
+                name = body.name,
+                naifId = body.naifId,
+                isMoon = IsMoon(body.naifId),
+                isProximaSystem = IsProximaSystem(body),
+                bodyReference = body
+            };
+            bodyInfoList.Add(info);
         }
         
-        // Sort main bodies: Proxima system at top, then Sun, then planets by distance
-        mainBodies.Sort((a, b) => 
-        {
-            bool aIsProxima = IsProximaSystem(a);
-            bool bIsProxima = IsProximaSystem(b);
-            
-            // Proxima system always at top
-            if (aIsProxima && !bIsProxima) return -1;
-            if (!aIsProxima && bIsProxima) return 1;
-            
-            // Sun next
-            bool aIsSun = a.naifId == 10;
-            bool bIsSun = b.naifId == 10;
-            if (aIsSun && !bIsSun) return -1;
-            if (!aIsSun && bIsSun) return 1;
-            
-            // Otherwise sort by distance from player
-            Vector3d offsetA = playerRealPosAu.OffsetTo(a.realPosAu, SECTOR_SIZE_AU);
-            Vector3d offsetB = playerRealPosAu.OffsetTo(b.realPosAu, SECTOR_SIZE_AU);
-            return offsetA.magnitude.CompareTo(offsetB.magnitude);
-        });
+        // Create the menu via UIManager
+        uiManager.CreateAutopilotMenu(bodyInfoList);
         
-        // Add buttons for main bodies
-        float buttonHeight = 50f;
-        float spacing = 8f;
-        int itemIndex = 0;
+        // Subscribe to events
+        uiManager.OnAutopilotTargetSelected += OnAutopilotTargetSelected;
+        uiManager.OnAutopilotCancelled += OnAutopilotCancelled;
         
-        // Clear and populate selectable bodies list for VR navigation
-        menuSelectableBodies.Clear();
-        autopilotButtons.Clear();
-        
-        // Main bodies (Sun, planets)
-        foreach (var body in mainBodies)
-        {
-            CreateAutopilotButton(contentGO, body, itemIndex, buttonHeight, spacing, false);
-            menuSelectableBodies.Add(body); // Track for VR navigation
-            itemIndex++;
-        }
-        
-        // Moons category header (only if there are moons)
-        if (moons.Count > 0)
-        {
-            CreateMoonsCategoryButton(contentGO, itemIndex, buttonHeight, spacing);
-            itemIndex++;
-            
-            // Create moons container (initially hidden)
-            moonsContainer = new GameObject("MoonsContainer");
-            moonsContainer.transform.SetParent(contentGO.transform, false);
-            RectTransform moonsContainerRect = moonsContainer.AddComponent<RectTransform>();
-            moonsContainerRect.anchorMin = new Vector2(0, 1);
-            moonsContainerRect.anchorMax = new Vector2(1, 1);
-            moonsContainerRect.pivot = new Vector2(0.5f, 1);
-            moonsContainerRect.anchoredPosition = new Vector2(0, -itemIndex * (buttonHeight + spacing));
-            moonsContainerRect.sizeDelta = new Vector2(0, moons.Count * (buttonHeight + spacing));
-            
-            int moonIndex = 0;
-            foreach (var moon in moons)
-            {
-                CreateAutopilotButton(moonsContainer, moon, moonIndex, buttonHeight, spacing, true);
-                moonIndex++;
-            }
-            
-            moonsContainer.SetActive(false);
-        }
-        
-        // Calculate initial content size (without moons expanded)
-        int visibleCount = mainBodies.Count + (moons.Count > 0 ? 1 : 0);
-        autopilotContentRect.sizeDelta = new Vector2(0, visibleCount * (buttonHeight + spacing));
-        
-        // Cancel button at bottom
-        CreateCancelButton();
-        
-        // Start hidden
-        autopilotUI.SetActive(false);
-        
-        Debug.Log($"Autopilot menu created: {mainBodies.Count} planets, {moons.Count} moons");
+        Debug.Log("Autopilot menu created via UIManager");
     }
+    
+    /// <summary>
+    /// Called when a target is selected in the autopilot menu.
+    /// </summary>
+    private void OnAutopilotTargetSelected(SolarSystemUIManager.AutopilotBodyInfo bodyInfo)
+    {
+        // Find the corresponding BodyInstance
+        BodyInstance target = bodyInfo.bodyReference as BodyInstance;
+        
+        if (target != null)
+        {
+            autopilotTarget = target;
+            autopilotActive = true;
+            IsAutopilotActive = true;
+            Debug.Log($"Autopilot: Traveling to {target.name}");
+        }
+    }
+    
+    /// <summary>
+    /// Called when the autopilot menu is cancelled.
+    /// </summary>
+    private void OnAutopilotCancelled()
+    {
+        // Nothing special needed here, menu is already closed by UIManager
+    }
+    
+    /// <summary>
+    /// Handles the autopilot toggle button press.
+    /// </summary>
+    private void HandleAutopilotToggle()
+    {
+        if (autopilotActive)
+        {
+            // If autopilot is active, pressing X cancels it
+            StopAutopilot();
+            return;
+        }
+        
+        // Otherwise toggle the menu via UIManager
+        if (uiManager != null)
+        {
+            uiManager.ToggleAutopilotMenu();
+        }
+    }
+    
+    // NOTE: UpdateVRMenuNavigationInput() has been moved to SolarSystemUIManager.HandleVRMenuNavigation()
     
     private bool IsMoon(long naifId)
     {
@@ -3340,380 +2586,6 @@ public class SolarSystemParallaxManager : MonoBehaviour
         return IsProximaSystem(body.naifId) || 
                body.name.Contains("Proxima") || 
                body.name.Contains("Alpha Centauri");
-    }
-    
-    private void CreateAutopilotButton(GameObject parent, BodyInstance body, int index, float buttonHeight, float spacing, bool isMoon)
-    {
-        GameObject buttonGO = new GameObject(body.name + "_Button");
-        buttonGO.transform.SetParent(parent.transform, false);
-        
-        RectTransform buttonRect = buttonGO.AddComponent<RectTransform>();
-        buttonRect.anchorMin = new Vector2(0, 1);
-        buttonRect.anchorMax = new Vector2(1, 1);
-        buttonRect.pivot = new Vector2(0.5f, 1);
-        buttonRect.anchoredPosition = new Vector2(0, -index * (buttonHeight + spacing));
-        buttonRect.sizeDelta = new Vector2(isMoon ? -40 : -20, buttonHeight); // Indent moons
-        
-        Image buttonImage = buttonGO.AddComponent<Image>();
-        Color btnColor = isMoon ? new Color(0.12f, 0.2f, 0.35f, 1f) : new Color(0.15f, 0.25f, 0.4f, 1f);
-        buttonImage.color = btnColor;
-        
-        Button button = buttonGO.AddComponent<Button>();
-        button.targetGraphic = buttonImage;
-        ColorBlock colors = button.colors;
-        colors.normalColor = btnColor;
-        colors.highlightedColor = new Color(0.3f, 0.6f, 1f, 1f);
-        colors.pressedColor = new Color(0.1f, 0.3f, 0.6f, 1f);
-        colors.selectedColor = new Color(0.25f, 0.45f, 0.7f, 1f);
-        colors.colorMultiplier = 1f;
-        colors.fadeDuration = 0.15f;
-        button.colors = colors;
-        
-        BodyInstance capturedBody = body;
-        button.onClick.AddListener(() => SelectAutopilotTarget(capturedBody));
-        
-        autopilotButtons.Add(button);
-        
-        // Button text
-        GameObject textGO = new GameObject("Text");
-        textGO.transform.SetParent(buttonGO.transform, false);
-        RectTransform textRect = textGO.AddComponent<RectTransform>();
-        textRect.anchorMin = Vector2.zero;
-        textRect.anchorMax = Vector2.one;
-        textRect.sizeDelta = Vector2.zero;
-        textRect.offsetMin = new Vector2(10, 0);
-        textRect.offsetMax = Vector2.zero;
-        
-        TextMeshProUGUI btnText = textGO.AddComponent<TextMeshProUGUI>();
-        btnText.text = (isMoon ? "  " : "") + body.name;
-        if (labelFont != null) btnText.font = labelFont;
-        btnText.fontSize = isMoon ? 20 : 24;
-        btnText.color = isMoon ? new Color(0.8f, 0.9f, 1f, 1f) : Color.white;
-        btnText.alignment = TextAlignmentOptions.Left;
-    }
-    
-    private void CreateMoonsCategoryButton(GameObject parent, int index, float buttonHeight, float spacing)
-    {
-        GameObject buttonGO = new GameObject("Moons_Category");
-        buttonGO.transform.SetParent(parent.transform, false);
-        
-        RectTransform buttonRect = buttonGO.AddComponent<RectTransform>();
-        buttonRect.anchorMin = new Vector2(0, 1);
-        buttonRect.anchorMax = new Vector2(1, 1);
-        buttonRect.pivot = new Vector2(0.5f, 1);
-        buttonRect.anchoredPosition = new Vector2(0, -index * (buttonHeight + spacing));
-        buttonRect.sizeDelta = new Vector2(-20, buttonHeight);
-        
-        Image buttonImage = buttonGO.AddComponent<Image>();
-        buttonImage.color = new Color(0.2f, 0.15f, 0.3f, 1f); // Purple tint for category
-        
-        Button button = buttonGO.AddComponent<Button>();
-        button.targetGraphic = buttonImage;
-        ColorBlock colors = button.colors;
-        colors.normalColor = new Color(0.2f, 0.15f, 0.3f, 1f);
-        colors.highlightedColor = new Color(0.35f, 0.25f, 0.5f, 1f);
-        colors.pressedColor = new Color(0.15f, 0.1f, 0.25f, 1f);
-        colors.selectedColor = new Color(0.25f, 0.2f, 0.4f, 1f);
-        colors.colorMultiplier = 1f;
-        colors.fadeDuration = 0.15f;
-        button.colors = colors;
-        
-        button.onClick.AddListener(ToggleMoonsCategory);
-        
-        // Button text with arrow indicator
-        GameObject textGO = new GameObject("Text");
-        textGO.transform.SetParent(buttonGO.transform, false);
-        RectTransform textRect = textGO.AddComponent<RectTransform>();
-        textRect.anchorMin = Vector2.zero;
-        textRect.anchorMax = Vector2.one;
-        textRect.sizeDelta = Vector2.zero;
-        textRect.offsetMin = new Vector2(10, 0);
-        textRect.offsetMax = Vector2.zero;
-        
-        TextMeshProUGUI btnText = textGO.AddComponent<TextMeshProUGUI>();
-        btnText.text = "▸ Moons";
-        if (labelFont != null) btnText.font = labelFont;
-        btnText.fontSize = 24;
-        btnText.color = new Color(0.9f, 0.8f, 1f, 1f); // Light purple text
-        btnText.alignment = TextAlignmentOptions.Left;
-    }
-    
-    private void ToggleMoonsCategory()
-    {
-        moonsExpanded = !moonsExpanded;
-        
-        if (moonsContainer != null)
-        {
-            moonsContainer.SetActive(moonsExpanded);
-            
-            // Update arrow in category button
-            Transform categoryBtn = autopilotUI.transform.Find("AutopilotMenu/ScrollView/Viewport/Content/Moons_Category");
-            if (categoryBtn == null)
-            {
-                // Try to find it differently
-                foreach (Transform child in autopilotContentRect)
-                {
-                    if (child.name == "Moons_Category")
-                    {
-                        TextMeshProUGUI txt = child.GetComponentInChildren<TextMeshProUGUI>();
-                        if (txt != null)
-                        {
-                            txt.text = moonsExpanded ? "▾ Moons" : "▸ Moons";
-                        }
-                        break;
-                    }
-                }
-            }
-            
-            // Recalculate content size
-            float buttonHeight = 50f;
-            float spacing = 8f;
-            
-            int mainCount = 0;
-            int moonCount = 0;
-            foreach (var body in bodies)
-            {
-                if (IsMoon(body.naifId)) moonCount++;
-                else mainCount++;
-            }
-            
-            int visibleCount = mainCount + 1; // +1 for moons category header
-            if (moonsExpanded)
-            {
-                visibleCount += moonCount;
-            }
-            
-            autopilotContentRect.sizeDelta = new Vector2(0, visibleCount * (buttonHeight + spacing));
-            
-            // Reposition moons container if expanded
-            if (moonsExpanded && moonsContainer != null)
-            {
-                RectTransform moonsRect = moonsContainer.GetComponent<RectTransform>();
-                moonsRect.anchoredPosition = new Vector2(0, -(mainCount + 1) * (buttonHeight + spacing));
-            }
-        }
-    }
-    
-    private void CreateCancelButton()
-    {
-        GameObject cancelGO = new GameObject("CancelButton");
-        cancelGO.transform.SetParent(autopilotUI.transform, false);
-        RectTransform cancelRect = cancelGO.AddComponent<RectTransform>();
-        cancelRect.anchorMin = new Vector2(0.5f, 0);
-        cancelRect.anchorMax = new Vector2(0.5f, 0);
-        cancelRect.pivot = new Vector2(0.5f, 0);
-        cancelRect.anchoredPosition = new Vector2(0, 15);
-        cancelRect.sizeDelta = new Vector2(180, 50);
-        
-        Image cancelImage = cancelGO.AddComponent<Image>();
-        cancelImage.color = new Color(0.5f, 0.2f, 0.2f, 1f);
-        
-        Button cancelBtn = cancelGO.AddComponent<Button>();
-        cancelBtn.targetGraphic = cancelImage;
-        ColorBlock cancelColors = cancelBtn.colors;
-        cancelColors.normalColor = new Color(0.5f, 0.2f, 0.2f, 1f);
-        cancelColors.highlightedColor = new Color(0.8f, 0.3f, 0.3f, 1f);
-        cancelColors.pressedColor = new Color(0.3f, 0.1f, 0.1f, 1f);
-        cancelColors.selectedColor = new Color(0.6f, 0.25f, 0.25f, 1f);
-        cancelColors.fadeDuration = 0.15f;
-        cancelBtn.colors = cancelColors;
-        cancelBtn.onClick.AddListener(() => ToggleAutopilotMenu());
-        
-        GameObject cancelTextGO = new GameObject("Text");
-        cancelTextGO.transform.SetParent(cancelGO.transform, false);
-        RectTransform cancelTextRect = cancelTextGO.AddComponent<RectTransform>();
-        cancelTextRect.anchorMin = Vector2.zero;
-        cancelTextRect.anchorMax = Vector2.one;
-        cancelTextRect.sizeDelta = Vector2.zero;
-        
-        TextMeshProUGUI cancelText = cancelTextGO.AddComponent<TextMeshProUGUI>();
-        cancelText.text = "Cancel";
-        if (labelFont != null) cancelText.font = labelFont;
-        cancelText.fontSize = 24;
-        cancelText.color = Color.white;
-        cancelText.alignment = TextAlignmentOptions.Center;
-    }
-    
-    private void ToggleAutopilotMenu()
-    {
-        // Mutual exclusion: Cannot use autopilot while orbiting
-        if (IsOrbiting) return;
-
-        if (autopilotUI == null) return;
-        
-        if (autopilotActive)
-        {
-            // If autopilot is traveling, pressing X cancels it
-            StopAutopilot();
-            return;
-        }
-        // Mutual exclusion: Close Planet Info if open
-        if (planetInfoVisible)
-        {
-            planetInfoVisible = false;
-            UpdatePlanetInfoPanelPosition(); // Immediate hide or let update loop handle it
-        }
-        
-        autopilotMenuOpen = !autopilotMenuOpen;
-        autopilotUI.SetActive(autopilotMenuOpen);
-        IsMenuOpen = autopilotMenuOpen; // Update static property for other scripts
-        
-        // Reset selection when opening menu
-        if (autopilotMenuOpen)
-        {
-            menuSelectedIndex = 0;
-            menuSelectWasPressed = false;
-            UpdateMenuSelectionHighlight();
-        }
-    }
-    
-    private void SelectAutopilotTarget(BodyInstance body)
-    {
-        autopilotTarget = body;
-        autopilotActive = true;
-        IsAutopilotActive = true; // Static property for other scripts
-        
-        // Close the menu
-        autopilotMenuOpen = false;
-        IsMenuOpen = false; // Update static property
-        if (autopilotUI != null)
-            autopilotUI.SetActive(false);
-        
-        Debug.Log($"Autopilot: Traveling to {body.name}");
-    }
-    
-    private void UpdateVRMenuNavigation()
-    {
-        // Decrease scroll cooldown
-        if (menuScrollCooldown > 0)
-        {
-            menuScrollCooldown -= Time.deltaTime;
-        }
-        
-        // Handle scrolling with VR trackpad/thumbstick
-        float scrollInput = 0f;
-        
-        // VR Controller thumbstick/trackpad (2D axis - use Y component)
-        if (menuScrollAction != null && menuScrollAction.action.enabled)
-        {
-            Vector2 scrollValue = menuScrollAction.action.ReadValue<Vector2>();
-            scrollInput = scrollValue.y;
-        }
-        
-        // Keyboard fallback (arrow keys)
-        if (Keyboard.current != null)
-        {
-            if (Keyboard.current.upArrowKey.wasPressedThisFrame)
-            {
-                scrollInput = 1f;
-                menuScrollCooldown = 0; // Allow immediate keyboard input
-            }
-            else if (Keyboard.current.downArrowKey.wasPressedThisFrame)
-            {
-                scrollInput = -1f;
-                menuScrollCooldown = 0;
-            }
-        }
-        
-        // Process scroll input
-        if (menuScrollCooldown <= 0 && Mathf.Abs(scrollInput) > 0.5f)
-        {
-            int previousIndex = menuSelectedIndex;
-            
-            if (scrollInput > 0.5f)
-            {
-                // Scroll up (previous item)
-                menuSelectedIndex = Mathf.Max(0, menuSelectedIndex - 1);
-            }
-            else if (scrollInput < -0.5f)
-            {
-                // Scroll down (next item)
-                menuSelectedIndex = Mathf.Min(menuSelectableBodies.Count - 1, menuSelectedIndex + 1);
-            }
-            
-            if (menuSelectedIndex != previousIndex)
-            {
-                menuScrollCooldown = MENU_SCROLL_DELAY;
-                UpdateMenuSelectionHighlight();
-            }
-        }
-        
-        // Handle selection with VR trigger or trackpad press
-        bool selectPressed = false;
-        
-        // Keyboard Enter key
-        if (Keyboard.current != null && Keyboard.current.enterKey.wasPressedThisFrame)
-        {
-            selectPressed = true;
-        }
-        
-        // VR controller select button (trigger/trackpad press)
-        if (menuSelectAction != null && menuSelectAction.action.enabled)
-        {
-            float selectValue = menuSelectAction.action.ReadValue<float>();
-            bool selectIsPressed = selectValue > 0.5f;
-            
-            // Edge detection
-            if (selectIsPressed && !menuSelectWasPressed)
-            {
-                selectPressed = true;
-            }
-            menuSelectWasPressed = selectIsPressed;
-        }
-        
-        // Confirm selection
-        if (selectPressed && menuSelectedIndex >= 0 && menuSelectedIndex < menuSelectableBodies.Count)
-        {
-            SelectAutopilotTarget(menuSelectableBodies[menuSelectedIndex]);
-        }
-    }
-    
-    private void UpdateMenuSelectionHighlight()
-    {
-        // Update visual highlight on all buttons
-        for (int i = 0; i < autopilotButtons.Count && i < menuSelectableBodies.Count; i++)
-        {
-            Button btn = autopilotButtons[i];
-            if (btn == null) continue;
-            
-            Image btnImage = btn.GetComponent<Image>();
-            if (btnImage != null)
-            {
-                if (i == menuSelectedIndex)
-                {
-                    // Highlighted (selected)
-                    btnImage.color = new Color(0.3f, 0.6f, 1f, 1f); // Bright blue
-                }
-                else
-                {
-                    // Normal color
-                    btnImage.color = new Color(0.15f, 0.25f, 0.4f, 1f);
-                }
-            }
-        }
-        
-        // Scroll the list to keep selected item visible
-        if (autopilotContentRect != null && menuSelectedIndex >= 0)
-        {
-            float buttonHeight = 50f;
-            float spacing = 8f;
-            float itemHeight = buttonHeight + spacing;
-            float scrollPosition = menuSelectedIndex * itemHeight;
-            
-            // Get the scroll rect
-            ScrollRect scrollRect = autopilotUI?.GetComponentInChildren<ScrollRect>();
-            if (scrollRect != null)
-            {
-                float contentHeight = autopilotContentRect.sizeDelta.y;
-                float viewportHeight = scrollRect.viewport.rect.height;
-                
-                if (contentHeight > viewportHeight)
-                {
-                    float normalizedPosition = 1f - (scrollPosition / (contentHeight - viewportHeight));
-                    scrollRect.verticalNormalizedPosition = Mathf.Clamp01(normalizedPosition);
-                }
-            }
-        }
     }
     
     private void UpdateAutopilot()
@@ -3894,131 +2766,72 @@ public class SolarSystemParallaxManager : MonoBehaviour
         return "Unknown";
     }
     
-    private void CreatePlanetInfoPanel()
-    {
-        if (labelCanvas == null)
-        {
-            Debug.LogWarning("Cannot create Planet Info Panel: Label Canvas not available.");
-            return;
-        }
-        
-        // Create main panel - positioned off-screen to the right initially
-        planetInfoUI = new GameObject("PlanetInfoPanel");
-        planetInfoUI.transform.SetParent(labelCanvas.transform, false);
-        
-        RectTransform panelRect = planetInfoUI.AddComponent<RectTransform>();
-        panelRect.anchorMin = new Vector2(0.5f, 0.5f);
-        panelRect.anchorMax = new Vector2(0.5f, 0.5f);
-        panelRect.pivot = new Vector2(0.5f, 0.5f);
-        panelRect.anchoredPosition = new Vector2(0, -1200); // Start off-screen (bottom)
-        panelRect.sizeDelta = new Vector2(600, 800);
-        
-        // Add gradient-like background (semi-transparent dark blue/purple)
-        Image panelImage = planetInfoUI.AddComponent<Image>();
-        panelImage.color = new Color(0.08f, 0.08f, 0.18f, 0.92f);
-        
-        // Add left border accent
-        GameObject borderGO = new GameObject("LeftBorder");
-        borderGO.transform.SetParent(planetInfoUI.transform, false);
-        RectTransform borderRect = borderGO.AddComponent<RectTransform>();
-        borderRect.anchorMin = new Vector2(0, 0);
-        borderRect.anchorMax = new Vector2(0, 1);
-        borderRect.pivot = new Vector2(0, 0.5f);
-        borderRect.anchoredPosition = Vector2.zero;
-        borderRect.sizeDelta = new Vector2(4, 0);
-        Image borderImage = borderGO.AddComponent<Image>();
-        borderImage.color = new Color(0.3f, 0.8f, 1f, 0.9f); // Cyan accent
-        
-        // Create title/header section
-        GameObject headerGO = new GameObject("Header");
-        headerGO.transform.SetParent(planetInfoUI.transform, false);
-        RectTransform headerRect = headerGO.AddComponent<RectTransform>();
-        headerRect.anchorMin = new Vector2(0, 1);
-        headerRect.anchorMax = new Vector2(1, 1);
-        headerRect.pivot = new Vector2(0.5f, 1);
-        headerRect.anchoredPosition = new Vector2(0, -15);
-        headerRect.sizeDelta = new Vector2(-30, 50);
-        
-        planetInfoNameText = headerGO.AddComponent<TextMeshProUGUI>();
-        planetInfoNameText.text = "PLANET INFO";
-        if (labelFont != null) planetInfoNameText.font = labelFont;
-        planetInfoNameText.fontSize = 42;
-        planetInfoNameText.fontStyle = FontStyles.Bold;
-        planetInfoNameText.color = new Color(0.3f, 0.9f, 1f, 1f); // Bright cyan
-        planetInfoNameText.alignment = TextAlignmentOptions.Center;
-        
-        // Create data content section
-        GameObject contentGO = new GameObject("Content");
-        contentGO.transform.SetParent(planetInfoUI.transform, false);
-        RectTransform contentRect = contentGO.AddComponent<RectTransform>();
-        contentRect.anchorMin = new Vector2(0, 0);
-        contentRect.anchorMax = new Vector2(1, 1);
-        contentRect.offsetMin = new Vector2(20, 50);
-        contentRect.offsetMax = new Vector2(-15, -75);
-        
-        planetInfoDataText = contentGO.AddComponent<TextMeshProUGUI>();
-        planetInfoDataText.text = "";
-        if (labelFont != null) planetInfoDataText.font = labelFont;
-        planetInfoDataText.fontSize = 24;
-        planetInfoDataText.color = new Color(0.85f, 0.9f, 1f, 1f); // Soft white-blue
-        planetInfoDataText.alignment = TextAlignmentOptions.TopLeft;
-
-        
-        // Add close hint at bottom
-        GameObject hintGO = new GameObject("CloseHint");
-        hintGO.transform.SetParent(planetInfoUI.transform, false);
-        RectTransform hintRect = hintGO.AddComponent<RectTransform>();
-        hintRect.anchorMin = new Vector2(0, 0);
-        hintRect.anchorMax = new Vector2(1, 0);
-        hintRect.pivot = new Vector2(0.5f, 0);
-        hintRect.anchoredPosition = new Vector2(0, 15);
-        hintRect.sizeDelta = new Vector2(0, 30);
-        
-        TextMeshProUGUI hintText = hintGO.AddComponent<TextMeshProUGUI>();
-        hintText.text = "Press I to close";
-        if (labelFont != null) hintText.font = labelFont;
-        hintText.fontSize = 14;
-        hintText.fontStyle = FontStyles.Italic;
-        hintText.color = new Color(0.5f, 0.6f, 0.7f, 0.8f);
-        hintText.alignment = TextAlignmentOptions.Center;
-        
-        // Start hidden (off-screen)
-        planetInfoAnimProgress = 0f;
-        UpdatePlanetInfoPanelPosition();
-        
-        Debug.Log("Planet info panel created successfully");
-    }
+    // NOTE: CreatePlanetInfoPanel() has been moved to SolarSystemUIManager
     
     private void TogglePlanetInfo()
     {
+        if (uiManager == null) return;
+        
         // Mutual exclusion: Close Autopilot Menu if open
-        if (autopilotMenuOpen)
+        if (uiManager.AutopilotMenuOpen)
         {
-            autopilotMenuOpen = false;
-            if (autopilotUI != null) autopilotUI.SetActive(false);
-            IsMenuOpen = false;
+            uiManager.HideAutopilotMenu();
         }
 
-        planetInfoVisible = !planetInfoVisible;
+        bool wasVisible = uiManager.IsPlanetInfoVisible;
         
-        if (planetInfoVisible)
+        if (!wasVisible)
         {
             // Find the nearest body within range that has info data
             BodyInstance infoTarget = FindNearestBodyWithinRange();
             
             if (infoTarget != null)
             {
-                if (planetInfoUI != null) planetInfoUI.SetActive(true);
-                PopulatePlanetInfo(infoTarget);
+                // Convert to UI manager's data format
+                var infoData = ConvertToPlanetInfoData(infoTarget);
+                uiManager.ShowPlanetInfo(infoData);
                 Debug.Log($"Showing planet info for: {infoTarget.name}");
             }
             else
             {
-                // No valid target found, don't show panel
-                planetInfoVisible = false;
                 Debug.Log("No body with planet info data found within range");
             }
         }
+        else
+        {
+            uiManager.HidePlanetInfo();
+        }
+    }
+    
+    /// <summary>
+    /// Converts a BodyInstance to PlanetInfoData for the UI manager.
+    /// </summary>
+    private SolarSystemUIManager.PlanetInfoData ConvertToPlanetInfoData(BodyInstance body)
+    {
+        var infoData = new SolarSystemUIManager.PlanetInfoData
+        {
+            Name = body.name,
+            RadiusKm = body.radiusKm
+        };
+        
+        if (body.planetData != null)
+        {
+            infoData.Color = body.planetData.Color;
+            infoData.Mass = body.planetData.Mass;
+            infoData.Diameter = body.planetData.Diameter;
+            infoData.Density = body.planetData.Density;
+            infoData.Gravity = body.planetData.Gravity;
+            infoData.LengthOfDay = body.planetData.LengthOfDay;
+            infoData.DistanceFromSun = body.planetData.DistanceFromSun;
+            infoData.MeanTemperature = body.planetData.MeanTemperature;
+            infoData.NumberOfMoons = body.planetData.NumberOfMoons;
+            infoData.RingSystem = body.planetData.RingSystem;
+            infoData.AtmosphericComposition = body.planetData.AtmosphericComposition;
+            infoData.SurfaceFeatures = body.planetData.SurfaceFeatures;
+            infoData.Composition = body.planetData.Composition;
+        }
+        
+        return infoData;
     }
     
     /// <summary>
@@ -4062,65 +2875,14 @@ public class SolarSystemParallaxManager : MonoBehaviour
         return nearest;
     }
     
-    private void PopulatePlanetInfo(BodyInstance body)
-    {
-        if (planetInfoNameText == null || planetInfoDataText == null) return;
-        
-        planetInfoNameText.text = body.name.ToUpper();
-        
-        if (body.planetData != null)
-        {
-            PlanetData data = body.planetData;
-            planetInfoDataText.text = 
-                $"<color=#88CCFF>Color:</color>  {data.Color}\n\n" +
-                $"<color=#88CCFF>Diameter:</color>  {data.Diameter} km\n\n" +
-                $"<color=#88CCFF>Density:</color>  {data.Density} kg/m³\n\n" +
-                $"<color=#88CCFF>Surface Gravity:</color>  {data.Gravity} m/s²\n\n" +
-                $"<color=#88CCFF>Length of Day:</color>  {data.LengthOfDay} hours\n\n" +
-                $"<color=#88CCFF>Distance from Sun:</color>  {data.DistanceFromSun} M km\n\n" +
-                $"<color=#88CCFF>Mean Temperature:</color>  {data.MeanTemperature}°C\n\n" +
-                $"<color=#88CCFF>Moons:</color>  {data.NumberOfMoons}\n\n" +
-                $"<color=#88CCFF>Ring System:</color>  {data.RingSystem}\n\n" +
-                $"<color=#88CCFF>Atmosphere:</color>  {data.AtmosphericComposition}";
-        }
-        else
-        {
-            planetInfoDataText.text = "No detailed data available for this body.\n\n" +
-                $"<color=#88CCFF>Radius:</color>  {body.radiusKm:N0} km";
-        }
-    }
+    // NOTE: Planet info panel creation, population, and animation are now handled by SolarSystemUIManager.
+    // The following methods delegate to the UI manager:
     
     private void UpdatePlanetInfoPanel()
     {
-        if (planetInfoUI == null) return;
-        
-        // Animate panel position
-        float targetProgress = planetInfoVisible ? 1f : 0f;
-        planetInfoAnimProgress = Mathf.MoveTowards(planetInfoAnimProgress, targetProgress, Time.deltaTime * PLANET_INFO_ANIM_SPEED);
-        
-        UpdatePlanetInfoPanelPosition();
-        
-        // Hide GameObject if fully closed
-        if (!planetInfoVisible && planetInfoAnimProgress <= 0.01f)
+        if (uiManager != null)
         {
-            if (planetInfoUI.activeSelf) 
-                planetInfoUI.SetActive(false);
-        }
-    }
-    
-    private void UpdatePlanetInfoPanelPosition()
-    {
-        if (planetInfoUI == null) return;
-        
-        RectTransform panelRect = planetInfoUI.GetComponent<RectTransform>();
-        if (panelRect != null)
-        {
-            // Smooth easing curve
-            float easedProgress = 1f - Mathf.Pow(1f - planetInfoAnimProgress, 3f);
-            
-            // Slide in from bottom: -1200 (off-screen) to 0 (center)
-            float yPos = Mathf.Lerp(-1200, 0, easedProgress);
-            panelRect.anchoredPosition = new Vector2(0, yPos);
+            uiManager.UpdatePlanetInfoPanel();
         }
     }
     
