@@ -785,13 +785,20 @@ public class SolarSystemParallaxManager : MonoBehaviour
             if (useHighQualitySpheres)
             {
                 proxy = CreateHighQualitySphere(name, sphereSubdivisions);
+                // Add sphere collider for occlusion detection
+                SphereCollider col = proxy.AddComponent<SphereCollider>();
+                col.isTrigger = true; // Make it a trigger so it doesn't interfere with physics
             }
             else
             {
                 proxy = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                 proxy.name = name;
+                // Keep collider for occlusion detection but make it a trigger to avoid physics interactions
                 var col = proxy.GetComponent<Collider>();
-                if (col) Destroy(col);
+                if (col) 
+                {
+                    col.isTrigger = true; // Make it a trigger so it doesn't interfere with physics
+                }
             }
             
             proxy.transform.SetParent(transform, false);
@@ -2436,6 +2443,25 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 bool isVisible = viewportPos.z > 0 && 
                                viewportPos.x >= 0 && viewportPos.x <= 1 &&
                                viewportPos.y >= 0 && viewportPos.y <= 1;
+                
+                // Add occlusion detection - check if label is hidden behind another body
+                if (isVisible)
+                {
+                    Vector3 directionToBody = (body.proxy.position - cam.transform.position).normalized;
+                    float distanceToBody = Vector3.Distance(cam.transform.position, body.proxy.position);
+                    
+                    // Raycast to check for blocking objects
+                    // Use a LayerMask to only hit celestial bodies (assuming they're on default layer)
+                    if (Physics.Raycast(cam.transform.position, directionToBody, out RaycastHit hit, distanceToBody - 0.1f))
+                    {
+                        // If raycast hits something before reaching the label's body, it's occluded
+                        // Check if the hit object is NOT the current body's proxy
+                        if (hit.transform != body.proxy)
+                        {
+                            isVisible = false;
+                        }
+                    }
+                }
                 
                 if (isVisible)
                 {
