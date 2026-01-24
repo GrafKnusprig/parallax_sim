@@ -2451,14 +2451,18 @@ public class SolarSystemParallaxManager : MonoBehaviour
                     float distanceToBody = Vector3.Distance(cam.transform.position, body.proxy.position);
                     
                     // Raycast to check for blocking objects
-                    // Use a LayerMask to only hit celestial bodies (assuming they're on default layer)
-                    if (Physics.Raycast(cam.transform.position, directionToBody, out RaycastHit hit, distanceToBody - 0.1f))
+                    // Cast slightly beyond the target to ensure we catch it if needed
+                    if (Physics.Raycast(cam.transform.position, directionToBody, out RaycastHit hit, distanceToBody * 1.1f))
                     {
                         // If raycast hits something before reaching the label's body, it's occluded
-                        // Check if the hit object is NOT the current body's proxy
-                        if (hit.transform != body.proxy)
+                        // Compare GameObjects instead of transforms for more reliable comparison
+                        if (hit.collider.gameObject != body.proxy.gameObject)
                         {
-                            isVisible = false;
+                            // Additionally check if the hit is actually closer than our target body
+                            if (hit.distance < distanceToBody - 0.5f)
+                            {
+                                isVisible = false;
+                            }
                         }
                     }
                 }
