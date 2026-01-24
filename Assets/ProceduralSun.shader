@@ -2,6 +2,7 @@ Shader "Custom/ProceduralSun"
 {
     Properties
     {
+        _BaseMap        ("Base Map", 2D) = "white" {}
         _BaseColor      ("Base Color", Color) = (1,0.3,0,1)
         _EmissionColor  ("Emission Color", Color) = (1,0.9,0.4,1)
         _NoiseScale     ("Noise Scale", Float) = 2.0
@@ -39,6 +40,7 @@ Shader "Custom/ProceduralSun"
             {
                 float4 positionOS : POSITION;
                 float3 normalOS   : NORMAL;
+                float2 uv         : TEXCOORD0;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
@@ -48,10 +50,12 @@ Shader "Custom/ProceduralSun"
                 float3 worldPos    : TEXCOORD0;
                 float3 worldNormal : TEXCOORD1;
                 float3 objectPos   : TEXCOORD2;
+                float2 uv          : TEXCOORD3;
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
             CBUFFER_START(UnityPerMaterial)
+            float4 _BaseMap_ST;
             float4 _BaseColor;
             float4 _EmissionColor;
             float  _NoiseScale;
@@ -61,6 +65,9 @@ Shader "Custom/ProceduralSun"
             float  _RimPower;
             float  _RimIntensity;
             CBUFFER_END
+
+            TEXTURE2D(_BaseMap);
+            SAMPLER(sampler_BaseMap);
 
             // --------------------
             // Cheap 3D noise
@@ -128,6 +135,8 @@ Shader "Custom/ProceduralSun"
                 OUT.positionHCS = TransformWorldToHClip(OUT.worldPos);
                 // Use normalized object-space position for scale-independent noise
                 OUT.objectPos   = normalize(IN.positionOS.xyz);
+                
+                OUT.uv = TRANSFORM_TEX(IN.uv, _BaseMap);
 
                 return OUT;
             }
@@ -146,7 +155,7 @@ Shader "Custom/ProceduralSun"
                 float t = _Time.y;
 
                 // Use normalized object-space position instead of world position
-                // This makes the noise pattern independent of object scale
+                // This makes noise pattern independent of object scale
                 float3 p = IN.objectPos * _NoiseScale;
 
                 float n1 = fbm(p + float3(t * _FlowSpeed1, 0, 0));
@@ -159,6 +168,10 @@ Shader "Custom/ProceduralSun"
                 float3 cooler = _BaseColor.rgb * 0.5;
 
                 float3 surfaceColor = lerp(cooler, hot, n);
+                
+                // Sample optional texture
+                half4 baseMap = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, IN.uv);
+                surfaceColor *= baseMap.rgb;
 
                 float rim = pow(1.0 - saturate(dot(N, V)), _RimPower);
                 float rimGlow = rim * _RimIntensity;

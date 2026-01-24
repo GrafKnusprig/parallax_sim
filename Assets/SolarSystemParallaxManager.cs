@@ -61,6 +61,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [SerializeField] private float lensingVerticalOffset = 0.8f;
     [Tooltip("Opacity multiplier for lensed images")]
     [SerializeField] private float lensingImageOpacity = 0.6f;
+    [Header("Black Hole Lensing Torus")]
+    [SerializeField] private Material lensingRefractionMaterial;
 
     [Header("Asteroids")]
     [SerializeField] private bool enableAsteroids = true;
@@ -74,6 +76,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [SerializeField] private int maxAsteroidsPerFrame = 100000;
     
     [Header("Player (real space)")]
+    [Tooltip("Angular velocity for orbit mode (radians/sec)")]
+    [SerializeField] private float orbitAngularVelocity = 0.2f;
     
     [Header("Camera")]
     [Tooltip("The camera to use for rendering and movement calculations. If not set, will use Camera.main.")]
@@ -100,6 +104,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private const double LIGHTYEAR_KM = 9_460_730_472_580.8; // km in 1 lightyear
     private const float PARSEC_TO_AU = 206264.806f;  // 1 parsec = 206,264.806 AU
     private const double SECTOR_SIZE_AU = 1_000_000.0; // Each sector is 1 million AU (approx 5 parsecs)
+    private const double MAX_DISTANCE_FROM_SUN_LY = 300_000.0; // Max travel distance in lightyears
 
     [System.NonSerialized]
     public HierarchicalPosition playerRealPosAu; // player position in AU (real space) - public for StellarParallaxManager
@@ -134,6 +139,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
     
     // Planet-specific textures and materials
     private Dictionary<long, Texture2D> planetTextures = new Dictionary<long, Texture2D>();
+    private Dictionary<long, Texture2D> planetAtmosphereTextures = new Dictionary<long, Texture2D>();
+    private Dictionary<long, Texture2D> planetNightTextures = new Dictionary<long, Texture2D>();
     private Dictionary<long, Material> planetMaterials = new Dictionary<long, Material>(); // For stars with custom materials
     private Dictionary<long, bool> bodyEmitting = new Dictionary<long, bool>(); // Whether body emits light
     private Dictionary<long, long?> bodyIlluminatedBy = new Dictionary<long, long?>(); // Which body illuminates this one
@@ -152,6 +159,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     
     // Static property for other scripts to check autopilot state
     public static bool IsAutopilotActive { get; private set; } = false;
+    public static bool IsOrbiting { get; private set; } = false;
 
     public float CurrentSpeedAuPerSec => currentSpeed;
     public float ActualSpeedAuPerSec => actualSpeed;
@@ -164,6 +172,18 @@ public class SolarSystemParallaxManager : MonoBehaviour
     // NOTE: VR input state tracking (autopilotTriggerWasPressed, planetInfoTriggerWasPressed, vrSelectWasPressed)
     // has been moved to SolarSystemUIManager.
 
+    // Stencil Property IDs
+    private static readonly int StencilRefId = Shader.PropertyToID("_StencilRef");
+    private static readonly int StencilCompId = Shader.PropertyToID("_StencilComp");
+    private static readonly int StencilPassId = Shader.PropertyToID("_StencilPass");
+    private MaterialPropertyBlock planetPropertyBlock;
+    
+    // Orbit system
+    private BodyInstance orbitTargetBody = null;
+    private float orbitAngle = 0f;
+    private double orbitDistanceAu = 0.0;
+    private double orbitHeightAu = 0.0;
+
     private class BodyInstance
     {
         public string name;
@@ -171,7 +191,10 @@ public class SolarSystemParallaxManager : MonoBehaviour
         public string objectType; // sun, planet, moon, dwarf_planet, star, asteroid, black_hole
         public HierarchicalPosition realPosAu;
         public float radiusKm;
+
         public Transform proxy;
+        public Renderer renderer;
+        public Renderer ringRenderer;
 
         // UI-based labels
         public GameObject labelUI;
@@ -181,6 +204,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         // Ring system (for Saturn, etc.)
         public GameObject ringObject;
+        
+        // Lensing Torus (for Black Hole)
+        public GameObject lensingTorus;
     }
     
     // Planet data from CSV dataset
@@ -266,6 +292,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
         uiManager.CreateHUD(); // Create HUD via UI manager
         LoadObjectNamesFromJson();
         LoadPlanetMaterials();
+
+        LoadShadowVectors();
         LoadBodiesFromCsv();
         if (bodies.Count == 0)
         {
@@ -439,6 +467,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         {
             UpdateAutopilot();
         }
+        
         else if (uiManager != null && !uiManager.AutopilotMenuOpen && !uiManager.IsPlanetInfoVisible)
         {
             UpdatePlayerMovement();
@@ -446,6 +475,10 @@ public class SolarSystemParallaxManager : MonoBehaviour
         else if (uiManager == null)
         {
             UpdatePlayerMovement();
+        }
+        else if (IsOrbiting)
+        {
+            UpdateOrbitMovement();
         }
         
         // Check for origin shift (keep player near sector origin for precision)
@@ -463,6 +496,123 @@ public class SolarSystemParallaxManager : MonoBehaviour
         }
         
         // Stellar manager handles its own update based on playerRealPosAu
+        
+        UpdateBlackHoleLensing();
+        
+        UpdatePlanetStencilMaterials();
+
+        // Update camera look at AFTER body proxies are positioned
+        if (IsOrbiting)
+        {
+            UpdateOrbitCamera();
+        }
+    }
+    
+    private void UpdateBlackHoleLensing()
+    {
+        Camera cam = GetActiveCamera();
+        if (cam == null) return;
+        
+        foreach (var body in bodies)
+        {
+            if (body.lensingTorus != null)
+            {
+                // Billboard: Look at camera
+                body.lensingTorus.transform.LookAt(cam.transform);
+                // Adjust rotation if needed (Torus usually lies on XZ plane, LookAt aligns Z axis)
+                // If Torus is flat on XZ, LookAt makes top face camera. That's usually what we want for a "ring" facing us.
+                // Actually, LookAt aligns +Z to face target.
+                // If Torus is built in XZ plane, we want its "face" (Y axis) to point at camera?
+                // Standard Unity LookAt makes +Z point at target.
+                // If Torus is XZ, we want to rotate 90 deg around X? 
+                
+                // Let's assume Torus is created in XZ plane.
+                // We want the circle to be perpendicular to the view vector.
+                body.lensingTorus.transform.LookAt(cam.transform);
+            }
+        }
+    }
+    
+    private void UpdatePlanetStencilMaterials()
+    {
+        if (bodies.Count == 0) return;
+
+        // Create a list of bodies paired with their distance for sorting
+        // We do this every frame to handle moving player/planets
+        var sortedBodies = new List<(BodyInstance body, double distance)>(bodies.Count);
+
+        foreach (var body in bodies)
+        {
+            double dist = playerRealPosAu.OffsetTo(body.realPosAu, SECTOR_SIZE_AU).magnitude;
+            sortedBodies.Add((body, dist));
+        }
+
+        // Sort by distance ascending (Closest First)
+        sortedBodies.Sort((a, b) => a.distance.CompareTo(b.distance));
+
+        // Apply stencil properties hierarchically
+        // Front-to-Back rendering with Stencil Masking
+        for (int i = 0; i < sortedBodies.Count; i++)
+        {
+            var body = sortedBodies[i].body;
+            
+            // Generate unique stencil ID based on sort order.
+            // Closest body gets 255, furthest gets lower values.
+            // This assumes < 255 bodies, which is true for solar system.
+            int stencilRef = Mathf.Clamp(255 - i, 1, 255);
+            
+            // Stencil Logic Corrected used GreaterEqual:
+            // 1. Ref = Unique ID (decreasing with distance, e.g. Closest=255, Next=254)
+            // 2. Comp = GreaterEqual (7).
+            //    - If we draw a pixel, we check if current Stencil Buffer value <= our Ref (Ref >= Buffer).
+            //    - Default buffer is 0. 255 >= 0 is TRUE.
+            //    - Body A (Ref 255) draws: writes 255.
+            //    - Body A's Ring (Ref 255) draws over Body A: 255 >= 255 is TRUE. Allowed.
+            //    - Body B (Ref 254) draws BEHIND Body A:
+            //      - Pixel has 255. Ref is 254.
+            //      - Check: 254 >= 255? FALSE. Occluded.
+            // 3. Pass = Replace (2). If we pass Test and Depth, write our Ref to buffer.
+            
+            // Base queue for this body index. Using stride of 10 to allow space for layers.
+            int baseQueue = 2000 + (i * 10);
+
+            if (body.renderer != null)
+            {
+                Material mat = body.renderer.material;
+                if (mat != null)
+                {
+                    // Render Planet FIRST (opaque, writes Z)
+                    mat.renderQueue = baseQueue; 
+
+                    if (mat.HasProperty(StencilRefId))
+                    {
+                        mat.SetFloat(StencilRefId, stencilRef);
+                        mat.SetFloat(StencilCompId, 7); // GreaterEqual
+                        mat.SetFloat(StencilPassId, 2); // Replace
+                    }
+                }
+            }
+
+            // Apply same logic to Ring Renderer if present
+            if (body.ringRenderer != null)
+            {
+                Material ringMat = body.ringRenderer.material;
+                if (ringMat != null)
+                {
+                    // Render Ring SECOND (transparent, usually ZWrite Off)
+                    // This allows it to pass ZTest where it is in front of planet,
+                    // and fail ZTest where it is behind planet (since planet wrote Z).
+                    ringMat.renderQueue = baseQueue + 1;
+
+                    if (ringMat.HasProperty(StencilRefId))
+                    {
+                        ringMat.SetFloat(StencilRefId, stencilRef);
+                        ringMat.SetFloat(StencilCompId, 7); // GreaterEqual
+                        ringMat.SetFloat(StencilPassId, 2); // Replace
+                    }
+                }
+            }
+        }
     }
     
     // NOTE: CreateLoadingScreen() and UpdateLoadingScreen() have been moved to SolarSystemUIManager.
@@ -531,6 +681,10 @@ public class SolarSystemParallaxManager : MonoBehaviour
             Debug.LogWarning($"CSV not found at {path}");
             return earthFound;
         }
+        
+        // Shadow Vector Index Tracking
+        bool useShadowVectors = fileName == "solar_dataset_plus.csv";
+        int shadowVectorIndex = 0;
 
         var lines = File.ReadAllLines(path);
         if (lines.Length <= 1)
@@ -678,6 +832,20 @@ public class SolarSystemParallaxManager : MonoBehaviour
                     {
                         materialToUse.SetTexture("_BaseMap", textureToUse);
                         materialToUse.SetTexture("_MainTex", textureToUse); // Legacy shader support
+
+                        // Apply atmosphere texture if available
+                        if (planetAtmosphereTextures.TryGetValue(naifId, out Texture2D atmTexture))
+                        {
+                            materialToUse.SetTexture("_SecondTex", atmTexture);
+                            Debug.Log($"Applied atmosphere to {name}");
+                        }
+
+                        // Apply night texture if available
+                        if (planetNightTextures.TryGetValue(naifId, out Texture2D nightTexture))
+                        {
+                            materialToUse.SetTexture("_NightTex", nightTexture);
+                            Debug.Log($"Applied night texture to {name}");
+                        }
                         
                         // If this body emits light, make it glow
                         if (isEmitting)
@@ -688,22 +856,35 @@ public class SolarSystemParallaxManager : MonoBehaviour
                             Debug.Log($"Enabled emission for {name} (NAIF ID {naifId})");
                         }
                     }
+                    
                 }
                 
+                // Apply Shadow Direction (Sun Direction) to any material (custom or standard)
+                if (materialToUse != null && useShadowVectors && shadowVectorIndex < shadowVectors.Count)
+                {
+                    Vector4 sunDir = shadowVectors[shadowVectorIndex];
+                    if (sunDir.w > 0.5f) // Check validity
+                    {
+                         materialToUse.SetVector("_SunDirection", sunDir);
+                    }
+                }
+
                 if (materialToUse != null)
                 {
                     renderer.material = materialToUse; // Use .material (not .sharedMaterial) since we duplicated it
                 }
             }
 
-            var body = new BodyInstance
+            // Cache renderer
+            BodyInstance bodyInst = new BodyInstance
             {
                 name = name,
                 naifId = naifId,
                 objectType = objectType,
                 realPosAu = realPosAu,
                 radiusKm = radiusKm,
-                proxy = proxy.transform
+                proxy = proxy.transform,
+                renderer = proxy.GetComponent<Renderer>()
             };
             
             // Create rings for Saturn (NAIF ID 699)
@@ -714,7 +895,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 
                 if (saturnRingMaterial != null)
                 {
-                    body.ringObject = CreateSaturnRings(proxy.transform, radiusKm);
+                    bodyInst.ringObject = CreateSaturnRings(proxy.transform, radiusKm);
+                    if (bodyInst.ringObject != null)
+                        bodyInst.ringRenderer = bodyInst.ringObject.GetComponent<Renderer>();
                 }
             }
             
@@ -723,20 +906,28 @@ public class SolarSystemParallaxManager : MonoBehaviour
             {
                 if (accretionDiscMaterial != null)
                 {
-                    body.ringObject = CreateAccretionDisc(proxy.transform, radiusKm);
+                    bodyInst.ringObject = CreateAccretionDisc(proxy.transform, radiusKm);
+                    if (bodyInst.ringObject != null)
+                        bodyInst.ringRenderer = bodyInst.ringObject.GetComponent<Renderer>();
                     Debug.Log($"Created accretion disc for {name} (NAIF ID {naifId})");
+                }
+                
+                // Create Lensing Torus
+                if (lensingRefractionMaterial != null)
+                {
+                    CreateLensingTorus(bodyInst, radiusKm);
+                    Debug.Log($"Created lensing torus for {name}");
                 }
             }
 
             if (uiManager != null && uiManager.EnableLabels)
             {
-                CreateLabelForBody(body);
-                Debug.Log($"Created label for {body.name}");
+                CreateLabelForBody(bodyInst);
+                Debug.Log($"Created label for {bodyInst.name}");
             }
 
-            bodies.Add(body);
+            bodies.Add(bodyInst);
 
-            // Player positioned in front of Earth for good viewing
             if (naifId == 399 && !localEarthFound)
             {
                 // Position player at a good distance in front of Earth for viewing
@@ -745,9 +936,52 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 localEarthFound = true;
                 Debug.Log($"Player positioned in front of Earth at: {playerRealPosAu}");
             }
+            
+            // Increment shadow vector index for every valid body row processed
+            if (useShadowVectors)
+            {
+                shadowVectorIndex++;
+            }
         }
 
         return localEarthFound;
+    }
+
+    private List<Vector4> shadowVectors = new List<Vector4>();
+    
+    private void LoadShadowVectors()
+    {
+        string path = Path.Combine(Application.streamingAssetsPath, "PlanetDatasetPlus", "shadow_vectors.bytes");
+        if (!File.Exists(path))
+        {
+            Debug.LogWarning("shadow_vectors.bytes not found. Shadows may be incorrect.");
+            return;
+        }
+        
+        try
+        {
+            byte[] bytes = File.ReadAllBytes(path);
+            int vectorCount = bytes.Length / 16; // 4 floats * 4 bytes
+            
+            shadowVectors.Clear();
+            
+            for (int i = 0; i < vectorCount; i++)
+            {
+                int offset = i * 16;
+                float x = System.BitConverter.ToSingle(bytes, offset);
+                float y = System.BitConverter.ToSingle(bytes, offset + 4);
+                float z = System.BitConverter.ToSingle(bytes, offset + 8);
+                float w = System.BitConverter.ToSingle(bytes, offset + 12);
+                
+                shadowVectors.Add(new Vector4(x, y, z, w));
+            }
+            
+            Debug.Log($"Loaded {shadowVectors.Count} shadow vectors.");
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"Failed to load shadow vectors: {e.Message}");
+        }
     }
 
     private void CreateLabelForBody(BodyInstance body)
@@ -1311,6 +1545,128 @@ public class SolarSystemParallaxManager : MonoBehaviour
         return mesh;
     }
     
+    private void CreateLensingTorus(BodyInstance body, float planetRadiusKm)
+    {
+        GameObject torus = new GameObject("LensingTorus");
+        torus.transform.SetParent(body.proxy, false);
+        torus.transform.localPosition = Vector3.zero;
+        
+        MeshFilter mf = torus.AddComponent<MeshFilter>();
+        MeshRenderer mr = torus.AddComponent<MeshRenderer>();
+        
+        // Dimensions per user request:
+        // "inner radius should be the radius of the black hole" -> 1.0
+        // "z: radius of accretion disc" -> Thickness = accretionDiscOuterRadius
+        // "x and y 1,5 times that size" -> Outer Radius = 1.5 * accretionDiscOuterRadius
+        
+        float innerRadius = 1.0f;
+        float outerRadius = accretionDiscOuterRadius * 1.5f;
+        float thickness = accretionDiscOuterRadius;
+        
+        Mesh mesh = CreateLensTorusMesh(innerRadius, outerRadius, thickness, 64, 32);
+        mf.mesh = mesh;
+        mr.sharedMaterial = lensingRefractionMaterial;
+        
+        // No scaling needed, mesh is generated to size
+        torus.transform.localScale = Vector3.one;
+        
+        body.lensingTorus = torus;
+    }
+    
+    private Mesh CreateLensTorusMesh(float innerRadius, float outerRadius, float thickness, int radialSegments, int tubularSegments)
+    {
+        Mesh mesh = new Mesh();
+        mesh.name = "LensTorus";
+
+        Vector3[] vertices = new Vector3[(radialSegments + 1) * (tubularSegments + 1)];
+        Vector3[] normals = new Vector3[vertices.Length];
+        Vector2[] uvs = new Vector2[vertices.Length];
+        int[] triangles = new int[radialSegments * tubularSegments * 6];
+
+        float mainRadius = (innerRadius + outerRadius) * 0.5f;
+        float tubeWidth = (outerRadius - innerRadius) * 0.5f;
+        float tubeHeight = thickness * 0.5f;
+
+        for (int j = 0; j <= radialSegments; j++)
+        {
+            for (int i = 0; i <= tubularSegments; i++)
+            {
+                float u = (float)i / tubularSegments * Mathf.PI * 2.0f;
+                float v = (float)j / radialSegments * Mathf.PI * 2.0f;
+
+                // Elliptical Cross Section:
+                // Width derived from tubeWidth
+                // Height derived from tubeHeight
+                
+                float cx = Mathf.Cos(v);
+                float cy = Mathf.Sin(v);
+                
+                // Tube Offset from main radius
+                float tubeXOffset = tubeWidth * Mathf.Cos(u);
+                float tubeZOffset = tubeHeight * Mathf.Sin(u);
+                
+                // Vertex Position
+                float x = (mainRadius + tubeXOffset) * cx;
+                float y = (mainRadius + tubeXOffset) * cy;
+                float z = tubeZOffset;
+
+                int index = j * (tubularSegments + 1) + i;
+                vertices[index] = new Vector3(x, y, z);
+                
+                // Normal Calculation (Ellipsoidal Normal)
+                // Tangent vector along tube ring (dT/du)
+                float dxdu = -tubeWidth * Mathf.Sin(u) * cx;
+                float dydu = -tubeWidth * Mathf.Sin(u) * cy;
+                float dzdu = tubeHeight * Mathf.Cos(u);
+                Vector3 tangentU = new Vector3(dxdu, dydu, dzdu).normalized;
+                
+                // Tangent vector along main ring (dT/dv)
+                float dxdv = -(mainRadius + tubeXOffset) * cy;
+                float dydv = (mainRadius + tubeXOffset) * cx;
+                float dzdv = 0;
+                Vector3 tangentV = new Vector3(dxdv, dydv, dzdv).normalized;
+                
+                // Normal is cross product
+                normals[index] = Vector3.Cross(tangentV, tangentU).normalized; // Or U x V? Standard is U corresponds to "wrapping"
+                // Check orientation: U goes 0..2PI. V goes 0..2PI.
+                // Standard torus normals point OUT.
+                
+                uvs[index] = new Vector2((float)j / radialSegments, (float)i / tubularSegments);
+            }
+        }
+
+        int t = 0;
+        for (int j = 0; j < radialSegments; j++)
+        {
+            for (int i = 0; i < tubularSegments; i++)
+            {
+                int nextI = i + 1;
+                int nextJ = j + 1;
+
+                int a = j * (tubularSegments + 1) + i;
+                int b = j * (tubularSegments + 1) + nextI;
+                int c = nextJ * (tubularSegments + 1) + i;
+                int d = nextJ * (tubularSegments + 1) + nextI;
+
+                triangles[t++] = a;
+                triangles[t++] = c;
+                triangles[t++] = b;
+
+                triangles[t++] = b;
+                triangles[t++] = c;
+                triangles[t++] = d;
+            }
+        }
+
+        mesh.vertices = vertices;
+        mesh.normals = normals;
+        mesh.uv = uvs;
+        mesh.triangles = triangles;
+        mesh.RecalculateBounds();
+
+        return mesh;
+    }
+
     private void LoadPlanetMaterials()
     {
         string path = Path.Combine(Application.streamingAssetsPath, planetMaterialsJsonFileName);
@@ -1372,6 +1728,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
                     
                     // Extract properties
                     string assetPath = ExtractJsonStringValue(valuePart, "path");
+                    string atmospherePath = ExtractJsonStringValue(valuePart, "atmosphere");
+                    string nightTexturePath = ExtractJsonStringValue(valuePart, "night-texture");
                     bool emitting = ExtractJsonBoolValue(valuePart, "emitting");
                     long? illuminatedBy = ExtractJsonLongValue(valuePart, "illuminated_by");
                     
@@ -1427,6 +1785,52 @@ public class SolarSystemParallaxManager : MonoBehaviour
                         else
                         {
                             Debug.LogWarning($"Could not load texture at path: {assetPath} for NAIF ID {naifId}");
+                        }
+                    }
+
+                    // Load atmosphere texture if present
+                    if (!string.IsNullOrEmpty(atmospherePath))
+                    {
+                        Texture2D atmTexture = null;
+#if UNITY_EDITOR
+                        atmTexture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(atmospherePath);
+#else
+                        string atmResourcesPath = atmospherePath.Replace("Assets/", "");
+                        int lastDotAtm = atmResourcesPath.LastIndexOf('.');
+                        if (lastDotAtm > 0) atmResourcesPath = atmResourcesPath.Substring(0, lastDotAtm);
+                        atmTexture = Resources.Load<Texture2D>(atmResourcesPath);
+#endif
+                        if (atmTexture != null)
+                        {
+                            planetAtmosphereTextures[naifId] = atmTexture;
+                            Debug.Log($"Loaded atmosphere texture for NAIF ID {naifId}: {atmospherePath}");
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"Could not load atmosphere texture at path: {atmospherePath} for NAIF ID {naifId}");
+                        }
+                    }
+
+                    // Load night texture if present
+                    if (!string.IsNullOrEmpty(nightTexturePath))
+                    {
+                        Texture2D nightTexture = null;
+#if UNITY_EDITOR
+                        nightTexture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(nightTexturePath);
+#else
+                        string nightResourcesPath = nightTexturePath.Replace("Assets/", "");
+                        int lastDotNight = nightResourcesPath.LastIndexOf('.');
+                        if (lastDotNight > 0) nightResourcesPath = nightResourcesPath.Substring(0, lastDotNight);
+                        nightTexture = Resources.Load<Texture2D>(nightResourcesPath);
+#endif
+                        if (nightTexture != null)
+                        {
+                            planetNightTextures[naifId] = nightTexture;
+                            Debug.Log($"Loaded night texture for NAIF ID {naifId}: {nightTexturePath}");
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"Could not load night texture at path: {nightTexturePath} for NAIF ID {naifId}");
                         }
                     }
                 }
@@ -1746,7 +2150,11 @@ public class SolarSystemParallaxManager : MonoBehaviour
         }
         
         // Add autopilot status
-        if (autopilotActive && autopilotTarget != null)
+        if (IsOrbiting && orbitTargetBody != null)
+        {
+            hudText.text += $"\n\n[ORBIT] ⟳ Orbiting {orbitTargetBody.name}\nRadius: {orbitDistanceAu:F6} AU\nPress O to disengage";
+        }
+        else if (autopilotActive && autopilotTarget != null)
         {
             Vector3d toTarget = playerRealPosAu.OffsetTo(autopilotTarget.realPosAu, SECTOR_SIZE_AU);
             double distanceAu = toTarget.magnitude;
@@ -1765,9 +2173,13 @@ public class SolarSystemParallaxManager : MonoBehaviour
         else if (!autopilotActive && (uiManager == null || !uiManager.AutopilotMenuOpen))
         {
             uiManager.HudText.text += "\n\nPress X for Autopilot";
-            if (nearestPlanet != null && nearestPlanet.planetData != null)
+            if (nearestPlanet != null)
             {
-                uiManager.HudText.text += $" | Press I for info on {nearestPlanet.name}";
+                uiManager.HudText.text = $" | Press O to Orbit {nearestPlanet.name}";
+                if (nearestPlanet.planetData != null)
+                {
+                  uiManager.HudText.text += $" | Press I for info on {nearestPlanet.name}";
+                }
             }
         }
     }
@@ -1793,6 +2205,74 @@ public class SolarSystemParallaxManager : MonoBehaviour
     }
 
     // --- Runtime updates ---
+
+    private void ToggleOrbit()
+    {
+        // Mutual exclusion: Cannot orbit while autopilot is active
+        if (autopilotActive) return;
+
+        if (IsOrbiting)
+        {
+            IsOrbiting = false;
+            orbitTargetBody = null;
+            Debug.Log("Orbit disengaged.");
+        }
+        else
+        {
+            if (nearestPlanet != null)
+            {
+                IsOrbiting = true;
+                orbitTargetBody = nearestPlanet;
+
+                // Calculate initial orbit parameters relative to planet
+                Vector3d relPos = orbitTargetBody.realPosAu.OffsetTo(playerRealPosAu, SECTOR_SIZE_AU);
+
+                // orbit in XZ plane relative to planet
+                orbitDistanceAu = Math.Sqrt(relPos.x * relPos.x + relPos.z * relPos.z);
+                orbitHeightAu = relPos.y;
+
+                orbitAngle = Mathf.Atan2((float)relPos.z, (float)relPos.x);
+
+                Debug.Log($"Orbit engaged around {orbitTargetBody.name}");
+            }
+            else
+            {
+                Debug.Log("Cannot orbit: nearest planet is null.");
+            }
+        }
+    }
+
+    private void UpdateOrbitMovement()
+    {
+        if (orbitTargetBody == null)
+        {
+            IsOrbiting = false;
+            return;
+        }
+
+        // Update angle
+        orbitAngle += orbitAngularVelocity * Time.deltaTime;
+        
+        // Calculate new relative position (XZ circle)
+        double newX = orbitDistanceAu * Math.Cos(orbitAngle);
+        double newZ = orbitDistanceAu * Math.Sin(orbitAngle);
+        
+        Vector3d newRelPos = new Vector3d(newX, orbitHeightAu, newZ);
+        
+        // Update player position
+        playerRealPosAu = orbitTargetBody.realPosAu.Add(newRelPos, SECTOR_SIZE_AU);
+    }
+    
+    private void UpdateOrbitCamera()
+    {
+        if (orbitTargetBody == null || orbitTargetBody.proxy == null) return;
+        
+        Camera cam = GetActiveCamera();
+        if (cam != null)
+        {
+            cam.transform.LookAt(orbitTargetBody.proxy.position);
+        }
+    }
 
     private void UpdatePlayerMovement()
     {
@@ -1856,8 +2336,27 @@ public class SolarSystemParallaxManager : MonoBehaviour
             }
         }
 
+
         Vector3d moveDirDouble = new Vector3d(moveDir.x, moveDir.y, moveDir.z);
-        playerRealPosAu = playerRealPosAu.Add(moveDirDouble * (currentSpeed * Time.deltaTime), SECTOR_SIZE_AU);
+        // Calculate tentative position
+        HierarchicalPosition tentativePos = playerRealPosAu.Add(moveDirDouble * (currentSpeed * Time.deltaTime), SECTOR_SIZE_AU);
+        
+        // Check for maximum distance from Sun (300,000 lightyears)
+        // Refined approach: Math clamp on the final position vector
+        HierarchicalPosition sunPos = GetSunPosition();
+        Vector3d sunToTentative = sunPos.OffsetTo(tentativePos, SECTOR_SIZE_AU);
+        double currentDistAu = sunToTentative.magnitude;
+        double maxDistAu = (MAX_DISTANCE_FROM_SUN_LY * LIGHTYEAR_KM) / AU_KM;
+        
+        if (currentDistAu > maxDistAu)
+        {
+             // Clamp position to the shell of the sphere
+             Vector3d clampedOffset = sunToTentative * (maxDistAu / currentDistAu);
+             tentativePos = sunPos.Add(clampedOffset, SECTOR_SIZE_AU);
+        }
+        
+        playerRealPosAu = tentativePos;
+
         
         // Track actual movement speed
         actualSpeed = currentSpeed;

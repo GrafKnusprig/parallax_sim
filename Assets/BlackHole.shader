@@ -2,23 +2,31 @@ Shader "Custom/BlackHole"
 {
     Properties
     {
-        // Event Horizon
+        [Header(Black Hole)]
         _EventHorizonColor ("Event Horizon Color", Color) = (0,0,0,1)
-        _PhotosphereColor ("Photosphere Color", Color) = (0.3, 0.15, 0.05, 1)
-        _PhotosphereRadius ("Photosphere Radius", Range(1.0, 2.5)) = 1.35
-        _PhotosphereIntensity ("Photosphere Intensity", Range(0, 5)) = 1.5
-        
-        // Gravitational Lensing
-        _LensingStrength ("Lensing Strength", Range(0, 2)) = 0.8
-        _LensingRadius ("Lensing Radius", Range(0.8, 1.5)) = 1.0
+        _HorizonRadius ("Horizon Radius (Fresnel)", Range(0.0, 1.0)) = 0.5
+        _Softness ("Horizon Softness", Range(0.001, 0.5)) = 0.1
+
+        [Header(Photosphere)]
+        _PhotosphereColor ("Photosphere Color", Color) = (1, 0.5, 0.2, 1)
+        _PhotosphereIntensity ("Photosphere Intensity", Range(0, 10)) = 2.0
+        _PhotosphereThickness ("Photosphere Thickness", Range(0.0, 1.0)) = 0.1
+
+        [Header(Accretion Edge)]
+        _EdgeGlowColor ("Edge Glow Color", Color) = (0.0, 0.5, 1.0, 1)
+        _EdgeGlowPower ("Edge Glow Power", Range(0.1, 10.0)) = 3.0
+        _EdgeGlowIntensity ("Edge Glow Intensity", Range(0.0, 10.0)) = 2.0
+
+        [Header(Lensing)]
+        _DistortionStrength ("Optical Distortion Strength", Range(-2.0, 2.0)) = -1.0
     }
 
     SubShader
     {
         Tags
         {
-            "RenderType"="Opaque"
-            "Queue"="Geometry"
+            "RenderType"="Transparent"
+            "Queue"="Transparent"
             "RenderPipeline"="UniversalPipeline"
         }
 
@@ -27,7 +35,8 @@ Shader "Custom/BlackHole"
             Name "ForwardLit"
             Tags { "LightMode"="UniversalForward" }
             
-            Blend One One
+            // Standard transparency blending
+            Blend SrcAlpha OneMinusSrcAlpha
             ZWrite On
             Cull Back
 
@@ -40,6 +49,7 @@ Shader "Custom/BlackHole"
             #pragma multi_compile _ UNITY_SINGLE_PASS_STEREO STEREO_INSTANCING_ON STEREO_MULTIVIEW_ON
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareOpaqueTexture.hlsl"
 
             struct Attributes
             {
@@ -53,68 +63,23 @@ Shader "Custom/BlackHole"
                 float4 positionHCS : SV_POSITION;
                 float3 worldPos    : TEXCOORD0;
                 float3 worldNormal : TEXCOORD1;
-                float3 objectPos   : TEXCOORD2;
-                float3 viewDir     : TEXCOORD3;
+                float3 viewDir     : TEXCOORD2;
+                float4 screenPos   : TEXCOORD3;
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
             CBUFFER_START(UnityPerMaterial)
             float4 _EventHorizonColor;
+            float  _HorizonRadius;
+            float  _Softness;
             float4 _PhotosphereColor;
-            float  _PhotosphereRadius;
             float  _PhotosphereIntensity;
-            float  _LensingStrength;
-            float  _LensingRadius;
+            float  _PhotosphereThickness;
+            float4 _EdgeGlowColor;
+            float  _EdgeGlowPower;
+            float  _EdgeGlowIntensity;
+            float  _DistortionStrength;
             CBUFFER_END
-
-            // ==================== NOISE FUNCTIONS ====================
-            
-            float hash(float3 p)
-            {
-                p = frac(p * 0.3183099 + 0.1);
-                p *= 17.0;
-                return frac(p.x * p.y * p.z * (p.x + p.y + p.z));
-            }
-
-            float noise3D(float3 p)
-            {
-                float3 i = floor(p);
-                float3 f = frac(p);
-                float3 u = f * f * (3.0 - 2.0 * f);
-
-                float n000 = hash(i + float3(0,0,0));
-                float n100 = hash(i + float3(1,0,0));
-                float n010 = hash(i + float3(0,1,0));
-                float n110 = hash(i + float3(1,1,0));
-                float n001 = hash(i + float3(0,0,1));
-                float n101 = hash(i + float3(1,0,1));
-                float n011 = hash(i + float3(0,1,1));
-                float n111 = hash(i + float3(1,1,1));
-
-                float n00 = lerp(n000, n100, u.x);
-                float n10 = lerp(n010, n110, u.x);
-                float n01 = lerp(n001, n101, u.x);
-                float n11 = lerp(n011, n111, u.x);
-
-                float n0 = lerp(n00, n10, u.y);
-                float n1 = lerp(n01, n11, u.y);
-
-                return lerp(n0, n1, u.z);
-            }
-
-            float fbm(float3 p)
-            {
-                float v = 0;
-                float a = 0.5;
-
-                for (int i = 0; i < 4; i++)
-                {
-                    v += a * noise3D(p);
-                    p *= 2.0;
-                    a *= 0.5;
-                }
-                return v;
-            }
 
             // ==================== VERTEX SHADER ====================
 
@@ -127,8 +92,10 @@ Shader "Custom/BlackHole"
                 OUT.worldPos    = TransformObjectToWorld(IN.positionOS.xyz);
                 OUT.worldNormal = TransformObjectToWorldNormal(IN.normalOS);
                 OUT.positionHCS = TransformWorldToHClip(OUT.worldPos);
-                OUT.objectPos   = IN.positionOS.xyz;
-                OUT.viewDir     = normalize(GetCameraPositionWS() - OUT.worldPos);
+                OUT.viewDir     = GetCameraPositionWS() - OUT.worldPos;
+                
+                // Calculate screen position for grab pass sampling
+                OUT.screenPos   = ComputeScreenPos(OUT.positionHCS);
 
                 return OUT;
             }
@@ -141,52 +108,78 @@ Shader "Custom/BlackHole"
                 
                 float3 N = normalize(IN.worldNormal);
                 float3 V = normalize(IN.viewDir);
-                float3 objPos = normalize(IN.objectPos);
                 
-                // Distance from center (in object space)
-                float dist = length(IN.objectPos);
+                // ViewFactor: 1.0 at center (facing camera), 0.0 at edge
+                float viewFactor = saturate(dot(N, V));
                 
-                // ==================== PHOTOSPHERE (HOT PLASMA NEAR HORIZON) ====================
+                // Fresnel: 0.0 at center, 1.0 at edge
+                float fresnel = 1.0 - viewFactor;
+
+                // ==================== OPTICAL DISTORTION ====================
                 
-                // Photosphere is a thin glowing layer just outside event horizon
-                float photoDist = abs(dist - _PhotosphereRadius);
-                float photoMask = 1.0 - saturate(photoDist * 5.0);
-                photoMask = pow(photoMask, 2.0);
+                // Calculate screen UVs
+                float2 uv = IN.screenPos.xy / IN.screenPos.w;
                 
-                // Add some turbulence to photosphere
-                float photoNoise = fbm(objPos * 8.0 + _Time.y * 0.2);
-                photoMask *= (0.5 + 0.5 * photoNoise);
+                // Distort UVs based on normal view space projection (approximation for lens)
+                // Strength falls off towards edge to avoid hard cut (?) 
+                // Actually for a sphere lens, distortion is highest where light bends most.
+                // Simple refraction: offset by normal xy.
                 
-                float3 photoGlow = _PhotosphereColor.rgb * photoMask * _PhotosphereIntensity * 20.0;
+                float3 normalVS = TransformWorldToViewDir(N);
+                float2 offset = normalVS.xy * _DistortionStrength; 
                 
-                // ==================== GRAVITATIONAL LENSING ====================
+                float2 distortedUV = uv + offset * 0.1; // Scale factor adjustment
                 
-                // Simple lensing effect: brighten edges based on viewing angle
-                float rimAngle = 1.0 - abs(dot(N, V));
-                float lensingDist = abs(dist - _LensingRadius);
-                float lensingMask = saturate(1.0 - lensingDist / 0.5);
-                float lensing = pow(rimAngle, 2.0) * lensingMask * _LensingStrength;
+                float3 sceneColor = SampleSceneColor(distortedUV);
+
+                // ==================== BLACK HOLE CORE ====================
                 
-                // ==================== FINAL COMPOSITION ====================
+                // Core is visible where viewFactor is high (center of sphere)
+                // We use viewFactor (1 center, 0 edge). 
+                // If viewFactor > (1.0 - _HorizonRadius), we are inside the black hole.
                 
-                float3 finalColor = float3(0, 0, 0);
+                float horizonThreshold = 1.0 - _HorizonRadius;
+                // Fix: smoothstep(min, max, x). We want 1 when x > threshold.
+                // We want transition from (threshold - softness) to threshold.
+                float holeAlpha = smoothstep(horizonThreshold - _Softness, horizonThreshold, viewFactor);
+                // holeAlpha is 1 at center, 0 outside.
                 
-                // Add photosphere glow
+                // ==================== PHOTOSPHERE ====================
+                
+                // Ring around the horizon
+                // Centered at horizonThreshold
+                float photoDist = abs(viewFactor - horizonThreshold);
+                // Invert: 1.0 at center distance, 0.0 far away
+                float photoMask = 1.0 - smoothstep(0.0, _PhotosphereThickness, photoDist);
+                float3 photoGlow = _PhotosphereColor.rgb * photoMask * _PhotosphereIntensity;
+
+                // ==================== EDGE GLOW ====================
+                
+                float edgeFresnel = pow(fresnel, _EdgeGlowPower);
+                float3 edgeGlow = _EdgeGlowColor.rgb * edgeFresnel * _EdgeGlowIntensity;
+
+                // ==================== COMPOSITING ====================
+                
+                // Start with distorted scene
+                float3 finalColor = sceneColor;
+                
+                // Apply Black Hole Core (Overwrite with black)
+                // Usage of lerp ensures we replace the background with the black color
+                finalColor = lerp(finalColor, _EventHorizonColor.rgb, holeAlpha * _EventHorizonColor.a);
+                
+                // Add Photosphere (On top of everything)
                 finalColor += photoGlow;
                 
-                // Add lensing enhancement
-                finalColor += photoGlow * lensing * 2.0;
+                // Add Edge Glow (On top of everything)
+                finalColor += edgeGlow;
                 
-                // Event horizon is pure black and always visible in center
-                float eventHorizonMask = smoothstep(1.2, 1.0, dist);
-                finalColor = lerp(finalColor, _EventHorizonColor.rgb, eventHorizonMask);
-                
-                return half4(finalColor, 1.0);
+                // Ensure alpha is 1.0 so we overwrite the buffer (since we used OneMinusSrcAlpha blending logic above effectively)
+                return half4(finalColor, 1.0); 
             }
 
             ENDHLSL
         }
     }
-
+    
     FallBack "Universal Render Pipeline/Unlit"
 }

@@ -13,6 +13,11 @@ Shader "Custom/AccretionDisc"
         _InnerFade ("Inner Fade", Range(0, 1)) = 0.3
         _OuterFade ("Outer Fade", Range(0, 1)) = 0.8
         _InnerGlow ("Inner Glow Boost", Range(1, 5)) = 3.0
+
+        [Header(Stencil)]
+        _StencilRef("Stencil Reference", Float) = 0
+        [Enum(UnityEngine.Rendering.CompareFunction)] _StencilComp("Stencil Comparison", Float) = 8 // Always
+        [Enum(UnityEngine.Rendering.StencilOp)] _StencilPass("Stencil Pass", Float) = 0 // Keep
     }
 
     SubShader
@@ -28,6 +33,13 @@ Shader "Custom/AccretionDisc"
         {
             Name "ForwardLit"
             Tags { "LightMode"="UniversalForward" }
+
+            Stencil
+            {
+                Ref [_StencilRef]
+                Comp [_StencilComp]
+                Pass [_StencilPass]
+            }
             
             Blend One One
             ZWrite Off

@@ -2,136 +2,190 @@
   "0": {
     "path": "Assets/HighResTextures/moon_main.jpg",
     "emitting": false,
-    "illuminated_by": 10
+    "illuminated_by": 10,
+    "atmosphere": null,
+    "night-texture": null
   },
   "10": {
-    "path": "Assets/HighResTextures/sun_main.jpg",
+    "path": "Assets/SunMaterial.mat",
     "emitting": true,
-    "illuminated_by": null
+    "illuminated_by": null,
+    "atmosphere": null,
+    "night-texture": null
   },
   "199": {
     "path": "Assets/HighResTextures/mercury_main.jpg",
     "emitting": false,
-    "illuminated_by": 10
+    "illuminated_by": 10,
+    "atmosphere": null,
+    "night-texture": null
   },
   "299": {
     "path": "Assets/HighResTextures/venus_main.jpg",
     "emitting": false,
-    "illuminated_by": 10
+    "illuminated_by": 10,
+    "atmosphere": "Assets/HighResTextures/venus_atmosphere.jpg",
+    "night-texture": null
   },
   "301": {
     "path": "Assets/HighResTextures/moon_main.jpg",
     "emitting": false,
-    "illuminated_by": 10
+    "illuminated_by": 10,
+    "atmosphere": null,
+    "night-texture": null
   },
   "399": {
     "path": "Assets/HighResTextures/earth_main.jpg",
     "emitting": false,
-    "illuminated_by": 10
+    "illuminated_by": 10,
+    "atmosphere": "Assets/HighResTextures/earth_clouds.jpg",
+    "night-texture": "Assets/HighResTextures/earth_nightmap.jpg"
   },
   "499": {
     "path": "Assets/HighResTextures/mars_main.jpg",
     "emitting": false,
-    "illuminated_by": 10
+    "illuminated_by": 10,
+    "atmosphere": null,
+    "night-texture": null
   },
   "501": {
     "path": "Assets/HighResTextures/Jupiter_Moons/io_main.jpeg",
     "emitting": false,
-    "illuminated_by": 10
+    "illuminated_by": 10,
+    "atmosphere": null,
+    "night-texture": null
   },
   "502": {
     "path": "Assets/HighResTextures/Jupiter_Moons/europa_main.jpg",
     "emitting": false,
-    "illuminated_by": 10
+    "illuminated_by": 10,
+    "atmosphere": null,
+    "night-texture": null
   },
   "503": {
     "path": "Assets/HighResTextures/Jupiter_Moons/ganymede_main.jpeg",
     "emitting": false,
-    "illuminated_by": 10
+    "illuminated_by": 10,
+    "atmosphere": null,
+    "night-texture": null
   },
   "504": {
     "path": "Assets/HighResTextures/Jupiter_Moons/callisto_main.jpg",
     "emitting": false,
-    "illuminated_by": 10
+    "illuminated_by": 10,
+    "atmosphere": null,
+    "night-texture": null
   },
   "599": {
     "path": "Assets/HighResTextures/jupiter_main.jpg",
     "emitting": false,
-    "illuminated_by": 10
+    "illuminated_by": 10,
+    "atmosphere": null,
+    "night-texture": null
   },
   "601": {
     "path": "Assets/HighResTextures/Saturn_Moons/mimas_main.jpg",
     "emitting": false,
-    "illuminated_by": 10
+    "illuminated_by": 10,
+    "atmosphere": null,
+    "night-texture": null
   },
   "602": {
     "path": "Assets/HighResTextures/Saturn_Moons/enceladus_main.jpeg",
     "emitting": false,
-    "illuminated_by": 10
+    "illuminated_by": 10,
+    "atmosphere": null,
+    "night-texture": null
   },
   "603": {
     "path": "Assets/HighResTextures/Saturn_Moons/tethys_main.jpeg",
     "emitting": false,
-    "illuminated_by": 10
+    "illuminated_by": 10,
+    "atmosphere": null,
+    "night-texture": null
   },
   "604": {
     "path": "Assets/HighResTextures/Saturn_Moons/dione_main.jpeg",
     "emitting": false,
-    "illuminated_by": 10
+    "illuminated_by": 10,
+    "atmosphere": null,
+    "night-texture": null
   },
   "605": {
     "path": "Assets/HighResTextures/Saturn_Moons/rhea_main.jpg",
     "emitting": false,
-    "illuminated_by": 10
+    "illuminated_by": 10,
+    "atmosphere": null,
+    "night-texture": null
   },
   "606": {
     "path": "Assets/HighResTextures/Saturn_Moons/titan_main.jpeg",
     "emitting": false,
-    "illuminated_by": 10
+    "illuminated_by": 10,
+    "atmosphere": null,
+    "night-texture": null
   },
   "608": {
     "path": "Assets/HighResTextures/Saturn_Moons/iapetus_main.jpg",
     "emitting": false,
-    "illuminated_by": 10
+    "illuminated_by": 10,
+    "atmosphere": null,
+    "night-texture": null
   },
   "699": {
     "path": "Assets/HighResTextures/saturn_main.jpg",
     "emitting": false,
-    "illuminated_by": 10
+    "illuminated_by": 10,
+    "atmosphere": null,
+    "night-texture": null
   },
   "799": {
     "path": "Assets/HighResTextures/uranus_main.jpg",
     "emitting": false,
-    "illuminated_by": 10
+    "illuminated_by": 10,
+    "atmosphere": null,
+    "night-texture": null
   },
   "899": {
     "path": "Assets/HighResTextures/neptune_main.jpg",
     "emitting": false,
-    "illuminated_by": 10
+    "illuminated_by": 10,
+    "atmosphere": null,
+    "night-texture": null
   },
   "999": {
     "path": "Assets/HighResTextures/pluto_main.jpg",
     "emitting": false,
-    "illuminated_by": 10
+    "illuminated_by": 10,
+    "atmosphere": null,
+    "night-texture": null
   },
   "4472832130942575872": {
     "path": "Assets/AlphaCentauriA.mat",
     "emitting": true,
-    "illuminated_by": null
+    "illuminated_by": null,
+    "atmosphere": null,
+    "night-texture": null
   },
   "4472832130942575873": {
     "path": "Assets/AlphaCentauriB.mat",
     "emitting": true,
-    "illuminated_by": null
+    "illuminated_by": null,
+    "atmosphere": null,
+    "night-texture": null
   },
   "4472832130942575874": {
     "path": "Assets/ProximaCentauri.mat",
     "emitting": true,
-    "illuminated_by": null
+    "illuminated_by": null,
+    "atmosphere": null,
+    "night-texture": null
   },
   "9000000000": {
     "path": "Assets/BlackHole.mat",
     "emitting": false,
-    "illuminated_by": null
+    "illuminated_by": null,
+    "atmosphere": null,
+    "night-texture": null
   }
 }
