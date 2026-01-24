@@ -619,21 +619,37 @@ public class SolarSystemUIManager : MonoBehaviour
         panelRect.anchoredPosition = new Vector2(0, -1200); // Start off-screen (bottom)
         panelRect.sizeDelta = new Vector2(600, 800);
         
-        // Add gradient-like background (semi-transparent dark blue/purple)
+        // === BACKGROUND PANEL === (Match HUD style)
         Image panelImage = planetInfoUI.AddComponent<Image>();
-        panelImage.color = new Color(0.08f, 0.08f, 0.18f, 0.92f);
+        panelImage.color = new Color(0.02f, 0.05f, 0.12f, 0.85f); // Same as HUD background
         
-        // Add left border accent
-        GameObject borderGO = new GameObject("LeftBorder");
-        borderGO.transform.SetParent(planetInfoUI.transform, false);
-        RectTransform borderRect = borderGO.AddComponent<RectTransform>();
-        borderRect.anchorMin = new Vector2(0, 0);
-        borderRect.anchorMax = new Vector2(0, 1);
-        borderRect.pivot = new Vector2(0, 0.5f);
-        borderRect.anchoredPosition = Vector2.zero;
-        borderRect.sizeDelta = new Vector2(4, 0);
-        Image borderImage = borderGO.AddComponent<Image>();
-        borderImage.color = new Color(0.3f, 0.8f, 1f, 0.9f); // Cyan accent
+        // === BORDER FRAME === (Match HUD style)
+        // Top border
+        CreateBorderEdge(planetInfoUI.transform, "BorderTop", new Vector2(0, 1), new Vector2(1, 1), 
+            new Vector2(0, 0), new Vector2(0, -3), new Color(0.2f, 0.8f, 1f, 0.9f));
+        // Bottom border
+        CreateBorderEdge(planetInfoUI.transform, "BorderBottom", new Vector2(0, 0), new Vector2(1, 0), 
+            new Vector2(0, 3), new Vector2(0, 0), new Color(0.2f, 0.8f, 1f, 0.9f));
+        // Left border
+        CreateBorderEdge(planetInfoUI.transform, "BorderLeft", new Vector2(0, 0), new Vector2(0, 1), 
+            new Vector2(3, 0), new Vector2(0, 0), new Color(0.2f, 0.8f, 1f, 0.9f));
+        // Right border
+        CreateBorderEdge(planetInfoUI.transform, "BorderRight", new Vector2(1, 0), new Vector2(1, 1), 
+            new Vector2(0, 0), new Vector2(-3, 0), new Color(0.2f, 0.8f, 1f, 0.9f));
+        
+        // === CORNER BRACKETS === (Match HUD style)
+        Color bracketColor = new Color(0.3f, 0.9f, 1f, 1f); // Bright cyan
+        float bracketSize = 35f; // Slightly larger for bigger panel
+        float bracketThickness = 3f;
+        
+        // Top-left corner
+        CreateCornerBracket(planetInfoUI.transform, "CornerTL", new Vector2(0, 1), bracketSize, bracketThickness, bracketColor, true, true);
+        // Top-right corner
+        CreateCornerBracket(planetInfoUI.transform, "CornerTR", new Vector2(1, 1), bracketSize, bracketThickness, bracketColor, false, true);
+        // Bottom-left corner
+        CreateCornerBracket(planetInfoUI.transform, "CornerBL", new Vector2(0, 0), bracketSize, bracketThickness, bracketColor, true, false);
+        // Bottom-right corner
+        CreateCornerBracket(planetInfoUI.transform, "CornerBR", new Vector2(1, 0), bracketSize, bracketThickness, bracketColor, false, false);
         
         // Create title/header section
         GameObject headerGO = new GameObject("Header");
@@ -650,8 +666,21 @@ public class SolarSystemUIManager : MonoBehaviour
         if (labelFont != null) planetInfoNameText.font = labelFont;
         planetInfoNameText.fontSize = 42;
         planetInfoNameText.fontStyle = FontStyles.Bold;
-        planetInfoNameText.color = new Color(0.3f, 0.9f, 1f, 1f); // Bright cyan
+        planetInfoNameText.color = new Color(0.4f, 0.9f, 1f, 1f); // Bright cyan (match HUD)
         planetInfoNameText.alignment = TextAlignmentOptions.Center;
+        planetInfoNameText.characterSpacing = 3f; // Add spacing like HUD header
+        
+        // === HEADER LINE === (Match HUD style)
+        GameObject headerLine = new GameObject("HeaderLine");
+        headerLine.transform.SetParent(planetInfoUI.transform, false);
+        RectTransform headerLineRect = headerLine.AddComponent<RectTransform>();
+        headerLineRect.anchorMin = new Vector2(0, 1);
+        headerLineRect.anchorMax = new Vector2(1, 1);
+        headerLineRect.pivot = new Vector2(0.5f, 1);
+        headerLineRect.anchoredPosition = new Vector2(0, -72);
+        headerLineRect.sizeDelta = new Vector2(-30, 1);
+        Image headerLineImg = headerLine.AddComponent<Image>();
+        headerLineImg.color = new Color(0.2f, 0.6f, 0.8f, 0.5f);
         
         // Create data content section
         GameObject contentGO = new GameObject("Content");
@@ -659,8 +688,8 @@ public class SolarSystemUIManager : MonoBehaviour
         RectTransform contentRect = contentGO.AddComponent<RectTransform>();
         contentRect.anchorMin = new Vector2(0, 0);
         contentRect.anchorMax = new Vector2(1, 1);
-        contentRect.offsetMin = new Vector2(20, 50);
-        contentRect.offsetMax = new Vector2(-15, -75);
+        contentRect.offsetMin = new Vector2(25, 50); // More left padding for cleaner look
+        contentRect.offsetMax = new Vector2(-25, -85); // Adjusted for header line
         
         planetInfoDataText = contentGO.AddComponent<TextMeshProUGUI>();
         planetInfoDataText.text = "";
@@ -705,6 +734,12 @@ public class SolarSystemUIManager : MonoBehaviour
         planetInfoUI.SetActive(true);
         PopulatePlanetInfo(data);
         
+        // Hide HUD to prevent overlap
+        if (hudUI != null)
+        {
+            hudUI.SetActive(false);
+        }
+        
         Debug.Log($"[UIManager] Showing planet info for: {data.Name}");
     }
     
@@ -714,6 +749,12 @@ public class SolarSystemUIManager : MonoBehaviour
     public void HidePlanetInfo()
     {
         planetInfoVisible = false;
+        
+        // Show HUD again when closing planet info
+        if (hudUI != null && enableHUD)
+        {
+            hudUI.SetActive(true);
+        }
     }
     
     /// <summary>
