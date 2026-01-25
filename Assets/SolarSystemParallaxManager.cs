@@ -40,6 +40,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [Tooltip("Higher = more detailed (0-4 recommended)")]
     [SerializeField] private int sphereSubdivisions = 3;  // Higher = more detailed (0-4 recommended)
     
+    [Tooltip("Distance threshold (AU) beyond which moon labels are hidden")]
+    [SerializeField] private float moonVisibilityThresholdAu = 1.0f;
+    
     [Header("Saturn Rings")]
     [Tooltip("Material for Saturn's rings (should use alpha transparency)")]
     [SerializeField] private Material saturnRingMaterial;
@@ -2436,6 +2439,14 @@ public class SolarSystemParallaxManager : MonoBehaviour
             // --- UI label position calculation ---
             if (labelsEnabled && body.labelUI != null && cam != null && canvasRect != null)
             {
+                // Check moon visibility distance filter
+                // If it's a moon and we are too far away, hide the label (but keep proxy visible)
+                if (IsMoon(body.naifId) && distAu > moonVisibilityThresholdAu)
+                {
+                    body.labelUI.SetActive(false);
+                    continue; // Skip the rest of label processing for this body
+                }
+
                 // Convert world position to viewport position (0-1 range, works better for VR)
                 Vector3 viewportPos = cam.WorldToViewportPoint(body.proxy.position);
                 
@@ -2512,7 +2523,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
                         screenPos = canvasPos,
                         distanceAu = (float)distAu,
                         labelBounds = bounds,
-                        isPriority = IsProximaSystem(body)
+                        // Only prioritize Proxima system if we are close enough (< 50,000 AU)
+                        // Otherwise treat them as normal labels so they can be occluded/merged
+                        isPriority = IsProximaSystem(body.naifId) && distAu < 50000.0
                     });
                 }
                 else
