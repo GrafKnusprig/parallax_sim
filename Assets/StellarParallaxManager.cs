@@ -12,7 +12,7 @@ using Unity.Mathematics;
 [RequireComponent(typeof(SolarSystemParallaxManager))]
 public class StellarParallaxManager : MonoBehaviour
 {
-    [Header("Gaia GDR1 Data Settings")]
+    [Header("Gaia GDR3 Data Settings")]
     [Tooltip("Virtual render distance from nearest to farthest star (%)")]
     [SerializeField] private float renderDistanceRange = 50f;  // Distance in parsecs
     
@@ -100,7 +100,7 @@ public class StellarParallaxManager : MonoBehaviour
     private const float PARSEC_TO_AU = 206264.806f;  // 1 parsec = 206,264.806 AU
     private const float AU_TO_PARSEC = 1f / PARSEC_TO_AU;  // 1 AU = 1/206,264.806 parsecs
     
-    // Star data structure for GDR1 format
+    // Star data structure for GDR3 format
     private struct StarData
     {
         public Vector3 positionParsecs;  // 3D position in parsecs (galactic coordinates)
@@ -368,7 +368,7 @@ public class StellarParallaxManager : MonoBehaviour
         
         CreateStarParent();
         InitializeStarMesh();
-        StartCoroutine(LoadGDR1DataAsync());
+        StartCoroutine(LoadGDR3DataAsync());
     }
     
     private void Update()
@@ -406,7 +406,7 @@ public class StellarParallaxManager : MonoBehaviour
     {
         if (starParent != null) return;
         
-        starParent = new GameObject("Gaia_GDR1_Stars");
+        starParent = new GameObject("Gaia_GDR3_Stars");
         starParent.transform.SetParent(transform, false);
         starParent.transform.localPosition = Vector3.zero;
         starParent.transform.localRotation = Quaternion.identity;
@@ -442,13 +442,13 @@ public class StellarParallaxManager : MonoBehaviour
         starMesh.bounds = new Bounds(Vector3.zero, Vector3.one * 10000f);
     }
     
-    private IEnumerator LoadGDR1DataAsync()
+    private IEnumerator LoadGDR3DataAsync()
     {
-        Debug.Log("Loading Gaia GDR1 stellar data from binary file...");
+        Debug.Log("Loading Gaia GDR3 stellar data from binary file...");
         
         allStars.Clear();
         
-        string filePath = Path.Combine(Application.streamingAssetsPath, "GDR1", "gaia_stars.bin");
+        string filePath = Path.Combine(Application.streamingAssetsPath, "GDR3", "gaia3_10M.bin");
         
         if (!File.Exists(filePath))
         {
