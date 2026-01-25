@@ -187,5 +187,12 @@
     "illuminated_by": null,
     "atmosphere": null,
     "night-texture": null
+  },
+  "10001": {
+    "path": "Assets/Prefabs/USS_Enterprise_NCC-1701_7.prefab",
+    "emitting": false,
+    "illuminated_by": 10,
+    "atmosphere": null,
+    "night-texture": null
   }
 }

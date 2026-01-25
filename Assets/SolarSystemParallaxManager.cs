@@ -40,6 +40,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [Tooltip("Higher = more detailed (0-4 recommended)")]
     [SerializeField] private int sphereSubdivisions = 3;  // Higher = more detailed (0-4 recommended)
     
+
+    
     [Header("Saturn Rings")]
     [Tooltip("Material for Saturn's rings (should use alpha transparency)")]
     [SerializeField] private Material saturnRingMaterial;
@@ -144,6 +146,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private Dictionary<long, Material> planetMaterials = new Dictionary<long, Material>(); // For stars with custom materials
     private Dictionary<long, bool> bodyEmitting = new Dictionary<long, bool>(); // Whether body emits light
     private Dictionary<long, long?> bodyIlluminatedBy = new Dictionary<long, long?>(); // Which body illuminates this one
+    private Dictionary<long, GameObject> customPrefabs = new Dictionary<long, GameObject>(); // For spaceship models etc.
     
     // NOTE: HUD elements (hudUI, hudText) have been moved to SolarSystemUIManager.
     
@@ -193,7 +196,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         public float radiusKm;
 
         public Transform proxy;
-        public Renderer renderer;
+        public Renderer[] renderers;
         public Renderer ringRenderer;
 
         // UI-based labels
@@ -576,19 +579,23 @@ public class SolarSystemParallaxManager : MonoBehaviour
             // Base queue for this body index. Using stride of 10 to allow space for layers.
             int baseQueue = 2000 + (i * 10);
 
-            if (body.renderer != null)
+            if (body.renderers != null)
             {
-                Material mat = body.renderer.material;
-                if (mat != null)
+                foreach (var r in body.renderers)
                 {
-                    // Render Planet FIRST (opaque, writes Z)
-                    mat.renderQueue = baseQueue; 
-
-                    if (mat.HasProperty(StencilRefId))
+                    if (r == null) continue;
+                    Material mat = r.material;
+                    if (mat != null)
                     {
-                        mat.SetFloat(StencilRefId, stencilRef);
-                        mat.SetFloat(StencilCompId, 7); // GreaterEqual
-                        mat.SetFloat(StencilPassId, 2); // Replace
+                        // Render Planet/Ship (opaque, writes Z)
+                        mat.renderQueue = baseQueue; 
+
+                        if (mat.HasProperty(StencilRefId))
+                        {
+                            mat.SetFloat(StencilRefId, stencilRef);
+                            mat.SetFloat(StencilCompId, 7); // GreaterEqual
+                            mat.SetFloat(StencilPassId, 2); // Replace
+                        }
                     }
                 }
             }
@@ -781,8 +788,17 @@ public class SolarSystemParallaxManager : MonoBehaviour
             string name = GetBodyName(naifId, objectType);
 
             // Create proxy sphere
+            // Create proxy object
             GameObject proxy;
-            if (useHighQualitySpheres)
+            
+
+            
+            if (customPrefabs.TryGetValue(naifId, out GameObject prefab))
+            {
+                proxy = Instantiate(prefab);
+                proxy.name = name;
+            }
+            else if (useHighQualitySpheres)
             {
                 proxy = CreateHighQualitySphere(name, sphereSubdivisions);
             }
@@ -798,80 +814,92 @@ public class SolarSystemParallaxManager : MonoBehaviour
             proxy.transform.localPosition = Vector3.zero;
             proxy.transform.localScale = Vector3.one; // will be updated in UpdateBodyProxies
 
-            var renderer = proxy.GetComponent<MeshRenderer>();
-            if (renderer != null)
+            var renderers = proxy.GetComponentsInChildren<Renderer>();
+            bool isCustomPrefab = customPrefabs.ContainsKey(naifId);
+
+            foreach (var renderer in renderers)
             {
-                Material materialToUse = null;
-                bool isEmitting = bodyEmitting.TryGetValue(naifId, out bool emitting) && emitting;
-                
-                // Check if this body has a custom material (e.g., stars with procedural shaders)
-                if (planetMaterials.TryGetValue(naifId, out Material customMaterial))
+                if (renderer != null)
                 {
-                    materialToUse = customMaterial;
-                }
-                // Otherwise, use the base material with texture applied
-                else if (planetMaterial != null)
-                {
-                    // Duplicate the material so each body has its own instance
-                    materialToUse = new Material(planetMaterial);
+                    Material materialToUse = null;
                     
-                    // Try to load body-specific texture, fall back to default (ID 0)
-                    Texture2D textureToUse = null;
-                    if (planetTextures.TryGetValue(naifId, out Texture2D specificTexture))
+                    // Only apply default planet material logic if it's not a custom prefab
+                    // (Custom prefabs maintain their own materials, but can still receive SunDirection)
+                    if (!isCustomPrefab)
                     {
-                        textureToUse = specificTexture;
-                    }
-                    else if (planetTextures.TryGetValue(0, out Texture2D defaultTexture))
-                    {
-                        textureToUse = defaultTexture;
-                        Debug.Log($"Using default texture for {name} (NAIF ID {naifId})");
-                    }
-                    
-                    // Apply texture to the duplicated material
-                    if (textureToUse != null)
-                    {
-                        materialToUse.SetTexture("_BaseMap", textureToUse);
-                        materialToUse.SetTexture("_MainTex", textureToUse); // Legacy shader support
-
-                        // Apply atmosphere texture if available
-                        if (planetAtmosphereTextures.TryGetValue(naifId, out Texture2D atmTexture))
+                        bool isEmitting = bodyEmitting.TryGetValue(naifId, out bool emitting) && emitting;
+                        
+                        // Check if this body has a custom material (e.g., stars with procedural shaders)
+                        if (planetMaterials.TryGetValue(naifId, out Material customMaterial))
                         {
-                            materialToUse.SetTexture("_SecondTex", atmTexture);
-                            Debug.Log($"Applied atmosphere to {name}");
+                            materialToUse = customMaterial;
                         }
-
-                        // Apply night texture if available
-                        if (planetNightTextures.TryGetValue(naifId, out Texture2D nightTexture))
+                        // Otherwise, use the base material with texture applied
+                        else if (planetMaterial != null)
                         {
-                            materialToUse.SetTexture("_NightTex", nightTexture);
-                            Debug.Log($"Applied night texture to {name}");
+                            // Duplicate the material so each body has its own instance
+                            materialToUse = new Material(planetMaterial);
+                            
+                            // Try to load body-specific texture, fall back to default (ID 0)
+                            Texture2D textureToUse = null;
+                            if (planetTextures.TryGetValue(naifId, out Texture2D specificTexture))
+                            {
+                                textureToUse = specificTexture;
+                            }
+                            else if (planetTextures.TryGetValue(0, out Texture2D defaultTexture))
+                            {
+                                textureToUse = defaultTexture;
+                                Debug.Log($"Using default texture for {name} (NAIF ID {naifId})");
+                            }
+                            
+                            // Apply texture to the duplicated material
+                            if (textureToUse != null)
+                            {
+                                materialToUse.SetTexture("_BaseMap", textureToUse);
+                                materialToUse.SetTexture("_MainTex", textureToUse); // Legacy shader support
+
+                                // Apply atmosphere texture if available
+                                if (planetAtmosphereTextures.TryGetValue(naifId, out Texture2D atmTexture))
+                                {
+                                    materialToUse.SetTexture("_SecondTex", atmTexture);
+                                    Debug.Log($"Applied atmosphere to {name}");
+                                }
+
+                                // Apply night texture if available
+                                if (planetNightTextures.TryGetValue(naifId, out Texture2D nightTexture))
+                                {
+                                    materialToUse.SetTexture("_NightTex", nightTexture);
+                                    Debug.Log($"Applied night texture to {name}");
+                                }
+                                
+                                // If this body emits light, make it glow
+                                if (isEmitting)
+                                {
+                                    materialToUse.EnableKeyword("_EMISSION");
+                                    materialToUse.SetTexture("_EmissionMap", textureToUse);
+                                    materialToUse.SetColor("_EmissionColor", Color.white * 2f); // Bright emission
+                                    Debug.Log($"Enabled emission for {name} (NAIF ID {naifId})");
+                                }
+                            }
                         }
                         
-                        // If this body emits light, make it glow
-                        if (isEmitting)
+                        if (materialToUse != null)
                         {
-                            materialToUse.EnableKeyword("_EMISSION");
-                            materialToUse.SetTexture("_EmissionMap", textureToUse);
-                            materialToUse.SetColor("_EmissionColor", Color.white * 2f); // Bright emission
-                            Debug.Log($"Enabled emission for {name} (NAIF ID {naifId})");
+                            renderer.material = materialToUse;
                         }
                     }
-                    
-                }
-                
-                // Apply Shadow Direction (Sun Direction) to any material (custom or standard)
-                if (materialToUse != null && useShadowVectors && shadowVectorIndex < shadowVectors.Count)
-                {
-                    Vector4 sunDir = shadowVectors[shadowVectorIndex];
-                    if (sunDir.w > 0.5f) // Check validity
-                    {
-                         materialToUse.SetVector("_SunDirection", sunDir);
-                    }
-                }
 
-                if (materialToUse != null)
-                {
-                    renderer.material = materialToUse; // Use .material (not .sharedMaterial) since we duplicated it
+                    // Apply Shadow Direction (Sun Direction) to any material (custom, prefab, or standard)
+                    // We check the renderer's current material (which might have been just set, or is from prefab)
+                    Material currentMat = renderer.material;
+                    if (currentMat != null && useShadowVectors && shadowVectorIndex < shadowVectors.Count)
+                    {
+                        Vector4 sunDir = shadowVectors[shadowVectorIndex];
+                        if (currentMat.HasProperty("_SunDirection") && sunDir.w > 0.5f)
+                        {
+                             currentMat.SetVector("_SunDirection", sunDir);
+                        }
+                    }
                 }
             }
 
@@ -884,7 +912,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 realPosAu = realPosAu,
                 radiusKm = radiusKm,
                 proxy = proxy.transform,
-                renderer = proxy.GetComponent<Renderer>()
+                renderers = proxy.GetComponentsInChildren<Renderer>()
             };
             
             // Create rings for Saturn (NAIF ID 699)
@@ -1762,6 +1790,29 @@ public class SolarSystemParallaxManager : MonoBehaviour
                             Debug.LogWarning($"Could not load material at path: {assetPath} for NAIF ID {naifId}");
                         }
                     }
+                    else if (assetPath.EndsWith(".obj") || assetPath.EndsWith(".fbx") || assetPath.EndsWith(".prefab"))
+                    {
+                        // Load model/prefab
+                        GameObject prefab = null;
+#if UNITY_EDITOR
+                        prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
+#else
+                        // Identify this as a model resource
+                        string resourcesPath = assetPath.Replace("Assets/", "");
+                        int lastDot = resourcesPath.LastIndexOf('.');
+                        if (lastDot > 0) resourcesPath = resourcesPath.Substring(0, lastDot);
+                        prefab = Resources.Load<GameObject>(resourcesPath);
+#endif
+                        if (prefab != null)
+                        {
+                            customPrefabs[naifId] = prefab;
+                            Debug.Log($"Loaded custom prefab for NAIF ID {naifId}: {assetPath}");
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"Could not load prefab at path: {assetPath} for NAIF ID {naifId}");
+                        }
+                    }
                     else
                     {
                         // Load texture (for planets/moons)
@@ -2391,26 +2442,67 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
             body.proxy.gameObject.SetActive(true);
 
+
+
             Vector3d dir = offsetAu / distAu;
-
-            // Position on horizon sphere
-            Vector3 proxyPos = (Vector3)(dir * horizonRadius);
-            body.proxy.position = proxyPos;
-
-            // Apparent angular radius (radians)
             double distKm = distAu * AU_KM;
-            double angularRadius = Math.Atan(body.radiusKm / distKm);
 
-            // Proxy radius at distance horizonRadius
-            double proxyRadius = Math.Tan(angularRadius) * horizonRadius;
+            // Hybrid placement logic for spaceships
+            if (body.objectType == "spaceship")
+            {
+                // Threshold for "local" 3D placement (90% of horizon radius)
+                // Assuming 1 Unity Unit = 1 km for local space
+                double localThreshold = horizonRadius * 0.9;
+                
+                if (distKm < localThreshold)
+                {
+                    // LOCAL MODE: Place at actual relative position
+                    // We treat 1 Unity Unit as 1 km
+                    body.proxy.position = (Vector3)(dir * distKm);
+                    
+                    // Scale to actual physical size (radius * 2 = diameter)
+                    // Since 1 unit = 1 km, and radiusKm is in km
+                    float diameter = body.radiusKm * 2f;
+                    body.proxy.localScale = new Vector3(diameter, diameter, diameter);
+                }
+                else
+                {
+                    // DISTANT MODE: Project to horizon sphere (clamped)
+                    // Place it just inside the horizon radius to avoid clipping
+                    body.proxy.position = (Vector3)(dir * localThreshold);
+                    
+                    // Use angular size scaling so it looks correct from a distance
+                    // Calculate apparent angular radius (radians)
+                    double angularRadius = Math.Atan(body.radiusKm / distKm);
+                    
+                    // Calculate what the size should be at the CLAMPED distance (localThreshold) to maintain that angle
+                    double proxyRadius = Math.Tan(angularRadius) * localThreshold;
+                    float diameter = (float)proxyRadius * 2f;
+                    body.proxy.localScale = new Vector3(diameter, diameter, diameter);
+                }
+            }
+            else
+            {
+                // STANDARD CELESTIAL BODY LOGIC (Horizon Sphere Projection)
+                
+                // Position on horizon sphere
+                Vector3 proxyPos = (Vector3)(dir * horizonRadius);
+                body.proxy.position = proxyPos;
 
-            float r = (float)proxyRadius;
+                // Apparent angular radius (radians)
+                double angularRadius = Math.Atan(body.radiusKm / distKm);
 
-            // Clamp to keep things sane in Unity
-            r = Mathf.Clamp(r, minProxyRadius, maxProxyRadius);
+                // Proxy radius at distance horizonRadius
+                double proxyRadius = Math.Tan(angularRadius) * horizonRadius;
 
-            float diameter = r * 2f;
-            body.proxy.localScale = new Vector3(diameter, diameter, diameter);
+                float r = (float)proxyRadius;
+
+                // Clamp to keep things sane in Unity
+                r = Mathf.Clamp(r, minProxyRadius, maxProxyRadius);
+
+                float diameter = r * 2f;
+                body.proxy.localScale = new Vector3(diameter, diameter, diameter);
+            }
 
             // --- UI label position calculation ---
             if (labelsEnabled && body.labelUI != null && cam != null && canvasRect != null)
