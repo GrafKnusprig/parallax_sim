@@ -2465,6 +2465,20 @@ public class SolarSystemParallaxManager : MonoBehaviour
                             }
                         }
                     }
+
+                    // Check if we are "near" the planet and looking directly at it
+                    // If so, hide the label to avoid visual clutter
+                    if (isVisible)
+                    {
+                        float angle = Vector3.Angle(cam.transform.forward, directionToBody);
+                        // Threshold: 100x radius. e.g. Earth (6371 km) -> 637,100 km (~2 light seconds)
+                        double nearThresholdKm = body.radiusKm * 100.0;
+                        
+                        if (distKm < nearThresholdKm && angle < 15f)
+                        {
+                            isVisible = false;
+                        }
+                    }
                 }
                 
                 if (isVisible)
