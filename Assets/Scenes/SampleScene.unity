@@ -466,12 +466,6 @@ MonoBehaviour:
   targetCamera: {fileID: 1528494429}
   moveAction: {fileID: -1680190386980627800, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   verticalAction: {fileID: -1957627301107028444, guid: 052faaac586de48259a63d0c4782560b, type: 3}
-  enableHUD: 1
-  hudFontSize: 22
-  hudColor: {r: 0, g: 1, b: 1, a: 1}
-  hudPosition: {x: 20, y: -200}
-  enableVRMode: 0
-  enableLoadingScreen: 0
 --- !u!4 &713169412
 Transform:
   m_ObjectHideFlags: 0
@@ -505,7 +499,7 @@ MonoBehaviour:
   baseStarSize: 15
   starColor: {r: 1, g: 1, b: 1, a: 1}
   starBrightness: 1
-  maxStarsPerFrame: 2500000
+  maxStarsPerFrame: 10000000
   useComputeShader: 1
   starCullingShader: {fileID: 7200000, guid: f989da71d83d24990981d5e71b865be6, type: 3}
   starMaterialGPU: {fileID: 2100000, guid: 9b89695dc194b4ae8a4b87bb020a8e4a, type: 2}
@@ -555,7 +549,12 @@ MonoBehaviour:
   planetInfoAction: {fileID: 83097790271614945, guid: c348712bda248c246b8c49b3db54643f, type: 3}
   menuScrollAction: {fileID: -60998027439631388, guid: c348712bda248c246b8c49b3db54643f, type: 3}
   menuSelectAction: {fileID: -6131295136447488360, guid: c348712bda248c246b8c49b3db54643f, type: 3}
+  enableHUD: 1
+  hudFontSize: 28
+  hudColor: {r: 0, g: 1, b: 1, a: 1}
+  hudPosition: {x: 300, y: -100}
   planetInfoAnimSpeed: 8
+  enableLoadingScreen: 1
 --- !u!1 &832575517
 GameObject:
   m_ObjectHideFlags: 0

@@ -31,7 +31,7 @@ public class StellarParallaxManager : MonoBehaviour
     [Tooltip("Overall brightness for all stars (0-5x)")]
     [SerializeField] private float starBrightness = 1.0f;
     [Tooltip("Maximum stars to render per frame (count)")]
-    [SerializeField] private int maxStarsPerFrame = 2500000;
+    [SerializeField] private int maxStarsPerFrame = 10000000;
 
     [Header("GPU Processing (Compute Shader)")]
     [Tooltip("Use GPU compute shader for star processing (fastest)")]
@@ -138,12 +138,10 @@ public class StellarParallaxManager : MonoBehaviour
     // GPU input struct (must match compute shader)
     private struct StarInputGPU
     {
-        public Vector3 positionParsecs;
-        public Vector3 direction;
-        public float distance;
-        public float invDistance;
+        public Vector4 posAndDist;     // xyz = positionParsecs, w = distance
+        public Vector4 dirAndInvDist;  // xyz = direction,       w = invDistance
         
-        public static int Size => sizeof(float) * 8; // 3 + 3 + 1 + 1 = 8 floats
+        public static int Size => sizeof(float) * 8; // 4 + 4 = 8 floats (32 bytes)
     }
     
     // Data storage
@@ -517,11 +515,12 @@ public class StellarParallaxManager : MonoBehaviour
         Debug.Log($"Distance range: {minStarDistance:F2} - {maxStarDistance:F2} parsecs");
         
         // Allocate NativeArrays for Burst/Jobs processing
-        AllocateNativeArraysFromStarData();
+        // We do this in chunks to avoid blocking main thread
+        yield return StartCoroutine(AllocateNativeArraysFromStarDataAsync());
         EnsureOutputArrayCapacity(maxStarsPerFrame);
         
         // Allocate ComputeBuffers for GPU processing
-        AllocateComputeBuffers();
+        yield return StartCoroutine(AllocateComputeBuffersAsync());
         
         starsLoaded = true;
         UpdateVisibleStars();
@@ -1103,7 +1102,8 @@ public class StellarParallaxManager : MonoBehaviour
         starBrightness = Mathf.Clamp(starBrightness, 0.1f, 5f);
         
         // Clamp max stars per frame
-        maxStarsPerFrame = Mathf.Clamp(maxStarsPerFrame, 100, 3000000);
+        // Allow up to 20M for full dataset rendering
+        maxStarsPerFrame = Mathf.Clamp(maxStarsPerFrame, 100, 20000000);
 
         farCullingStartAu = Mathf.Max(0f, farCullingStartAu);
         farCullingEndAu = Mathf.Max(farCullingStartAu, farCullingEndAu);
@@ -1154,19 +1154,22 @@ public class StellarParallaxManager : MonoBehaviour
         outputArrayCapacity = 0;
     }
     
-    private void AllocateNativeArraysFromStarData()
+    private IEnumerator AllocateNativeArraysFromStarDataAsync()
     {
         if (nativeArraysAllocated)
             DisposeNativeArrays();
         
         int count = allStars.Count;
-        if (count == 0) return;
+        if (count == 0) yield break;
         
         nativePositionsParsecs = new NativeArray<float3>(count, Allocator.Persistent);
         nativeDirections = new NativeArray<float3>(count, Allocator.Persistent);
         nativeDistances = new NativeArray<float>(count, Allocator.Persistent);
         nativeInvDistances = new NativeArray<float>(count, Allocator.Persistent);
         
+        int batchSize = 100000;
+        int processed = 0;
+
         for (int i = 0; i < count; i++)
         {
             StarData star = allStars[i];
@@ -1174,48 +1177,67 @@ public class StellarParallaxManager : MonoBehaviour
             nativeDirections[i] = new float3(star.direction.x, star.direction.y, star.direction.z);
             nativeDistances[i] = star.distance;
             nativeInvDistances[i] = star.invDistance;
+
+            processed++;
+            if (processed % batchSize == 0)
+                yield return null;
         }
         
         nativeArraysAllocated = true;
         Debug.Log($"[StellarParallaxManager] Allocated NativeArrays for {count:N0} stars (Burst/Jobs ready)");
     }
     
-    private void AllocateComputeBuffers()
+    private IEnumerator AllocateComputeBuffersAsync()
     {
         if (starCullingShader == null)
         {
             Debug.LogWarning("[StellarParallaxManager] No compute shader assigned, GPU path disabled");
-            return;
+            yield break;
         }
         
         DisposeComputeBuffers();
         
         int count = allStars.Count;
-        if (count == 0) return;
+        if (count == 0) yield break;
         
         // Get kernel
         computeKernelCull = starCullingShader.FindKernel("CullStars");
         
+        yield return null; // Yield before big allocation
+
         // Create input buffer (uploaded once with all star data)
         starInputBuffer = new ComputeBuffer(count, StarInputGPU.Size);
         
-        // Fill input buffer
+        // Fill input buffer in chunks
         StarInputGPU[] inputData = new StarInputGPU[count];
+        int batchSize = 100000;
+        int processed = 0;
+
         for (int i = 0; i < count; i++)
         {
             StarData star = allStars[i];
             inputData[i] = new StarInputGPU
             {
-                positionParsecs = star.positionParsecs,
-                direction = star.direction,
-                distance = star.distance,
-                invDistance = star.invDistance
+                posAndDist = new Vector4(star.positionParsecs.x, star.positionParsecs.y, star.positionParsecs.z, star.distance),
+                dirAndInvDist = new Vector4(star.direction.x, star.direction.y, star.direction.z, star.invDistance)
             };
+
+            processed++;
+            if (processed % batchSize == 0)
+                yield return null;
         }
+
+        // Upload to GPU
         starInputBuffer.SetData(inputData);
         
+        // Discard managed array to free memory
+        inputData = null;
+        GC.Collect();
+        
+        yield return null;
+        
         // Create visible stars output buffer (AppendBuffer)
-        // Size for worst case: all stars visible
+        // Size for worst case: all stars visible (capped at maxStarsPerFrame)
         int maxVisible = Mathf.Min(count, maxStarsPerFrame);
         visibleStarsBuffer = new ComputeBuffer(maxVisible, sizeof(float) * 3, ComputeBufferType.Append); // float3 worldPosition
         

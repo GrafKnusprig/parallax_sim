@@ -6,12 +6,11 @@
 #pragma kernel CopyCount
 
 // Input star data (uploaded once)
+// Uses float4 for explicit 16-byte alignment to match C# layout safely
 struct StarInput
 {
-    float3 positionParsecs;
-    float3 direction;
-    float distance;
-    float invDistance;
+    float4 posAndDist;    // xyz = positionParsecs, w = distance
+    float4 dirAndInvDist; // xyz = direction,       w = invDistance
 };
 
 // Output visible star data
@@ -44,7 +43,10 @@ uint _StarCount;
 // Calculate world position with parallax
 float3 CalculateWorldPosition(StarInput star, float3 playerPosAu)
 {
-    float3 originalDirection = star.direction;
+    float3 positionParsecs = star.posAndDist.xyz;
+    float3 originalDirection = star.dirAndInvDist.xyz;
+    float distance = star.posAndDist.w;
+    float invDistance = star.dirAndInvDist.w;
     
     if (_EnableParallax == 0)
     {
@@ -52,10 +54,10 @@ float3 CalculateWorldPosition(StarInput star, float3 playerPosAu)
     }
     
     // Fast approximation for distant stars
-    if (_EnableFastParallaxApprox == 1 && star.distance >= _ParallaxApproxDistanceParsecs)
+    if (_EnableFastParallaxApprox == 1 && distance >= _ParallaxApproxDistanceParsecs)
     {
         float3 playerPosParsecs = playerPosAu * _AuToParsec;
-        float3 approxDir = normalize(originalDirection - (playerPosParsecs * star.invDistance));
+        float3 approxDir = normalize(originalDirection - (playerPosParsecs * invDistance));
         
         if (any(isnan(approxDir)) || any(isinf(approxDir)))
             approxDir = originalDirection;
@@ -65,7 +67,7 @@ float3 CalculateWorldPosition(StarInput star, float3 playerPosAu)
     
     // Full precision parallax
     float3 playerPosParsecs = playerPosAu * _AuToParsec;
-    float3 playerToStar = star.positionParsecs - playerPosParsecs;
+    float3 playerToStar = positionParsecs - playerPosParsecs;
     float actualDistance = length(playerToStar);
     
     if (actualDistance < 0.001)
@@ -87,13 +89,14 @@ void CullStars(uint3 id : SV_DispatchThreadID)
     
     StarInput star = _AllStars[id.x];
     
-    // Rough FOV culling first (cheapest check)
-    float3 starDir = star.direction * _HorizonRadius;
-    float3 toStarRough = normalize(starDir - _CameraPos);
-    float roughDot = dot(_CameraForward, toStarRough);
-    
-    if (roughDot < _CosRoughFOV)
-        return;
+    // Rough FOV culling REMOVED for full rendering
+    // float3 originalDirection = star.dirAndInvDist.xyz;
+    // float3 starDir = originalDirection * _HorizonRadius;
+    // float3 toStarRough = normalize(starDir - _CameraPos);
+    // float roughDot = dot(_CameraForward, toStarRough);
+    // 
+    // if (roughDot < _CosRoughFOV)
+    //     return;
     
     // Calculate world position with parallax
     float3 worldPos = CalculateWorldPosition(star, _PlayerPosAu);
@@ -102,12 +105,12 @@ void CullStars(uint3 id : SV_DispatchThreadID)
     if (any(isnan(worldPos)) || any(isinf(worldPos)))
         return;
     
-    // Precise FOV culling
-    float3 toStar = normalize(worldPos - _CameraPos);
-    float dotProduct = dot(_CameraForward, toStar);
-    
-    if (dotProduct < _CosHalfFOV)
-        return;
+    // Precise FOV culling REMOVED for full rendering
+    // float3 toStar = normalize(worldPos - _CameraPos);
+    // float dotProduct = dot(_CameraForward, toStar);
+    // 
+    // if (dotProduct < _CosHalfFOV)
+    //     return;
     
     // Output visible star
     StarOutput output;
