@@ -436,8 +436,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SolarSystemParallaxManager
   csvFileName: PlanetDatasetPlus/solar_dataset_plus.csv
-  starDatasetPath: GDR3/gaia3_10M.bin
-  starDatasetName: Gaia GDR3
+  starDatasetPath: GDR1/gaia_stars.bin
+  starDatasetName: Gaia GDR1
   planetMaterialsJsonFileName: planet_materials.json
   objectNamesJsonFileName: PlanetDatasetPlus/stellar_object_names.json
   horizonRadius: 4000
@@ -465,7 +465,7 @@ MonoBehaviour:
   asteroidColor: {r: 1, g: 0.25, b: 0, a: 1}
   asteroidBrightness: 1.2
   maxAsteroidsPerFrame: 100000
-  useAsteroidComputeShader: 1
+  useAsteroidComputeShader: 0
   asteroidCullingShader: {fileID: 7200000, guid: 7a94376d73a3e43b2b74927884c5799f, type: 3}
   asteroidMaterialGPU: {fileID: 2100000, guid: 3b110bfe1241a412ea9c281cc689aa3c, type: 2}
   orbitAngularVelocity: 0.5
@@ -507,7 +507,7 @@ MonoBehaviour:
   starColor: {r: 1, g: 1, b: 1, a: 1}
   starBrightness: 1
   maxStarsPerFrame: 10000000
-  useComputeShader: 1
+  useComputeShader: 0
   starCullingShader: {fileID: 7200000, guid: f989da71d83d24990981d5e71b865be6, type: 3}
   starMaterialGPU: {fileID: 2100000, guid: 9b89695dc194b4ae8a4b87bb020a8e4a, type: 2}
   useJobs: 1
@@ -551,7 +551,7 @@ MonoBehaviour:
   labelFontSize: 24
   labelColor: {r: 0, g: 1, b: 1, a: 1}
   labelOffsetPixels: 20
-  enableVRMode: 0
+  enableVRMode: 1
   autopilotMenuAction: {fileID: -5982496924579745919, guid: c348712bda248c246b8c49b3db54643f, type: 3}
   planetInfoAction: {fileID: 83097790271614945, guid: c348712bda248c246b8c49b3db54643f, type: 3}
   menuScrollAction: {fileID: -60998027439631388, guid: c348712bda248c246b8c49b3db54643f, type: 3}
