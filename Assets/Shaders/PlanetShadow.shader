@@ -35,6 +35,8 @@ Shader "Custom/PlanetShadow"
             HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
+            #pragma multi_compile_instancing
+            #pragma multi_compile _ UNITY_SINGLE_PASS_STEREO STEREO_INSTANCING_ON STEREO_MULTIVIEW_ON
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
@@ -43,6 +45,7 @@ Shader "Custom/PlanetShadow"
                 float4 positionOS : POSITION;
                 float2 uv : TEXCOORD0;
                 float3 normalOS : NORMAL;
+                UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
             struct Varyings
@@ -50,6 +53,7 @@ Shader "Custom/PlanetShadow"
                 float4 positionCS : SV_POSITION;
                 float2 uv : TEXCOORD0;
                 float3 normalWS : TEXCOORD1;
+                UNITY_VERTEX_OUTPUT_STEREO
             };
 
             CBUFFER_START(UnityPerMaterial)
@@ -67,6 +71,8 @@ Shader "Custom/PlanetShadow"
             Varyings vert(Attributes IN)
             {
                 Varyings OUT;
+                UNITY_SETUP_INSTANCE_ID(IN);
+                UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(OUT);
                 OUT.positionCS = TransformObjectToHClip(IN.positionOS.xyz);
                 OUT.uv = TRANSFORM_TEX(IN.uv, _BaseMap);
                 OUT.normalWS = TransformObjectToWorldNormal(IN.normalOS);
@@ -75,6 +81,7 @@ Shader "Custom/PlanetShadow"
 
             half4 frag(Varyings IN) : SV_Target
             {
+                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(IN);
                 half4 baseColor = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, IN.uv);
                 half4 secondColor = SAMPLE_TEXTURE2D(_SecondTex, sampler_BaseMap, IN.uv);
                 half4 nightColor = SAMPLE_TEXTURE2D(_NightTex, sampler_BaseMap, IN.uv);
