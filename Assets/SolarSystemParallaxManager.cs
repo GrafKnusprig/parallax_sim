@@ -84,6 +84,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [Header("Player (real space)")]
     [Tooltip("Angular velocity for orbit mode (radians/sec)")]
     [SerializeField] private float orbitAngularVelocity = 0.2f;
+
+    [Tooltip("Max travel distance in lightyears")]
+    [SerializeField] private double maxDistanceFromSunLy = 600000.0;
     
     [Header("Camera")]
     [Tooltip("The camera to use for rendering and movement calculations. If not set, will use Camera.main.")]
@@ -110,7 +113,6 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private const double LIGHTYEAR_KM = 9_460_730_472_580.8; // km in 1 lightyear
     private const float PARSEC_TO_AU = 206264.806f;  // 1 parsec = 206,264.806 AU
     private const double SECTOR_SIZE_AU = 1_000_000.0; // Each sector is 1 million AU (approx 5 parsecs)
-    private const double MAX_DISTANCE_FROM_SUN_LY = 300_000.0; // Max travel distance in lightyears
 
     [System.NonSerialized]
     public HierarchicalPosition playerRealPosAu; // player position in AU (real space) - public for StellarParallaxManager
@@ -2356,7 +2358,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         HierarchicalPosition sunPos = GetSunPosition();
         Vector3d sunToTentative = sunPos.OffsetTo(tentativePos, SECTOR_SIZE_AU);
         double currentDistAu = sunToTentative.magnitude;
-        double maxDistAu = (MAX_DISTANCE_FROM_SUN_LY * LIGHTYEAR_KM) / AU_KM;
+        double maxDistAu = (maxDistanceFromSunLy * LIGHTYEAR_KM) / AU_KM;
         
         if (currentDistAu > maxDistAu)
         {
