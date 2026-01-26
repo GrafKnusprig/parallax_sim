@@ -321,6 +321,21 @@ public class SolarSystemParallaxManager : MonoBehaviour
         return Camera.main;
     }
     
+    private Transform GetCameraRig()
+    {
+        Camera cam = GetActiveCamera();
+        if (cam == null) return null;
+        
+        // In VR, we want to rotate the parent (player rig), not the camera itself
+        // In non-VR, the camera might be at root level, so we return the camera transform
+        bool isVRMode = uiManager != null && uiManager.IsVRMode;
+        
+        if (isVRMode && cam.transform.parent != null)
+            return cam.transform.parent;
+        else
+            return cam.transform;
+    }
+    
     private void Start()
     {
         // Get reference to stellar manager if present
@@ -2389,8 +2404,36 @@ public class SolarSystemParallaxManager : MonoBehaviour
         if (orbitTargetBody == null || orbitTargetBody.proxy == null) return;
         
         Camera cam = GetActiveCamera();
-        if (cam != null)
+        if (cam == null) return;
+        
+        bool isVRMode = uiManager != null && uiManager.IsVRMode;
+        
+        if (isVRMode)
         {
+            // VR Mode: Rotate the player rig (camera parent) to face the planet
+            // This allows VR head tracking to continue working while keeping player oriented toward planet
+            Transform rig = GetCameraRig();
+            if (rig != null)
+            {
+                // Calculate direction from rig to planet
+                Vector3 directionToPlanet = orbitTargetBody.proxy.position - rig.position;
+                
+                // Only rotate around Y axis (yaw) to keep horizon level
+                // This prevents disorienting roll/pitch in VR
+                directionToPlanet.y = 0;
+                
+                if (directionToPlanet.sqrMagnitude > 0.001f)
+                {
+                    Quaternion targetRotation = Quaternion.LookRotation(directionToPlanet);
+                    
+                    // Smooth rotation for comfort in VR
+                    rig.rotation = Quaternion.Slerp(rig.rotation, targetRotation, Time.deltaTime * 2f);
+                }
+            }
+        }
+        else
+        {
+            // Non-VR Mode: Directly lock camera on planet (existing behavior)
             cam.transform.LookAt(orbitTargetBody.proxy.position);
         }
     }
