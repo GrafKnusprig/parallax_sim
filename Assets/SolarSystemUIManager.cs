@@ -880,12 +880,14 @@ public class SolarSystemUIManager : MonoBehaviour
         public long naifId;
         public bool isMoon;
         public bool isProximaSystem;
+        public bool isCategoryHeader; // True for "Moons" category header (expand/collapse)
         public object bodyReference; // Reference back to BodyInstance
     }
     
     // Cached body info for the menu
     private List<AutopilotBodyInfo> menuBodies = new List<AutopilotBodyInfo>();
     private List<AutopilotBodyInfo> menuSelectableBodies = new List<AutopilotBodyInfo>();
+    private List<AutopilotBodyInfo> cachedMoons = new List<AutopilotBodyInfo>(); // Moons for rebuilding selectable list
     
     /// <summary>
     /// Creates the autopilot menu UI. Call from Start() after the body list is loaded.
@@ -1062,6 +1064,18 @@ public class SolarSystemUIManager : MonoBehaviour
         if (moons.Count > 0)
         {
             CreateMoonsCategoryButton(contentGO, itemIndex, buttonHeight, spacing);
+            
+            // Add the Moons category header to selectable list for VR navigation
+            AutopilotBodyInfo moonsCategoryInfo = new AutopilotBodyInfo
+            {
+                name = "Moons",
+                naifId = -999, // Special ID for category
+                isMoon = false,
+                isProximaSystem = false,
+                isCategoryHeader = true,
+                bodyReference = null
+            };
+            menuSelectableBodies.Add(moonsCategoryInfo);
             itemIndex++;
             
             // Create moons container (initially hidden)
@@ -1073,6 +1087,9 @@ public class SolarSystemUIManager : MonoBehaviour
             moonsContainerRect.pivot = new Vector2(0.5f, 1);
             moonsContainerRect.anchoredPosition = new Vector2(0, -itemIndex * (buttonHeight + spacing));
             moonsContainerRect.sizeDelta = new Vector2(0, moons.Count * (buttonHeight + spacing));
+            
+            // Store moons for later addition when expanded
+            cachedMoons = moons;
             
             int moonIndex = 0;
             foreach (var moon in moons)
@@ -1293,6 +1310,76 @@ public class SolarSystemUIManager : MonoBehaviour
         }
     }
     
+    /// <summary>
+    /// Rebuilds the menuSelectableBodies list based on current expanded/collapsed state.
+    /// Called after toggling the moons category.
+    /// </summary>
+    private void RebuildSelectableBodiesList()
+    {
+        menuSelectableBodies.Clear();
+        autopilotButtons.Clear();
+        
+        // Add main bodies (non-moons)
+        foreach (var body in menuBodies)
+        {
+            if (!body.isMoon)
+            {
+                menuSelectableBodies.Add(body);
+            }
+        }
+        
+        // Add moons category header if there are moons
+        if (cachedMoons.Count > 0)
+        {
+            AutopilotBodyInfo moonsCategoryInfo = new AutopilotBodyInfo
+            {
+                name = "Moons",
+                naifId = -999,
+                isMoon = false,
+                isProximaSystem = false,
+                isCategoryHeader = true,
+                bodyReference = null
+            };
+            menuSelectableBodies.Add(moonsCategoryInfo);
+            
+            // Add moons if expanded
+            if (moonsExpanded)
+            {
+                foreach (var moon in cachedMoons)
+                {
+                    menuSelectableBodies.Add(moon);
+                }
+            }
+        }
+        
+        // Rebuild autopilotButtons list to match new selectable bodies
+        // Find buttons matching the selectable bodies
+        if (autopilotContentRect != null)
+        {
+            foreach (Transform child in autopilotContentRect)
+            {
+                Button btn = child.GetComponent<Button>();
+                if (btn != null)
+                {
+                    autopilotButtons.Add(btn);
+                }
+            }
+            
+            // Also add buttons from moons container if expanded
+            if (moonsExpanded && moonsContainer != null)
+            {
+                foreach (Transform child in moonsContainer.transform)
+                {
+                    Button btn = child.GetComponent<Button>();
+                    if (btn != null)
+                    {
+                        autopilotButtons.Add(btn);
+                    }
+                }
+            }
+        }
+    }
+    
     private void CreateCancelButton()
     {
         GameObject cancelGO = new GameObject("CancelButton");
@@ -1484,7 +1571,25 @@ public class SolarSystemUIManager : MonoBehaviour
         // Confirm selection
         if (selectPressed && menuSelectedIndex >= 0 && menuSelectedIndex < menuSelectableBodies.Count)
         {
-            SelectAutopilotTarget(menuSelectableBodies[menuSelectedIndex]);
+            AutopilotBodyInfo selectedBody = menuSelectableBodies[menuSelectedIndex];
+            
+            // Check if this is a category header (like Moons)
+            if (selectedBody.isCategoryHeader)
+            {
+                // Toggle the moons category
+                ToggleMoonsCategory();
+                
+                // Rebuild the selectable bodies list
+                RebuildSelectableBodiesList();
+                
+                // Update highlights
+                UpdateMenuSelectionHighlight();
+            }
+            else
+            {
+                // Normal autopilot target selection
+                SelectAutopilotTarget(selectedBody);
+            }
         }
     }
     
