@@ -26,7 +26,7 @@ RenderSettings:
   m_AmbientIntensity: 1
   m_AmbientMode: 0
   m_SubtractiveShadowColor: {r: 0.42, g: 0.478, b: 0.627, a: 1}
-  m_SkyboxMaterial: {fileID: 2100000, guid: d51a2253cd79945d08fbe9589d8cb631, type: 2}
+  m_SkyboxMaterial: {fileID: 0}
   m_HaloStrength: 0.5
   m_FlareStrength: 1
   m_FlareFadeSpeed: 3
@@ -507,32 +507,19 @@ MonoBehaviour:
   starColor: {r: 1, g: 1, b: 1, a: 1}
   starBrightness: 1
   maxStarsPerFrame: 10000000
-  useComputeShader: 1
+  useComputeShader: 0
   starCullingShader: {fileID: 7200000, guid: f989da71d83d24990981d5e71b865be6, type: 3}
   starMaterialGPU: {fileID: 2100000, guid: 9b89695dc194b4ae8a4b87bb020a8e4a, type: 2}
   useJobs: 1
   jobBatchSize: 512
   enableFastParallaxApprox: 1
   parallaxApproxDistanceParsecs: 10
-  enablePlayerRelativeCulling: 0
-  playerCullingRadiusParsecs: 80
-  enableAdaptivePlayerCullingRadius: 0
-  playerCullingRadiusGrowthPerParsec: 0.25
-  maxPlayerCullingRadiusParsecs: 2000
-  minVisibleStars: 5000
-  enableMinVisibleStarFallback: 0
   enableSpeedBasedStarScaling: 1
   speedScalingStartAuPerSec: 5
   speedScalingStrength: 0.05
   minStarDistanceScale: 0.1
   holdScaleWhenStopped: 1
   stoppedSpeedThresholdAuPerSec: 0.05
-  enableFarDistanceCulling: 0
-  farCullingStartAu: 300000
-  farCullingEndAu: 2000000
-  maxStarsToProcessNear: 2500000
-  maxStarsToProcessFar: 2500000
-  farDistancePlayerRangeFactor: 0.6
 --- !u!114 &713169414
 MonoBehaviour:
   m_ObjectHideFlags: 0

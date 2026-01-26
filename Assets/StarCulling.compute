@@ -30,7 +30,6 @@ float3 _CameraForward;
 float3 _PlayerPosAu;
 float _HorizonRadius;
 float _CosHalfFOV;
-float _CosRoughFOV;
 float _AuToParsec;
 
 

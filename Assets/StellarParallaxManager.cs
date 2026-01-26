@@ -54,21 +54,7 @@ public class StellarParallaxManager : MonoBehaviour
     [Tooltip("Distance (parsecs) beyond which fast approximation is used")]
     [SerializeField] private float parallaxApproxDistanceParsecs = 50f;
 
-    [Header("Player-Relative Culling")]
-    [Tooltip("Cull stars outside a fixed radius around the player (parsecs)")]
-    [SerializeField] private bool enablePlayerRelativeCulling = true;
-    [Tooltip("Player-relative culling radius (parsecs)")]
-    [SerializeField] private float playerCullingRadiusParsecs = 200f;
-    [Tooltip("Increase player-relative culling radius as distance from the Sun grows")]
-    [SerializeField] private bool enableAdaptivePlayerCullingRadius = true;
-    [Tooltip("Culling radius growth per parsec from Sun")]
-    [SerializeField] private float playerCullingRadiusGrowthPerParsec = 0.25f;
-    [Tooltip("Maximum adaptive culling radius (parsecs)")]
-    [SerializeField] private float maxPlayerCullingRadiusParsecs = 2000f;
-    [Tooltip("Ensure at least this many stars are shown by expanding selection if needed")]
-    [SerializeField] private int minVisibleStars = 5000;
-    [Tooltip("Enable fallback pass to reach minimum visible stars")]
-    [SerializeField] private bool enableMinVisibleStarFallback = true;
+
 
     [Header("Speed-Based Star Scaling")]
     [Tooltip("Scale star distances down when player speed exceeds the threshold")]
@@ -179,11 +165,9 @@ public class StellarParallaxManager : MonoBehaviour
         public float3 cameraPos;
         public float3 cameraForward;
         public float3 effectivePlayerPosAu;
-        public float3 effectivePlayerPosParsecs;
         public float horizonRadius;
         public float cosHalfFOV;
         public float maxDistance;
-        public float effectivePlayerCullingRadiusSq;
         public float auToParsec;
         public float parallaxApproxDistanceParsecs;
         public int starCount;
@@ -192,7 +176,6 @@ public class StellarParallaxManager : MonoBehaviour
         // Input: Feature flags
         public bool enableParallax;
         public bool enableFastParallaxApprox;
-        public bool enablePlayerRelativeCulling;
         
         // Output: Visibility flags and world positions (indexed by star index)
         // Each star writes to its own index, then we compact on main thread
@@ -217,40 +200,7 @@ public class StellarParallaxManager : MonoBehaviour
             
             float distance = distances[index];
             
-            // Early distance culling - cheapest check first
-            // TESTING: Distance culling disabled - show all stars in FOV
-            // if (distance > maxDistance)
-            // {
-            //     visibilityFlags[index] = 0;
-            //     return;
-            // }
-            
             float3 positionParsecs = positionsParsecs[index];
-            
-            // TESTING: Player-relative culling disabled
-            // if (enablePlayerRelativeCulling)
-            // {
-            //     float3 starToPlayer = effectivePlayerPosParsecs - positionParsecs;
-            //     float sqrDist = math.lengthsq(starToPlayer);
-            //     if (sqrDist > effectivePlayerCullingRadiusSq)
-            //     {
-            //         visibilityFlags[index] = 0;
-            //         return;
-            //     }
-            // }
-            
-            // TESTING: Far distance culling disabled
-            // if (smoothFarT > 0f)
-            // {
-            //     float3 playerPosParsecsLocal = effectivePlayerPosAu * auToParsec;
-            //     float3 starToPlayer = playerPosParsecsLocal - positionParsecs;
-            //     float distanceToPlayer = math.length(starToPlayer);
-            //     if (distanceToPlayer > maxDistance * farDistancePlayerRangeFactor)
-            //     {
-            //         visibilityFlags[index] = 0;
-            //         return;
-            //     }
-            // }
             
             // Fast FOV culling (matches compute shader logic)
             float3 worldPos;
@@ -590,7 +540,6 @@ public class StellarParallaxManager : MonoBehaviour
         
         float halfFOVWithMargin = playerCamera.fieldOfView * 0.5f + FOV_CULLING_MARGIN;
         float cosHalfFOV = Mathf.Cos(halfFOVWithMargin * Mathf.Deg2Rad);
-        float cosRoughFOV = Mathf.Cos((halfFOVWithMargin + 30f) * Mathf.Deg2Rad);
         
         // Reset append buffer
         visibleStarsBuffer.SetCounterValue(0);
@@ -604,7 +553,6 @@ public class StellarParallaxManager : MonoBehaviour
         starCullingShader.SetVector("_PlayerPosAu", effectivePlayerPosAu);
         starCullingShader.SetFloat("_HorizonRadius", horizonRadius);
         starCullingShader.SetFloat("_CosHalfFOV", cosHalfFOV);
-        starCullingShader.SetFloat("_CosRoughFOV", cosRoughFOV);
         starCullingShader.SetFloat("_AuToParsec", AU_TO_PARSEC);
         
         starCullingShader.SetInt("_EnableParallax", enableParallax ? 1 : 0);
@@ -661,21 +609,12 @@ public class StellarParallaxManager : MonoBehaviour
         Vector3d playerPosRelativeToSunAu = solarSystemManager.GetPlayerPositionRelativeToSun();
         Vector3 playerPosAu = (Vector3)playerPosRelativeToSunAu;
         Vector3 effectivePlayerPosAu = playerPosAu * starDistanceScale;
-        Vector3 effectivePlayerPosParsecs = effectivePlayerPosAu * AU_TO_PARSEC;
-        float playerDistanceParsecs = effectivePlayerPosParsecs.magnitude;
+
         
         float halfFOVWithMargin = playerCamera.fieldOfView * 0.5f + FOV_CULLING_MARGIN;
         float cosHalfFOV = Mathf.Cos(halfFOVWithMargin * Mathf.Deg2Rad);
         
-        float effectivePlayerCullingRadiusParsecs = playerCullingRadiusParsecs;
-        if (enableAdaptivePlayerCullingRadius)
-        {
-            effectivePlayerCullingRadiusParsecs = Mathf.Clamp(
-                playerCullingRadiusParsecs + playerDistanceParsecs * playerCullingRadiusGrowthPerParsec,
-                playerCullingRadiusParsecs,
-                maxPlayerCullingRadiusParsecs
-            );
-        }
+
 
         
         int starCount = allStars.Count;
@@ -694,11 +633,9 @@ public class StellarParallaxManager : MonoBehaviour
             cameraPos = new float3(cameraPos.x, cameraPos.y, cameraPos.z),
             cameraForward = new float3(cameraForward.x, cameraForward.y, cameraForward.z),
             effectivePlayerPosAu = new float3(effectivePlayerPosAu.x, effectivePlayerPosAu.y, effectivePlayerPosAu.z),
-            effectivePlayerPosParsecs = new float3(effectivePlayerPosParsecs.x, effectivePlayerPosParsecs.y, effectivePlayerPosParsecs.z),
             horizonRadius = horizonRadius,
             cosHalfFOV = cosHalfFOV,
             maxDistance = maxDistance,
-            effectivePlayerCullingRadiusSq = effectivePlayerCullingRadiusParsecs * effectivePlayerCullingRadiusParsecs,
             auToParsec = AU_TO_PARSEC,
             parallaxApproxDistanceParsecs = parallaxApproxDistanceParsecs,
             starCount = starCount,
@@ -706,7 +643,6 @@ public class StellarParallaxManager : MonoBehaviour
             
             enableParallax = enableParallax,
             enableFastParallaxApprox = enableFastParallaxApprox,
-            enablePlayerRelativeCulling = enablePlayerRelativeCulling,
             
             outputWorldPositions = nativeOutputWorldPositions,
             visibilityFlags = nativeVisibilityFlags
@@ -788,25 +724,12 @@ public class StellarParallaxManager : MonoBehaviour
         // Stars are positioned with Sun at origin (0,0,0), so we need player offset from Sun
         Vector3d playerPosRelativeToSunAu = solarSystemManager.GetPlayerPositionRelativeToSun();
         Vector3 playerPosAu = (Vector3)playerPosRelativeToSunAu;
-        Vector3 playerPosParsecs = playerPosAu * AU_TO_PARSEC;
         Vector3 effectivePlayerPosAu = playerPosAu * starDistanceScale;
-        Vector3 effectivePlayerPosParsecs = playerPosParsecs * starDistanceScale;
-        float playerDistanceParsecs = effectivePlayerPosParsecs.magnitude;
         
         // Calculate effective FOV with generous margin
         float halfFOVWithMargin = playerCamera.fieldOfView * 0.5f + FOV_CULLING_MARGIN;
         float cosHalfFOV = Mathf.Cos(halfFOVWithMargin * Mathf.Deg2Rad);
         
-        float effectivePlayerCullingRadiusParsecs = playerCullingRadiusParsecs;
-        if (enableAdaptivePlayerCullingRadius)
-        {
-            effectivePlayerCullingRadiusParsecs = Mathf.Clamp(
-                playerCullingRadiusParsecs + playerDistanceParsecs * playerCullingRadiusGrowthPerParsec,
-                playerCullingRadiusParsecs,
-                maxPlayerCullingRadiusParsecs
-            );
-        }
-
         int processed = 0;
         HashSet<int> visibleIndices = new HashSet<int>();
         
@@ -836,15 +759,7 @@ public class StellarParallaxManager : MonoBehaviour
                 continue;
             }
 
-            if (enablePlayerRelativeCulling)
-            {
-                Vector3 starToPlayer = effectivePlayerPosParsecs - star.positionParsecs;
-                if (starToPlayer.sqrMagnitude > effectivePlayerCullingRadiusParsecs * effectivePlayerCullingRadiusParsecs)
-                {
-                    starIndex++;
-                    continue;
-                }
-            }
+
 
 
             
@@ -917,50 +832,7 @@ public class StellarParallaxManager : MonoBehaviour
                 break;
         }
 
-        if (enableMinVisibleStarFallback && visibleStars.Count < minVisibleStars)
-        {
-            int targetCount = Mathf.Min(minVisibleStars, maxStarsPerFrame);
-            foreach (StarData star in allStars)
-            {
-                if (visibleStars.Count >= targetCount)
-                    break;
 
-                // Skip stars already visible
-                if (visibleIndices.Contains(star.originalIndex))
-                    continue;
-
-                // Fast FOV culling (same as main loop)
-                Vector3 worldPos;
-                if (!enableParallax)
-                {
-                    Vector3 dir = star.direction;
-                    if (Vector3.Dot(dir, cameraForward) < cosHalfFOV)
-                        continue;
-                    worldPos = dir * horizonRadius;
-                }
-                else
-                {
-                    Vector3 P = star.positionParsecs - (effectivePlayerPosAu * AU_TO_PARSEC);
-                    float dotF = Vector3.Dot(P, cameraForward);
-                    if (dotF <= 0)
-                        continue;
-                    float distSq = Vector3.Dot(P, P);
-                    if (dotF * dotF < (cosHalfFOV * cosHalfFOV) * distSq)
-                        continue;
-                    float invDist = 1f / Mathf.Sqrt(distSq);
-                    Vector3 dir = P * invDist;
-                    worldPos = dir * horizonRadius;
-                }
-
-                if (float.IsNaN(worldPos.x) || float.IsNaN(worldPos.y) || float.IsNaN(worldPos.z) ||
-                    float.IsInfinity(worldPos.x) || float.IsInfinity(worldPos.y) || float.IsInfinity(worldPos.z))
-                    continue;
-
-                visibleStars.Add(star);
-                visibleStarWorldPositions.Add(worldPos);
-                visibleIndices.Add(star.originalIndex);
-            }
-        }
     }
     
     private void UpdateStarRendering()
@@ -1148,10 +1020,7 @@ public class StellarParallaxManager : MonoBehaviour
         // Allow up to 20M for full dataset rendering
         maxStarsPerFrame = Mathf.Clamp(maxStarsPerFrame, 100, 20000000);
 
-        playerCullingRadiusParsecs = Mathf.Max(0f, playerCullingRadiusParsecs);
-        playerCullingRadiusGrowthPerParsec = Mathf.Max(0f, playerCullingRadiusGrowthPerParsec);
-        maxPlayerCullingRadiusParsecs = Mathf.Max(playerCullingRadiusParsecs, maxPlayerCullingRadiusParsecs);
-        minVisibleStars = Mathf.Clamp(minVisibleStars, 0, 1000000);
+
 
         speedScalingStartAuPerSec = Mathf.Max(0f, speedScalingStartAuPerSec);
         speedScalingStrength = Mathf.Max(0f, speedScalingStrength);
