@@ -32,7 +32,7 @@ Material:
     - _NoiseScale: 2
     - _RimIntensity: 1.5
     - _RimPower: 3
-    - _Size: 5
+    - _Size: 20
     m_Colors:
     - _BaseColor: {r: 1, g: 0.29999998, b: 0, a: 1}
     - _Color: {r: 1, g: 0.25, b: 0, a: 1}

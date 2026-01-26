@@ -174,6 +174,12 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private float actualSpeed; // Actual movement speed (0 when standing still)
     private float distanceToNearestPlanet;
     
+    // Asteroid optimization state
+    private Vector3 lastAsteroidCameraPosition;
+    private Vector3 lastAsteroidCameraForward;
+    private double lastAsteroidPlayerOffsetMagnitude;
+
+    
     // Planet-specific textures and materials
     private Dictionary<long, Texture2D> planetTextures = new Dictionary<long, Texture2D>();
     private Dictionary<long, Texture2D> planetAtmosphereTextures = new Dictionary<long, Texture2D>();
@@ -528,19 +534,51 @@ public class SolarSystemParallaxManager : MonoBehaviour
         UpdateBodyProxies();
         UpdatePlanetInfoPanel();
         
+        UpdatePlanetInfoPanel();
+        
         // Update and render asteroids
         if (asteroidsLoaded && enableAsteroids)
         {
-            if (useAsteroidComputeShader && asteroidComputeBuffersAllocated && asteroidCullingShader != null)
+            Camera cam = GetActiveCamera();
+            if (cam != null)
             {
-                UpdateVisibleAsteroidsGPU();
-                RenderAsteroidsGPU();
-            }
-            else
-            {
-                UpdateVisibleAsteroids();
-                UpdateAsteroidRendering();
-                RenderAsteroids();
+                var currentPos = cam.transform.position;
+                var currentFwd = cam.transform.forward;
+                double currentOffsetMag = playerRealPosAu.localOffset.magnitude;
+                
+                // Optimization: Only update asteroids if camera moved significantly or player moved in solar system
+                // This prevents flickering from float precision jitter when standing still
+                bool shouldUpdate = Vector3.Distance(currentPos, lastAsteroidCameraPosition) > 0.5f ||
+                                   Vector3.Angle(currentFwd, lastAsteroidCameraForward) > 2f ||
+                                   Math.Abs(currentOffsetMag - lastAsteroidPlayerOffsetMagnitude) > 0.000001; // Precision check
+                                   
+                // Force update if just loaded
+                if (shouldUpdate || lastAsteroidPlayerOffsetMagnitude == 0)
+                {
+                    if (useAsteroidComputeShader && asteroidComputeBuffersAllocated && asteroidCullingShader != null)
+                    {
+                        UpdateVisibleAsteroidsGPU();
+                    }
+                    else
+                    {
+                        UpdateVisibleAsteroids();
+                        UpdateAsteroidRendering();
+                    }
+                    
+                    lastAsteroidCameraPosition = currentPos;
+                    lastAsteroidCameraForward = currentFwd;
+                    lastAsteroidPlayerOffsetMagnitude = currentOffsetMag;
+                }
+                
+                // Render must be called every frame, but culling/update only on move
+                if (useAsteroidComputeShader && asteroidComputeBuffersAllocated && asteroidCullingShader != null)
+                {
+                    RenderAsteroidsGPU();
+                }
+                else
+                {
+                    RenderAsteroids();
+                }
             }
         }
         

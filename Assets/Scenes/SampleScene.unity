@@ -461,7 +461,7 @@ MonoBehaviour:
   lensingRefractionMaterial: {fileID: 2100000, guid: 1643c81e1f55346238e7f4c59102a1dc, type: 2}
   enableAsteroids: 1
   asteroidMaterial: {fileID: 2100000, guid: ede04ad5a5c064ae49d5ff65bb48047b, type: 2}
-  baseAsteroidSize: 5
+  baseAsteroidSize: 20
   asteroidColor: {r: 1, g: 0.25, b: 0, a: 1}
   asteroidBrightness: 1.2
   maxAsteroidsPerFrame: 100000
@@ -503,7 +503,7 @@ MonoBehaviour:
   renderDistanceRange: 100
   enableParallax: 1
   starMaterial: {fileID: 2100000, guid: a7b6c8d9e4f3a2b1c8d7e6f5a4b3c9d2, type: 2}
-  baseStarSize: 15
+  baseStarSize: 20
   starColor: {r: 1, g: 1, b: 1, a: 1}
   starBrightness: 1
   maxStarsPerFrame: 10000000
