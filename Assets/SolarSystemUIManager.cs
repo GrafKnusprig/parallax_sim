@@ -1435,10 +1435,10 @@ public class SolarSystemUIManager : MonoBehaviour
     private Image progressBarBackground;
     private Image progressBarFill;
     private TextMeshProUGUI progressText;
+    private TextMeshProUGUI loadingSubText;
     private bool loadingComplete = false;
     private float loadingFadeProgress = 0f;
     private const float LOADING_FADE_SPEED = 2f;
-    private const int ESTIMATED_TOTAL_STARS = 2400000; // Approximate total stars in GDR1 dataset
     
     // Reference to HUD (for hiding during loading)
     private GameObject hudReference;
@@ -1562,7 +1562,7 @@ public class SolarSystemUIManager : MonoBehaviour
         progressText.fontSize = 16;
         progressText.color = new Color(0.6f, 0.7f, 0.8f, 0.9f);
         progressText.alignment = TextAlignmentOptions.Center;
-        progressText.text = "0% - 0 / 2,400,000 stars";
+        progressText.text = "0% - 0 / 0 stars";
         
         // Sub-text hint
         GameObject hintGO = new GameObject("LoadingHint");
@@ -1573,12 +1573,12 @@ public class SolarSystemUIManager : MonoBehaviour
         hintRect.offsetMin = Vector2.zero;
         hintRect.offsetMax = Vector2.zero;
         
-        TextMeshProUGUI hintText = hintGO.AddComponent<TextMeshProUGUI>();
-        if (labelFont != null) hintText.font = labelFont;
-        hintText.fontSize = 14;
-        hintText.color = new Color(0.4f, 0.5f, 0.6f, 0.7f);
-        hintText.alignment = TextAlignmentOptions.Center;
-        hintText.text = "Processing Gaia GDR1 stellar catalog...";
+        loadingSubText = hintGO.AddComponent<TextMeshProUGUI>();
+        if (labelFont != null) loadingSubText.font = labelFont;
+        loadingSubText.fontSize = 14;
+        loadingSubText.color = new Color(0.4f, 0.5f, 0.6f, 0.7f);
+        loadingSubText.alignment = TextAlignmentOptions.Center;
+        loadingSubText.text = "Preparing stellar dataset...";
         
         // Hide HUD during loading
         if (hudReference != null)
@@ -1594,11 +1594,17 @@ public class SolarSystemUIManager : MonoBehaviour
     /// </summary>
     /// <param name="dataReady">True when stellar data has finished loading</param>
     /// <param name="starCount">Current number of loaded stars</param>
-    public void UpdateLoadingScreen(bool dataReady, int starCount)
+    public void UpdateLoadingScreen(bool dataReady, int starCount, int totalStars, string datasetName)
     {
         if (loadingScreenUI == null) return;
         
-        float progress = Mathf.Clamp01((float)starCount / ESTIMATED_TOTAL_STARS);
+        // Update sub-text with dataset name
+        if (loadingSubText != null)
+        {
+            loadingSubText.text = $"Processing {datasetName} stellar dataset...";
+        }
+
+        float progress = totalStars > 0 ? Mathf.Clamp01((float)starCount / totalStars) : 0f;
         
         if (dataReady && !loadingComplete)
         {
@@ -1613,7 +1619,7 @@ public class SolarSystemUIManager : MonoBehaviour
             }
             if (progressText != null)
             {
-                progressText.text = $"100% - {starCount:N0} / {ESTIMATED_TOTAL_STARS:N0} stars";
+                progressText.text = $"100% - {starCount:N0} / {totalStars:N0} stars";
             }
             
             if (loadingFadeProgress >= 1f)
@@ -1677,7 +1683,7 @@ public class SolarSystemUIManager : MonoBehaviour
             if (progressText != null)
             {
                 int percentage = Mathf.RoundToInt(progress * 100f);
-                progressText.text = $"{percentage}% - {starCount:N0} / {ESTIMATED_TOTAL_STARS:N0} stars";
+                progressText.text = $"{percentage}% - {starCount:N0} / {totalStars:N0} stars";
             }
             
             // Subtle pulsing effect on progress bar color

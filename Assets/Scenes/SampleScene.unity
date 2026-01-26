@@ -435,9 +435,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 99b1e3e833d8c4b70bd7af2f1a3498c9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SolarSystemParallaxManager
-  csvFileName: solar_system_positions_with_velocity.csv
+  csvFileName: PlanetDatasetPlus/solar_dataset_plus.csv
+  starDatasetPath: GDR3/gaia3_10M.bin
+  starDatasetName: Gaia GDR3
   planetMaterialsJsonFileName: planet_materials.json
-  objectNamesJsonFileName: stellar_object_names.json
+  objectNamesJsonFileName: PlanetDatasetPlus/stellar_object_names.json
   horizonRadius: 4000
   horizonMaterial: {fileID: 2100000, guid: f12098f110e17446eab1f24a6e51f488, type: 2}
   showHorizonSphere: 0
@@ -506,14 +508,14 @@ MonoBehaviour:
   useJobs: 1
   jobBatchSize: 512
   enableFastParallaxApprox: 1
-  parallaxApproxDistanceParsecs: 50
-  enablePlayerRelativeCulling: 1
+  parallaxApproxDistanceParsecs: 10
+  enablePlayerRelativeCulling: 0
   playerCullingRadiusParsecs: 80
-  enableAdaptivePlayerCullingRadius: 1
+  enableAdaptivePlayerCullingRadius: 0
   playerCullingRadiusGrowthPerParsec: 0.25
   maxPlayerCullingRadiusParsecs: 2000
   minVisibleStars: 5000
-  enableMinVisibleStarFallback: 1
+  enableMinVisibleStarFallback: 0
   enableSpeedBasedStarScaling: 1
   speedScalingStartAuPerSec: 5
   speedScalingStrength: 0.05

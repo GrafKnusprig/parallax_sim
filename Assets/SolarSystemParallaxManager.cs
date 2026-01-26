@@ -11,15 +11,21 @@ using TMPro;
 
 public class SolarSystemParallaxManager : MonoBehaviour
 {
-    [Header("CSV")]
-    [Tooltip("File name inside StreamingAssets/PlanetDatasetPlus")]
-    [SerializeField] private string csvFileName = "solar_dataset_plus.csv";
-    
-    [Tooltip("Planet materials JSON file inside StreamingAssets")]
+    [Header("Datasets")]
+    [Tooltip("Path to planet CSV dataset relative to StreamingAssets (e.g., PlanetDatasetPlus/solar_dataset_plus.csv)")]
+    [SerializeField] private string csvFileName = "PlanetDatasetPlus/solar_dataset_plus.csv";
+
+    [Tooltip("Path to star dataset relative to StreamingAssets (e.g., GDR3/gaia3_10M.bin)")]
+    [SerializeField] private string starDatasetPath = "GDR3/gaia3_10M.bin";
+
+    [Tooltip("Display name of the star dataset for the loading screen")]
+    [SerializeField] private string starDatasetName = "Gaia GDR3";
+
+    [Tooltip("Path to planet materials JSON relative to StreamingAssets")]
     [SerializeField] private string planetMaterialsJsonFileName = "planet_materials.json";
     
-    [Tooltip("Object names JSON file inside StreamingAssets/PlanetDatasetPlus")]
-    [SerializeField] private string objectNamesJsonFileName = "stellar_object_names.json";
+    [Tooltip("Path to object names JSON relative to StreamingAssets")]
+    [SerializeField] private string objectNamesJsonFileName = "PlanetDatasetPlus/stellar_object_names.json";
 
     [Header("Horizon bubble")]
     [Tooltip("Radius of the virtual horizon sphere (Unity units)")]
@@ -163,6 +169,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
     public float CurrentSpeedAuPerSec => currentSpeed;
     public float ActualSpeedAuPerSec => actualSpeed;
+
+    public string StarDatasetPath => starDatasetPath;
+    public string StarDatasetName => starDatasetName;
     
     // Planet info system - NOTE: UI elements now managed by SolarSystemUIManager
     private Dictionary<string, PlanetData> planetInfoData = new Dictionary<string, PlanetData>();
@@ -443,7 +452,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
         {
             bool starsReady = stellarManager == null || stellarManager.IsDataLoaded();
             int starCount = stellarManager != null ? stellarManager.GetLoadedStarCount() : 0;
-            uiManager.UpdateLoadingScreen(starsReady, starCount);
+            int totalStars = stellarManager != null ? stellarManager.GetTotalStarCount() : 0;
+            uiManager.UpdateLoadingScreen(starsReady, starCount, totalStars, starDatasetName);
         }
         
         // Always update VR canvas position (needed for loading screen visibility in VR)
@@ -661,7 +671,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         bool earthFound = false;
         
         // Load solar system dataset
-        earthFound = LoadBodiesFromFile("solar_dataset_plus.csv", earthFound) || earthFound;
+        earthFound = LoadBodiesFromFile(csvFileName, earthFound) || earthFound;
         
         // Load Alpha Centauri system dataset
         LoadBodiesFromFile("centauri_system.csv", earthFound);
@@ -675,7 +685,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     
     private bool LoadBodiesFromFile(string fileName, bool earthFound)
     {
-        string path = Path.Combine(Application.streamingAssetsPath, "PlanetDatasetPlus", fileName);
+        string path = Path.Combine(Application.streamingAssetsPath, fileName);
         if (!File.Exists(path))
         {
             Debug.LogWarning($"CSV not found at {path}");
@@ -683,7 +693,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
         }
         
         // Shadow Vector Index Tracking
-        bool useShadowVectors = fileName == "solar_dataset_plus.csv";
+        bool useShadowVectors = fileName == csvFileName;
         int shadowVectorIndex = 0;
 
         var lines = File.ReadAllLines(path);
@@ -951,7 +961,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     
     private void LoadShadowVectors()
     {
-        string path = Path.Combine(Application.streamingAssetsPath, "PlanetDatasetPlus", "shadow_vectors.bytes");
+        string path = Path.Combine(Application.streamingAssetsPath, "PlanetDatasetPlus/shadow_vectors.bytes");
         if (!File.Exists(path))
         {
             Debug.LogWarning("shadow_vectors.bytes not found. Shadows may be incorrect.");
@@ -1008,7 +1018,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
     private void LoadObjectNamesFromJson()
     {
-        string jsonPath = Path.Combine(Application.streamingAssetsPath, "PlanetDatasetPlus", objectNamesJsonFileName);
+        string jsonPath = Path.Combine(Application.streamingAssetsPath, objectNamesJsonFileName);
         
         if (!File.Exists(jsonPath))
         {

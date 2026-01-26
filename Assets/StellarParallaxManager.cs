@@ -169,6 +169,7 @@ public class StellarParallaxManager : MonoBehaviour
     private Vector3 lastCameraForward;
     private float lastRenderDistance = -1f;
     private float lastStarDistanceScale = 1f;
+    private uint totalStars = 0;
     
     // Performance optimization
     private const float FOV_CULLING_MARGIN = 45f; // Large margin for seamless rendering
@@ -442,11 +443,13 @@ public class StellarParallaxManager : MonoBehaviour
     
     private IEnumerator LoadGDR3DataAsync()
     {
-        Debug.Log("Loading Gaia GDR3 stellar data from binary file...");
+        string datasetPath = solarSystemManager.StarDatasetPath;
+        string datasetName = solarSystemManager.StarDatasetName;
+        Debug.Log($"Loading {datasetName} stellar data from binary file: {datasetPath}");
         
         allStars.Clear();
         
-        string filePath = Path.Combine(Application.streamingAssetsPath, "GDR3", "gaia3_10M.bin");
+        string filePath = Path.Combine(Application.streamingAssetsPath, datasetPath);
         
         if (!File.Exists(filePath))
         {
@@ -457,15 +460,15 @@ public class StellarParallaxManager : MonoBehaviour
         using (BinaryReader reader = new BinaryReader(File.Open(filePath, FileMode.Open)))
         {
             // Read header: number of stars (uint32)
-            uint starCount = reader.ReadUInt32();
-            Debug.Log($"Loading {starCount:N0} stars from binary file...");
+            totalStars = reader.ReadUInt32();
+            Debug.Log($"Loading {totalStars:N0} stars from binary file...");
             
-            allStars.Capacity = (int)starCount;
+            allStars.Capacity = (int)totalStars;
             
             int batchSize = 10000;
             int processed = 0;
             
-            for (uint i = 0; i < starCount; i++)
+            for (uint i = 0; i < totalStars; i++)
             {
                 // Read binary record: RA, DEC, Distance, Magnitude (all float32)
                 float ra_deg = reader.ReadSingle();
@@ -1309,6 +1312,11 @@ public class StellarParallaxManager : MonoBehaviour
     public int GetLoadedStarCount()
     {
         return allStars?.Count ?? 0;
+    }
+
+    public int GetTotalStarCount()
+    {
+        return (int)totalStars;
     }
     
     public int GetVisibleStarCount()
