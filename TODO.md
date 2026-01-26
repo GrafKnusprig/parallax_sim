@@ -11,11 +11,11 @@
 
 - [ ] label aufhübschen
 - [ ] label sollten nicht durch planeten angezeigt werden
-- [ ] label sollte nicht angezeigt werden wenn man direkt vor dem planeten ist
+- [x] label sollte nicht angezeigt werden wenn man direkt vor dem planeten ist
 
 ## VR
 
-- [ ] autopilot vr-ui (akutell kann man nicht damit interagieren)
+- [x] autopilot vr-ui (akutell kann man nicht damit interagieren)
 - [ ] planet-info für vr verbessern
 - [ ] put important information in the center (consider fov properties from lecture)
 - [ ] Use the periphiral vision for subtle effects (light speed animation, planet approximation warning, red blinking etc.)
@@ -47,5 +47,5 @@
 
 # Refactoring
 
-- [ ] UI in eigenes file über interface oder anders exposen
-- [ ] Autopilot in eigenes file wenn möglich (könnte einfacher für die journey erweitert werden)
+- [x] UI in eigenes file über interface oder anders exposen
+- [-] Autopilot in eigenes file wenn möglich (könnte einfacher für die journey erweitert werden) -> UI is ausgelagert rest da sehr an die entfernungsberechnung gebunden bleibt im parallaxmanager

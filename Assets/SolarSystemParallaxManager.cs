@@ -46,6 +46,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [Tooltip("Higher = more detailed (0-4 recommended)")]
     [SerializeField] private int sphereSubdivisions = 3;  // Higher = more detailed (0-4 recommended)
     
+    [Tooltip("Distance threshold (AU) beyond which moon labels are hidden")]
+    [SerializeField] private float moonVisibilityThresholdAu = 1.0f;
+    
     [Header("Saturn Rings")]
     [Tooltip("Material for Saturn's rings (should use alpha transparency)")]
     [SerializeField] private Material saturnRingMaterial;
@@ -797,13 +800,20 @@ public class SolarSystemParallaxManager : MonoBehaviour
             if (useHighQualitySpheres)
             {
                 proxy = CreateHighQualitySphere(name, sphereSubdivisions);
+                // Add sphere collider for occlusion detection
+                SphereCollider col = proxy.AddComponent<SphereCollider>();
+                col.isTrigger = true; // Make it a trigger so it doesn't interfere with physics
             }
             else
             {
                 proxy = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                 proxy.name = name;
+                // Keep collider for occlusion detection but make it a trigger to avoid physics interactions
                 var col = proxy.GetComponent<Collider>();
-                if (col) Destroy(col);
+                if (col) 
+                {
+                    col.isTrigger = true; // Make it a trigger so it doesn't interfere with physics
+                }
             }
             
             proxy.transform.SetParent(transform, false);
@@ -2068,9 +2078,12 @@ public class SolarSystemParallaxManager : MonoBehaviour
         double speedKmPerSecond = actualSpeed * AU_KM; // Convert AU/s to km/s
         double lightSpeedPercentage = (speedKmPerSecond / SPEED_OF_LIGHT_KM_S) * 100.0;
         
-        // Format speed display
+        // Format speed display - SMART FORMATTING
+        // If speed is very high, switch to more compact units
         string speedDisplay;
-        if (speedKmPerSecond >= 1_000_000) // Millions km/s
+        if (speedKmPerSecond >= 1_000_000_000) // Billions km/s (scientific / huge)
+            speedDisplay = $"{speedKmPerSecond / 1_000_000_000:F2}B km/s";
+        else if (speedKmPerSecond >= 1_000_000) // Millions km/s
             speedDisplay = $"{speedKmPerSecond / 1_000_000:F2}M km/s";
         else if (speedKmPerSecond >= 1_000) // Thousands km/s
             speedDisplay = $"{speedKmPerSecond / 1_000:F2}k km/s";
@@ -2079,18 +2092,32 @@ public class SolarSystemParallaxManager : MonoBehaviour
         else
             speedDisplay = $"{speedKmPerSecond:F3} km/s";
         
-        // Format lightspeed percentage
+        // Format lightspeed percentage - SMART FORMATTING
+        // If percentage is massive (> 999%), switch to multiples of 'c' (e.g. 1.5x c)
         string lightSpeedDisplay;
-        if (lightSpeedPercentage >= 100)
-            lightSpeedDisplay = $"{lightSpeedPercentage:F1}% lightspeed";
+        string lightSpeedColor = lightSpeedPercentage >= 1 ? "#FFCC00" : "#88AACC"; // Yellow if fast
+        
+        if (lightSpeedPercentage >= 1000)
+        {
+            // Superluminal: Show as multiple of c (e.g. 5.2c)
+            double cMultiple = lightSpeedPercentage / 100.0;
+            if (cMultiple >= 1_000_000)
+                lightSpeedDisplay = $"{cMultiple / 1_000_000:F1}M c";
+            else if (cMultiple >= 1_000)
+                lightSpeedDisplay = $"{cMultiple / 1_000:F1}k c";
+            else
+                lightSpeedDisplay = $"{cMultiple:F2} c";
+        }
+        else if (lightSpeedPercentage >= 100)
+            lightSpeedDisplay = $"{lightSpeedPercentage:F1}%c";
         else if (lightSpeedPercentage >= 1)
-            lightSpeedDisplay = $"{lightSpeedPercentage:F2}% lightspeed";
+            lightSpeedDisplay = $"{lightSpeedPercentage:F2}%c";
         else if (lightSpeedPercentage >= 0.01)
-            lightSpeedDisplay = $"{lightSpeedPercentage:F4}% lightspeed";
+            lightSpeedDisplay = $"{lightSpeedPercentage:F4}%c";
         else if (lightSpeedPercentage > 0)
-            lightSpeedDisplay = $"{lightSpeedPercentage:F6}% lightspeed";
+            lightSpeedDisplay = $"{lightSpeedPercentage:F6}%c";
         else
-            lightSpeedDisplay = "0% lightspeed";
+            lightSpeedDisplay = "0%c";
         
         // Calculate distance from Sun using hierarchical position system
         Vector3d offsetFromSun = GetPlayerPositionRelativeToSun();
@@ -2102,12 +2129,14 @@ public class SolarSystemParallaxManager : MonoBehaviour
         if (distanceFromSunKm >= 1_000_000_000) // >= 1 billion km, switch to lightyears
         {
             double distanceLightyears = distanceFromSunKm / LIGHTYEAR_KM;
-            if (distanceLightyears >= 1000)
-                distanceDisplay = $"{distanceLightyears / 1000:F2}k lightyears";
+            if (distanceLightyears >= 1_000_000)
+                distanceDisplay = $"{distanceLightyears / 1_000_000:F2}M ly";
+            else if (distanceLightyears >= 1000)
+                distanceDisplay = $"{distanceLightyears / 1000:F2}k ly";
             else if (distanceLightyears >= 1)
-                distanceDisplay = $"{distanceLightyears:F2} lightyears";
+                distanceDisplay = $"{distanceLightyears:F2} ly";
             else
-                distanceDisplay = $"{distanceLightyears:F4} lightyears";
+                distanceDisplay = $"{distanceLightyears:F4} ly";
         }
         else
         {
@@ -2119,17 +2148,22 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 distanceDisplay = $"{distanceFromSunKm:F0} km";
         }
         
-        // Build HUD text - simplified for distance-based speed
-        uiManager.HudText.text = $"Speed: {speedDisplay} ({lightSpeedDisplay})\n" +
-                      $"Distance from Sun: {distanceDisplay}\n" +
-                      $"Mode: DISTANCE-BASED";
+        // Build HUD text with rich text formatting
+        System.Text.StringBuilder hud = new System.Text.StringBuilder();
         
+        // Velocity section - split across two lines to prevent overflow
+        hud.AppendLine($"<color=#FFFFFF>VELOCITY</color> <color=#AAAAAA>{speedDisplay}</color>");
+        hud.AppendLine($"    <color={lightSpeedColor}><size=90%>{lightSpeedDisplay}</size></color>");
+        
+        // Solar distance section
+        hud.AppendLine($"<color=#FFFFFF>SOLAR DIST</color> <color=#AAAAAA>{distanceDisplay}</color>");
+        
+        // Nearest body section
         if (nearestPlanet != null)
         {
             double distanceToPlanetKm = distanceToNearestPlanet * AU_KM;
             string planetDistanceDisplay;
             
-            // Show both AU and km when distance is reasonable (< 10 million km)
             if (distanceToPlanetKm < 10_000_000)
             {
                 string kmDisplay;
@@ -2140,31 +2174,23 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 else
                     kmDisplay = $"{distanceToPlanetKm:F0} km";
                 
-                planetDistanceDisplay = $"{distanceToNearestPlanet:F6} AU ({kmDisplay})";
+                planetDistanceDisplay = kmDisplay;
             }
             else
             {
-                planetDistanceDisplay = $"{distanceToNearestPlanet:F6} AU";
+                planetDistanceDisplay = $"{distanceToNearestPlanet:F4} AU";
             }
             
-            uiManager.HudText.text += $"\nNearest: {nearestPlanet.name}\n" +
-                           $"Distance: {planetDistanceDisplay}";
+            hud.AppendLine($"<color=#FFFFFF>PROXIMITY</color> <color=#ADD8E6>{nearestPlanet.name}</color> <color=#888888><size=85%>{planetDistanceDisplay}</size></color>");
         }
+
         
-        // Add stellar manager info
-        if (stellarManager != null)
-        {
-            uiManager.HudText.text += $"\nStars Visible: {stellarManager.GetVisibleStarCount()}";
-            if (!stellarManager.IsDataLoaded())
-            {
-                uiManager.HudText.text += " (Loading...)";
-            }
-        }
-        
-        // Add autopilot status
+        // Status section - Orbiting, Autopilot, or Idle
         if (IsOrbiting && orbitTargetBody != null)
         {
-            uiManager.HudText.text += $"\n\n[ORBIT] ⟳ Orbiting {orbitTargetBody.name}\nRadius: {orbitDistanceAu:F6} AU\nPress O to disengage";
+            hud.AppendLine();
+            hud.AppendLine($"<color=#00FF88>ORBITING</color> <color=#ADD8E6>{orbitTargetBody.name}</color>");
+            hud.Append($"    <color=#666666><size=85%>Radius: {orbitDistanceAu:F6} AU</size></color>");
         }
         else if (autopilotActive && autopilotTarget != null)
         {
@@ -2180,19 +2206,17 @@ public class SolarSystemParallaxManager : MonoBehaviour
             else
                 autopilotDistDisplay = $"{distKm:F0} km";
             
-            uiManager.HudText.text += $"\n\n[AUTOPILOT] → {autopilotTarget.name}\nDistance: {autopilotDistDisplay}\nPress X to cancel";
+            hud.AppendLine();
+            hud.AppendLine($"<color=#FFAA00>AUTOPILOT</color> <color=#ADD8E6>{autopilotTarget.name}</color>");
+            hud.Append($"    <color=#888888><size=85%>ETA: {autopilotDistDisplay}</size></color>");
         }
-        else if (!autopilotActive && (uiManager == null || !uiManager.AutopilotMenuOpen))
+        
+        uiManager.HudText.text = hud.ToString();
+        
+        // Hide controls hint when autopilot or orbit is active to prevent overlap
+        if (uiManager.ControlsHint != null)
         {
-            uiManager.HudText.text += "\n\nPress X for Autopilot";
-            if (nearestPlanet != null)
-            {
-                uiManager.HudText.text += $" | Press O to Orbit {nearestPlanet.name}";
-                if (nearestPlanet.planetData != null)
-                {
-                  uiManager.HudText.text += $" | Press I for info on {nearestPlanet.name}";
-                }
-            }
+            uiManager.ControlsHint.SetActive(!autopilotActive && !IsOrbiting);
         }
     }
     
@@ -2427,6 +2451,14 @@ public class SolarSystemParallaxManager : MonoBehaviour
             // --- UI label position calculation ---
             if (labelsEnabled && body.labelUI != null && cam != null && canvasRect != null)
             {
+                // Check moon visibility distance filter
+                // If it's a moon and we are too far away, hide the label (but keep proxy visible)
+                if (IsMoon(body.naifId) && distAu > moonVisibilityThresholdAu)
+                {
+                    body.labelUI.SetActive(false);
+                    continue; // Skip the rest of label processing for this body
+                }
+
                 // Convert world position to viewport position (0-1 range, works better for VR)
                 Vector3 viewportPos = cam.WorldToViewportPoint(body.proxy.position);
                 
@@ -2434,6 +2466,43 @@ public class SolarSystemParallaxManager : MonoBehaviour
                 bool isVisible = viewportPos.z > 0 && 
                                viewportPos.x >= 0 && viewportPos.x <= 1 &&
                                viewportPos.y >= 0 && viewportPos.y <= 1;
+                
+                // Add occlusion detection - check if label is hidden behind another body
+                if (isVisible)
+                {
+                    Vector3 directionToBody = (body.proxy.position - cam.transform.position).normalized;
+                    float distanceToBody = Vector3.Distance(cam.transform.position, body.proxy.position);
+                    
+                    // Raycast to check for blocking objects
+                    // Cast slightly beyond the target to ensure we catch it if needed
+                    if (Physics.Raycast(cam.transform.position, directionToBody, out RaycastHit hit, distanceToBody * 1.1f))
+                    {
+                        // If raycast hits something before reaching the label's body, it's occluded
+                        // Compare GameObjects instead of transforms for more reliable comparison
+                        if (hit.collider.gameObject != body.proxy.gameObject)
+                        {
+                            // Additionally check if the hit is actually closer than our target body
+                            if (hit.distance < distanceToBody - 0.5f)
+                            {
+                                isVisible = false;
+                            }
+                        }
+                    }
+
+                    // Check if we are "near" the planet and looking directly at it
+                    // If so, hide the label to avoid visual clutter
+                    if (isVisible)
+                    {
+                        float angle = Vector3.Angle(cam.transform.forward, directionToBody);
+                        // Threshold: 100x radius. e.g. Earth (6371 km) -> 637,100 km (~2 light seconds)
+                        double nearThresholdKm = body.radiusKm * 100.0;
+                        
+                        if (distKm < nearThresholdKm && angle < 15f)
+                        {
+                            isVisible = false;
+                        }
+                    }
+                }
                 
                 if (isVisible)
                 {
@@ -2466,7 +2535,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
                         screenPos = canvasPos,
                         distanceAu = (float)distAu,
                         labelBounds = bounds,
-                        isPriority = IsProximaSystem(body)
+                        // Only prioritize Proxima system if we are close enough (< 50,000 AU)
+                        // Otherwise treat them as normal labels so they can be occluded/merged
+                        isPriority = IsProximaSystem(body.naifId) && distAu < 50000.0
                     });
                 }
                 else

@@ -619,21 +619,37 @@ public class SolarSystemUIManager : MonoBehaviour
         panelRect.anchoredPosition = new Vector2(0, -1200); // Start off-screen (bottom)
         panelRect.sizeDelta = new Vector2(600, 800);
         
-        // Add gradient-like background (semi-transparent dark blue/purple)
+        // === BACKGROUND PANEL === (Match HUD style)
         Image panelImage = planetInfoUI.AddComponent<Image>();
-        panelImage.color = new Color(0.08f, 0.08f, 0.18f, 0.92f);
+        panelImage.color = new Color(0.02f, 0.05f, 0.12f, 0.85f); // Same as HUD background
         
-        // Add left border accent
-        GameObject borderGO = new GameObject("LeftBorder");
-        borderGO.transform.SetParent(planetInfoUI.transform, false);
-        RectTransform borderRect = borderGO.AddComponent<RectTransform>();
-        borderRect.anchorMin = new Vector2(0, 0);
-        borderRect.anchorMax = new Vector2(0, 1);
-        borderRect.pivot = new Vector2(0, 0.5f);
-        borderRect.anchoredPosition = Vector2.zero;
-        borderRect.sizeDelta = new Vector2(4, 0);
-        Image borderImage = borderGO.AddComponent<Image>();
-        borderImage.color = new Color(0.3f, 0.8f, 1f, 0.9f); // Cyan accent
+        // === BORDER FRAME === (Match HUD style)
+        // Top border
+        CreateBorderEdge(planetInfoUI.transform, "BorderTop", new Vector2(0, 1), new Vector2(1, 1), 
+            new Vector2(0, 0), new Vector2(0, -3), new Color(0.2f, 0.8f, 1f, 0.9f));
+        // Bottom border
+        CreateBorderEdge(planetInfoUI.transform, "BorderBottom", new Vector2(0, 0), new Vector2(1, 0), 
+            new Vector2(0, 3), new Vector2(0, 0), new Color(0.2f, 0.8f, 1f, 0.9f));
+        // Left border
+        CreateBorderEdge(planetInfoUI.transform, "BorderLeft", new Vector2(0, 0), new Vector2(0, 1), 
+            new Vector2(3, 0), new Vector2(0, 0), new Color(0.2f, 0.8f, 1f, 0.9f));
+        // Right border
+        CreateBorderEdge(planetInfoUI.transform, "BorderRight", new Vector2(1, 0), new Vector2(1, 1), 
+            new Vector2(0, 0), new Vector2(-3, 0), new Color(0.2f, 0.8f, 1f, 0.9f));
+        
+        // === CORNER BRACKETS === (Match HUD style)
+        Color bracketColor = new Color(0.3f, 0.9f, 1f, 1f); // Bright cyan
+        float bracketSize = 35f; // Slightly larger for bigger panel
+        float bracketThickness = 3f;
+        
+        // Top-left corner
+        CreateCornerBracket(planetInfoUI.transform, "CornerTL", new Vector2(0, 1), bracketSize, bracketThickness, bracketColor, true, true);
+        // Top-right corner
+        CreateCornerBracket(planetInfoUI.transform, "CornerTR", new Vector2(1, 1), bracketSize, bracketThickness, bracketColor, false, true);
+        // Bottom-left corner
+        CreateCornerBracket(planetInfoUI.transform, "CornerBL", new Vector2(0, 0), bracketSize, bracketThickness, bracketColor, true, false);
+        // Bottom-right corner
+        CreateCornerBracket(planetInfoUI.transform, "CornerBR", new Vector2(1, 0), bracketSize, bracketThickness, bracketColor, false, false);
         
         // Create title/header section
         GameObject headerGO = new GameObject("Header");
@@ -650,8 +666,21 @@ public class SolarSystemUIManager : MonoBehaviour
         if (labelFont != null) planetInfoNameText.font = labelFont;
         planetInfoNameText.fontSize = 42;
         planetInfoNameText.fontStyle = FontStyles.Bold;
-        planetInfoNameText.color = new Color(0.3f, 0.9f, 1f, 1f); // Bright cyan
+        planetInfoNameText.color = new Color(0.4f, 0.9f, 1f, 1f); // Bright cyan (match HUD)
         planetInfoNameText.alignment = TextAlignmentOptions.Center;
+        planetInfoNameText.characterSpacing = 3f; // Add spacing like HUD header
+        
+        // === HEADER LINE === (Match HUD style)
+        GameObject headerLine = new GameObject("HeaderLine");
+        headerLine.transform.SetParent(planetInfoUI.transform, false);
+        RectTransform headerLineRect = headerLine.AddComponent<RectTransform>();
+        headerLineRect.anchorMin = new Vector2(0, 1);
+        headerLineRect.anchorMax = new Vector2(1, 1);
+        headerLineRect.pivot = new Vector2(0.5f, 1);
+        headerLineRect.anchoredPosition = new Vector2(0, -72);
+        headerLineRect.sizeDelta = new Vector2(-30, 1);
+        Image headerLineImg = headerLine.AddComponent<Image>();
+        headerLineImg.color = new Color(0.2f, 0.6f, 0.8f, 0.5f);
         
         // Create data content section
         GameObject contentGO = new GameObject("Content");
@@ -659,8 +688,8 @@ public class SolarSystemUIManager : MonoBehaviour
         RectTransform contentRect = contentGO.AddComponent<RectTransform>();
         contentRect.anchorMin = new Vector2(0, 0);
         contentRect.anchorMax = new Vector2(1, 1);
-        contentRect.offsetMin = new Vector2(20, 50);
-        contentRect.offsetMax = new Vector2(-15, -75);
+        contentRect.offsetMin = new Vector2(25, 50); // More left padding for cleaner look
+        contentRect.offsetMax = new Vector2(-25, -85); // Adjusted for header line
         
         planetInfoDataText = contentGO.AddComponent<TextMeshProUGUI>();
         planetInfoDataText.text = "";
@@ -705,6 +734,12 @@ public class SolarSystemUIManager : MonoBehaviour
         planetInfoUI.SetActive(true);
         PopulatePlanetInfo(data);
         
+        // Hide HUD to prevent overlap
+        if (hudUI != null)
+        {
+            hudUI.SetActive(false);
+        }
+        
         Debug.Log($"[UIManager] Showing planet info for: {data.Name}");
     }
     
@@ -714,6 +749,12 @@ public class SolarSystemUIManager : MonoBehaviour
     public void HidePlanetInfo()
     {
         planetInfoVisible = false;
+        
+        // Show HUD again when closing planet info
+        if (hudUI != null && enableHUD)
+        {
+            hudUI.SetActive(true);
+        }
     }
     
     /// <summary>
@@ -871,9 +912,37 @@ public class SolarSystemUIManager : MonoBehaviour
         panelRect.anchoredPosition = Vector2.zero;
         panelRect.sizeDelta = new Vector2(500, 700);
         
-        // Add semi-transparent background
+        // === BACKGROUND PANEL === (Match HUD/Planet Info style)
         Image panelImage = autopilotUI.AddComponent<Image>();
-        panelImage.color = new Color(0.1f, 0.1f, 0.2f, 0.95f);
+        panelImage.color = new Color(0.02f, 0.05f, 0.12f, 0.85f); // Same as HUD background
+        
+        // === BORDER FRAME === (Match HUD style)
+        // Top border
+        CreateBorderEdge(autopilotUI.transform, "BorderTop", new Vector2(0, 1), new Vector2(1, 1), 
+            new Vector2(0, 0), new Vector2(0, -3), new Color(0.2f, 0.8f, 1f, 0.9f));
+        // Bottom border
+        CreateBorderEdge(autopilotUI.transform, "BorderBottom", new Vector2(0, 0), new Vector2(1, 0), 
+            new Vector2(0, 3), new Vector2(0, 0), new Color(0.2f, 0.8f, 1f, 0.9f));
+        // Left border
+        CreateBorderEdge(autopilotUI.transform, "BorderLeft", new Vector2(0, 0), new Vector2(0, 1), 
+            new Vector2(3, 0), new Vector2(0, 0), new Color(0.2f, 0.8f, 1f, 0.9f));
+        // Right border
+        CreateBorderEdge(autopilotUI.transform, "BorderRight", new Vector2(1, 0), new Vector2(1, 1), 
+            new Vector2(0, 0), new Vector2(-3, 0), new Color(0.2f, 0.8f, 1f, 0.9f));
+        
+        // === CORNER BRACKETS === (Match HUD style)
+        Color bracketColor = new Color(0.3f, 0.9f, 1f, 1f); // Bright cyan
+        float bracketSize = 30f;
+        float bracketThickness = 3f;
+        
+        // Top-left corner
+        CreateCornerBracket(autopilotUI.transform, "CornerTL", new Vector2(0, 1), bracketSize, bracketThickness, bracketColor, true, true);
+        // Top-right corner
+        CreateCornerBracket(autopilotUI.transform, "CornerTR", new Vector2(1, 1), bracketSize, bracketThickness, bracketColor, false, true);
+        // Bottom-left corner
+        CreateCornerBracket(autopilotUI.transform, "CornerBL", new Vector2(0, 0), bracketSize, bracketThickness, bracketColor, true, false);
+        // Bottom-right corner
+        CreateCornerBracket(autopilotUI.transform, "CornerBR", new Vector2(1, 0), bracketSize, bracketThickness, bracketColor, false, false);
         
         // Add title
         GameObject titleGO = new GameObject("Title");
@@ -889,8 +958,22 @@ public class SolarSystemUIManager : MonoBehaviour
         titleText.text = "AUTOPILOT - Select Destination";
         if (labelFont != null) titleText.font = labelFont;
         titleText.fontSize = 32;
-        titleText.color = Color.cyan;
+        titleText.fontStyle = FontStyles.Bold;
+        titleText.color = new Color(0.4f, 0.9f, 1f, 1f); // Match HUD header color
         titleText.alignment = TextAlignmentOptions.Center;
+        titleText.characterSpacing = 2f; // Add spacing like HUD header
+        
+        // === HEADER LINE === (Match HUD/Planet Info style)
+        GameObject headerLine = new GameObject("HeaderLine");
+        headerLine.transform.SetParent(autopilotUI.transform, false);
+        RectTransform headerLineRect = headerLine.AddComponent<RectTransform>();
+        headerLineRect.anchorMin = new Vector2(0, 1);
+        headerLineRect.anchorMax = new Vector2(1, 1);
+        headerLineRect.pivot = new Vector2(0.5f, 1);
+        headerLineRect.anchoredPosition = new Vector2(0, -80);
+        headerLineRect.sizeDelta = new Vector2(-30, 1);
+        Image headerLineImg = headerLine.AddComponent<Image>();
+        headerLineImg.color = new Color(0.2f, 0.6f, 0.8f, 0.5f);
         
         // Create scroll view for body list
         GameObject scrollViewGO = new GameObject("ScrollView");
@@ -898,8 +981,8 @@ public class SolarSystemUIManager : MonoBehaviour
         RectTransform scrollViewRect = scrollViewGO.AddComponent<RectTransform>();
         scrollViewRect.anchorMin = new Vector2(0, 0);
         scrollViewRect.anchorMax = new Vector2(1, 1);
-        scrollViewRect.offsetMin = new Vector2(15, 80);
-        scrollViewRect.offsetMax = new Vector2(-15, -70);
+        scrollViewRect.offsetMin = new Vector2(15, 60); // Bottom padding
+        scrollViewRect.offsetMax = new Vector2(-15, -90); // Top padding for header line + title
         
         ScrollRect scroll = scrollViewGO.AddComponent<ScrollRect>();
         scroll.horizontal = false;
@@ -1152,7 +1235,7 @@ public class SolarSystemUIManager : MonoBehaviour
         textRect.offsetMax = Vector2.zero;
         
         TextMeshProUGUI btnText = textGO.AddComponent<TextMeshProUGUI>();
-        btnText.text = "▸ Moons";
+        btnText.text = "[+] Moons";
         if (labelFont != null) btnText.font = labelFont;
         btnText.fontSize = 24;
         btnText.color = new Color(0.9f, 0.8f, 1f, 1f);
@@ -1175,7 +1258,7 @@ public class SolarSystemUIManager : MonoBehaviour
                     TextMeshProUGUI txt = child.GetComponentInChildren<TextMeshProUGUI>();
                     if (txt != null)
                     {
-                        txt.text = moonsExpanded ? "▾ Moons" : "▸ Moons";
+                        txt.text = moonsExpanded ? "[-] Moons" : "[+] Moons";
                     }
                     break;
                 }
@@ -1264,6 +1347,12 @@ public class SolarSystemUIManager : MonoBehaviour
             autopilotUI.SetActive(false);
             IsMenuOpen = false;
             OnAutopilotCancelled?.Invoke();
+            
+            // Show HUD again when force closing
+            if (hudUI != null && enableHUD)
+            {
+                hudUI.SetActive(true);
+            }
             return;
         }
         
@@ -1276,6 +1365,12 @@ public class SolarSystemUIManager : MonoBehaviour
         autopilotMenuOpen = !autopilotMenuOpen;
         autopilotUI.SetActive(autopilotMenuOpen);
         IsMenuOpen = autopilotMenuOpen;
+        
+        // Hide/show HUD to prevent overlap
+        if (hudUI != null && enableHUD)
+        {
+            hudUI.SetActive(!autopilotMenuOpen);
+        }
         
         // Reset selection when opening
         if (autopilotMenuOpen)
@@ -1304,6 +1399,12 @@ public class SolarSystemUIManager : MonoBehaviour
         IsMenuOpen = true;
         menuSelectedIndex = 0;
         UpdateMenuSelectionHighlight();
+        
+        // Hide HUD to prevent overlap
+        if (hudUI != null && enableHUD)
+        {
+            hudUI.SetActive(false);
+        }
     }
     
     /// <summary>
@@ -1316,6 +1417,12 @@ public class SolarSystemUIManager : MonoBehaviour
         autopilotMenuOpen = false;
         autopilotUI.SetActive(false);
         IsMenuOpen = false;
+        
+        // Show HUD again when closing autopilot menu
+        if (hudUI != null && enableHUD)
+        {
+            hudUI.SetActive(true);
+        }
     }
     
     private void SelectAutopilotTarget(AutopilotBodyInfo body)
@@ -1326,7 +1433,13 @@ public class SolarSystemUIManager : MonoBehaviour
         if (autopilotUI != null)
             autopilotUI.SetActive(false);
         
-        // Notify listeners
+        // Show HUD again when selecting a target
+        if (hudUI != null && enableHUD)
+        {
+            hudUI.SetActive(true);
+        }
+        
+        // Invoke callback with selected body
         OnAutopilotTargetSelected?.Invoke(body);
         
         Debug.Log($"[UIManager] Autopilot destination selected: {body.name}");
@@ -1702,14 +1815,15 @@ public class SolarSystemUIManager : MonoBehaviour
     // HUD UI elements
     private GameObject hudUI;
     private TextMeshProUGUI hudText;
+    private GameObject controlsHint; // Controls hint at bottom
     
-    // Public accessors
     public GameObject HudUI => hudUI;
     public bool EnableHUD => enableHUD;
     public TextMeshProUGUI HudText => hudText;
+    public GameObject ControlsHint => controlsHint;
     
     /// <summary>
-    /// Creates the HUD display.
+    /// Creates the HUD display with sci-fi styling.
     /// </summary>
     public void CreateHUD()
     {
@@ -1721,34 +1835,205 @@ public class SolarSystemUIManager : MonoBehaviour
             return;
         }
         
-        // Create HUD GameObject
+        // Create main HUD container
         hudUI = new GameObject("HUD");
         hudUI.transform.SetParent(labelCanvas.transform, false);
         
-        // Add RectTransform
-        RectTransform rectTransform = hudUI.AddComponent<RectTransform>();
+        RectTransform hudRect = hudUI.AddComponent<RectTransform>();
+        hudRect.anchorMin = new Vector2(0, 1);
+        hudRect.anchorMax = new Vector2(0, 1);
+        hudRect.pivot = new Vector2(0, 1);
+        hudRect.anchoredPosition = hudPosition;
+        hudRect.sizeDelta = new Vector2(540, 300); // Compact size
         
-        // Position at top-left corner
-        rectTransform.anchorMin = new Vector2(0, 1);
-        rectTransform.anchorMax = new Vector2(0, 1);
-        rectTransform.pivot = new Vector2(0, 1);
-        rectTransform.anchoredPosition = hudPosition;
-        rectTransform.sizeDelta = new Vector2(800, 400);
+        // === BACKGROUND PANEL ===
+        GameObject bgPanel = new GameObject("Background");
+        bgPanel.transform.SetParent(hudUI.transform, false);
+        RectTransform bgRect = bgPanel.AddComponent<RectTransform>();
+        bgRect.anchorMin = Vector2.zero;
+        bgRect.anchorMax = Vector2.one;
+        bgRect.offsetMin = Vector2.zero;
+        bgRect.offsetMax = Vector2.zero;
         
-        // Add Text component
-        hudText = hudUI.AddComponent<TextMeshProUGUI>();
+        Image bgImage = bgPanel.AddComponent<Image>();
+        bgImage.color = new Color(0.02f, 0.05f, 0.12f, 0.85f); // Dark blue, semi-transparent
+        
+        // === BORDER FRAME ===
+        // Top border
+        CreateBorderEdge(hudUI.transform, "BorderTop", new Vector2(0, 1), new Vector2(1, 1), 
+            new Vector2(0, 0), new Vector2(0, -3), new Color(0.2f, 0.8f, 1f, 0.9f));
+        // Bottom border
+        CreateBorderEdge(hudUI.transform, "BorderBottom", new Vector2(0, 0), new Vector2(1, 0), 
+            new Vector2(0, 3), new Vector2(0, 0), new Color(0.2f, 0.8f, 1f, 0.9f));
+        // Left border
+        CreateBorderEdge(hudUI.transform, "BorderLeft", new Vector2(0, 0), new Vector2(0, 1), 
+            new Vector2(3, 0), new Vector2(0, 0), new Color(0.2f, 0.8f, 1f, 0.9f));
+        // Right border
+        CreateBorderEdge(hudUI.transform, "BorderRight", new Vector2(1, 0), new Vector2(1, 1), 
+            new Vector2(0, 0), new Vector2(-3, 0), new Color(0.2f, 0.8f, 1f, 0.9f));
+        
+        // === CORNER BRACKETS ===
+        Color bracketColor = new Color(0.3f, 0.9f, 1f, 1f); // Bright cyan
+        float bracketSize = 25f;
+        float bracketThickness = 3f;
+        
+        // Top-left corner
+        CreateCornerBracket(hudUI.transform, "CornerTL", new Vector2(0, 1), bracketSize, bracketThickness, bracketColor, true, true);
+        // Top-right corner
+        CreateCornerBracket(hudUI.transform, "CornerTR", new Vector2(1, 1), bracketSize, bracketThickness, bracketColor, false, true);
+        // Bottom-left corner
+        CreateCornerBracket(hudUI.transform, "CornerBL", new Vector2(0, 0), bracketSize, bracketThickness, bracketColor, true, false);
+        // Bottom-right corner
+        CreateCornerBracket(hudUI.transform, "CornerBR", new Vector2(1, 0), bracketSize, bracketThickness, bracketColor, false, false);
+        
+        // === HEADER LINE ===
+        GameObject headerLine = new GameObject("HeaderLine");
+        headerLine.transform.SetParent(hudUI.transform, false);
+        RectTransform headerLineRect = headerLine.AddComponent<RectTransform>();
+        headerLineRect.anchorMin = new Vector2(0, 1);
+        headerLineRect.anchorMax = new Vector2(1, 1);
+        headerLineRect.pivot = new Vector2(0.5f, 1);
+        headerLineRect.anchoredPosition = new Vector2(0, -40);
+        headerLineRect.sizeDelta = new Vector2(-20, 1);
+        Image headerLineImg = headerLine.AddComponent<Image>();
+        headerLineImg.color = new Color(0.2f, 0.6f, 0.8f, 0.5f);
+        
+        // === HEADER TITLE ===
+        GameObject headerGO = new GameObject("Header");
+        headerGO.transform.SetParent(hudUI.transform, false);
+        RectTransform headerRect = headerGO.AddComponent<RectTransform>();
+        headerRect.anchorMin = new Vector2(0, 1);
+        headerRect.anchorMax = new Vector2(1, 1);
+        headerRect.pivot = new Vector2(0.5f, 1);
+        headerRect.anchoredPosition = new Vector2(0, -8);
+        headerRect.sizeDelta = new Vector2(-20, 30);
+        
+        // Header styling
+        
+        TextMeshProUGUI headerText = headerGO.AddComponent<TextMeshProUGUI>();
+        if (labelFont != null) headerText.font = labelFont;
+        headerText.text = "NAVIGATION SYSTEM";
+        headerText.fontSize = 18;
+        headerText.fontStyle = FontStyles.Bold;
+        headerText.color = new Color(0.4f, 0.9f, 1f, 1f);
+        headerText.alignment = TextAlignmentOptions.Center;
+        headerText.characterSpacing = 3f;
+        
+        // === MAIN DATA TEXT ===
+        GameObject textGO = new GameObject("DataText");
+        textGO.transform.SetParent(hudUI.transform, false);
+        RectTransform textRect = textGO.AddComponent<RectTransform>();
+        textRect.anchorMin = new Vector2(0, 0);
+        textRect.anchorMax = new Vector2(1, 1);
+        textRect.offsetMin = new Vector2(15, 60);  // Padding from edges, more space at bottom
+        textRect.offsetMax = new Vector2(-15, -48);
+        
+        hudText = textGO.AddComponent<TextMeshProUGUI>();
         if (labelFont != null) hudText.font = labelFont;
         hudText.fontSize = hudFontSize;
-        hudText.color = hudColor;
+        hudText.color = new Color(0.85f, 0.95f, 1f, 1f);
         hudText.alignment = TextAlignmentOptions.TopLeft;
         hudText.textWrappingMode = TextWrappingModes.NoWrap;
         hudText.overflowMode = TextOverflowModes.Overflow;
+        hudText.lineSpacing = 12f; // Slight increase for better readability
+        hudText.richText = true;
         
-        // Initial text
-        hudText.text = "Speed: 0 km/s (0% lightspeed)\nDistance from Sun: 0 km\nMode: DISTANCE-BASED";
+        // Create icon container
+        GameObject iconContainer = new GameObject("IconContainer");
+        iconContainer.transform.SetParent(hudUI.transform, false);
+        RectTransform iconRect = iconContainer.AddComponent<RectTransform>();
+        iconRect.anchorMin = new Vector2(0, 0);
+        iconRect.anchorMax = new Vector2(0, 1);
+        iconRect.pivot = new Vector2(0, 0.5f);
+        iconRect.anchoredPosition = new Vector2(50, -24); // Offset to align with text (moved right to make space for icons)
+        iconRect.sizeDelta = new Vector2(32, 0);
         
-        Debug.Log("[UIManager] HUD created successfully");
+        // Initial text - now cleaner without brackets, indented to make room for icons
+        hudText.text = "<color=#FFFFFF>VELOCITY</color> <color=#AAAAAA>0 km/s</color>\n" +
+                       "    <color=#88AACC>0%c</color>\n" +
+                       "<color=#FFFFFF>SOLAR DIST</color> <color=#AAAAAA>0 km</color>\n" +
+                       "<color=#FFFFFF>PROXIMITY</color> <color=#AAAAAA>--</color>";
+        
+        // === CONTROLS HINT AT BOTTOM ===
+        GameObject controlsGO = new GameObject("ControlsHint");
+        controlsGO.transform.SetParent(hudUI.transform, false);
+        RectTransform controlsRect = controlsGO.AddComponent<RectTransform>();
+        controlsRect.anchorMin = new Vector2(0, 0);
+        controlsRect.anchorMax = new Vector2(1, 0);
+        controlsRect.pivot = new Vector2(0.5f, 0);
+        controlsRect.anchoredPosition = new Vector2(0, 12);
+        controlsRect.sizeDelta = new Vector2(-20, 40);
+        
+        TextMeshProUGUI controlsText = controlsGO.AddComponent<TextMeshProUGUI>();
+        if (labelFont != null) controlsText.font = labelFont;
+        controlsText.text = "<color=#4488AA>[ X ] Autopilot  [ O ] Orbit  [ I ] Info</color>";
+        controlsText.fontSize = 15;
+        controlsText.color = new Color(0.4f, 0.6f, 0.7f, 0.8f);
+        controlsText.alignment = TextAlignmentOptions.Center;
+        
+        // Store reference for visibility toggling
+        controlsHint = controlsGO;
+        
+        Debug.Log("[UIManager] Sci-Fi HUD created successfully");
     }
+    
+    /// <summary>
+    /// Helper to create a border edge line.
+    /// </summary>
+    private void CreateBorderEdge(Transform parent, string name, Vector2 anchorMin, Vector2 anchorMax, 
+        Vector2 offsetMin, Vector2 offsetMax, Color color)
+    {
+        GameObject border = new GameObject(name);
+        border.transform.SetParent(parent, false);
+        RectTransform rect = border.AddComponent<RectTransform>();
+        rect.anchorMin = anchorMin;
+        rect.anchorMax = anchorMax;
+        rect.offsetMin = offsetMin;
+        rect.offsetMax = offsetMax;
+        Image img = border.AddComponent<Image>();
+        img.color = color;
+    }
+    
+    /// <summary>
+    /// Helper to create an L-shaped corner bracket.
+    /// </summary>
+    private void CreateCornerBracket(Transform parent, string name, Vector2 anchor, 
+        float size, float thickness, Color color, bool left, bool top)
+    {
+        GameObject corner = new GameObject(name);
+        corner.transform.SetParent(parent, false);
+        RectTransform cornerRect = corner.AddComponent<RectTransform>();
+        cornerRect.anchorMin = anchor;
+        cornerRect.anchorMax = anchor;
+        cornerRect.pivot = anchor;
+        cornerRect.anchoredPosition = Vector2.zero;
+        cornerRect.sizeDelta = new Vector2(size, size);
+        
+        // Horizontal part of L
+        GameObject hBar = new GameObject("H");
+        hBar.transform.SetParent(corner.transform, false);
+        RectTransform hRect = hBar.AddComponent<RectTransform>();
+        hRect.anchorMin = new Vector2(left ? 0 : 1, top ? 1 : 0);
+        hRect.anchorMax = new Vector2(left ? 0 : 1, top ? 1 : 0);
+        hRect.pivot = new Vector2(left ? 0 : 1, top ? 1 : 0);
+        hRect.anchoredPosition = Vector2.zero;
+        hRect.sizeDelta = new Vector2(size, thickness);
+        Image hImg = hBar.AddComponent<Image>();
+        hImg.color = color;
+        
+        // Vertical part of L
+        GameObject vBar = new GameObject("V");
+        vBar.transform.SetParent(corner.transform, false);
+        RectTransform vRect = vBar.AddComponent<RectTransform>();
+        vRect.anchorMin = new Vector2(left ? 0 : 1, top ? 1 : 0);
+        vRect.anchorMax = new Vector2(left ? 0 : 1, top ? 1 : 0);
+        vRect.pivot = new Vector2(left ? 0 : 1, top ? 1 : 0);
+        vRect.anchoredPosition = Vector2.zero;
+        vRect.sizeDelta = new Vector2(thickness, size);
+        Image vImg = vBar.AddComponent<Image>();
+        vImg.color = color;
+    }
+
     
     /// <summary>
     /// Sets the HUD display text.
