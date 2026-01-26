@@ -493,9 +493,6 @@ public class SolarSystemParallaxManager : MonoBehaviour
             uiManager.UpdateLoadingScreen(starsReady, starCount, totalStars, starDatasetName);
         }
         
-        // Always update VR canvas position (needed for loading screen visibility in VR)
-        UpdateVRCanvas();
-        
         // Don't allow gameplay until loading is complete
         if (uiManager != null && !uiManager.IsLoadingComplete)
         {
@@ -593,6 +590,18 @@ public class SolarSystemParallaxManager : MonoBehaviour
         {
             UpdateOrbitCamera();
         }
+    }
+    
+    /// <summary>
+    /// LateUpdate runs after all Update() methods and after VR tracking updates camera transforms.
+    /// This ensures the VR canvas is positioned based on the current frame's camera position,
+    /// preventing the one-frame lag that causes HUD to lag behind head movement in VR.
+    /// </summary>
+    private void LateUpdate()
+    {
+        // Update VR canvas position after VR tracking has updated the camera transform
+        // This is critical for VR mode to prevent HUD lag behind head movement
+        UpdateVRCanvas();
     }
     
     private void UpdateBlackHoleLensing()
