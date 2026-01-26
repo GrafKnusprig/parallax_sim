@@ -448,6 +448,7 @@ MonoBehaviour:
   maxProxyRadius: 1999
   useHighQualitySpheres: 1
   sphereSubdivisions: 4
+  moonVisibilityThresholdAu: 1
   saturnRingMaterial: {fileID: 2100000, guid: f1e2d3c4b5a6978869504a3b2c1d0e9f, type: 2}
   saturnRingInnerRadius: 1.2
   saturnRingOuterRadius: 2.3
@@ -465,6 +466,7 @@ MonoBehaviour:
   asteroidBrightness: 1.2
   maxAsteroidsPerFrame: 100000
   orbitAngularVelocity: 0.5
+  maxDistanceFromSunLy: 600000
   targetCamera: {fileID: 1528494429}
   moveAction: {fileID: -1680190386980627800, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   verticalAction: {fileID: -1957627301107028444, guid: 052faaac586de48259a63d0c4782560b, type: 3}
@@ -551,10 +553,6 @@ MonoBehaviour:
   planetInfoAction: {fileID: 83097790271614945, guid: c348712bda248c246b8c49b3db54643f, type: 3}
   menuScrollAction: {fileID: -60998027439631388, guid: c348712bda248c246b8c49b3db54643f, type: 3}
   menuSelectAction: {fileID: -6131295136447488360, guid: c348712bda248c246b8c49b3db54643f, type: 3}
-  enableHUD: 1
-  hudFontSize: 28
-  hudColor: {r: 0, g: 1, b: 1, a: 1}
-  hudPosition: {x: 300, y: -100}
   enableHUD: 1
   hudFontSize: 28
   hudColor: {r: 0, g: 1, b: 1, a: 1}

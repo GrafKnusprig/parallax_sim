@@ -31,6 +31,7 @@ public class StellarParallaxManager : MonoBehaviour
     [Tooltip("Overall brightness for all stars (0-5x)")]
     [SerializeField] private float starBrightness = 1.0f;
     [Tooltip("Maximum stars to render per frame (count)")]
+    [Range(0, 10000000)]
     [SerializeField] private int maxStarsPerFrame = 10000000;
 
     [Header("GPU Processing (Compute Shader)")]
@@ -586,6 +587,7 @@ public class StellarParallaxManager : MonoBehaviour
         starCullingShader.SetFloat("_ParallaxApproxDistanceParsecs", parallaxApproxDistanceParsecs);
         
         starCullingShader.SetInt("_StarCount", allStars.Count);
+        starCullingShader.SetInt("_MaxStarsPerFrame", maxStarsPerFrame);
         
         // Dispatch compute shader (256 threads per group)
         int threadGroups = Mathf.CeilToInt(allStars.Count / 256f);

@@ -33,18 +33,30 @@ float _CosHalfFOV;
 float _CosRoughFOV;
 float _AuToParsec;
 
+
 // Parallax settings
 int _EnableParallax;
 int _EnableFastParallaxApprox;
 float _ParallaxApproxDistanceParsecs;
 
 uint _StarCount;
+int _MaxStarsPerFrame; // New Uniform
 
 [numthreads(256, 1, 1)]
 void CullStars(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= _StarCount)
         return;
+
+    // "Dirtiest and Fastest" optimization:
+    // If we have more stars than the limit, skip them uniformly using a stride.
+    // This reduces density without cutting off whole sections of the sky.
+    if (_MaxStarsPerFrame > 0 && _StarCount > (uint)_MaxStarsPerFrame)
+    {
+        uint stride = _StarCount / (uint)_MaxStarsPerFrame;
+        if (stride > 1 && (id.x % stride) != 0)
+            return;
+    }
     
     StarInput star = _AllStars[id.x];
     
