@@ -1,0 +1,106 @@
+// Asteroid Culling Compute Shader
+// Processes asteroids in parallel on GPU
+// Outputs visible asteroid data for instanced rendering
+
+#pragma kernel CullAsteroids
+#pragma kernel CopyCount
+
+// Input asteroid data (uploaded once)
+// Uses float4 for explicit 16-byte alignment
+struct AsteroidInput
+{
+    float4 posAndDist;    // xyz = positionAU, w = distanceAU
+    float4 dirAndInvDist; // xyz = direction,    w = invDistance
+};
+
+// Output visible asteroid data
+struct AsteroidOutput
+{
+    float3 worldPosition;
+};
+
+// Buffers
+StructuredBuffer<AsteroidInput> _AllAsteroids;
+AppendStructuredBuffer<AsteroidOutput> _VisibleAsteroids;
+RWStructuredBuffer<uint> _IndirectArgs;
+
+// Uniforms
+float3 _CameraPos;
+float3 _CameraForward;
+float3 _PlayerPosRelativeSunAu; // Player position relative to Sun in AU (since asteroids are heliocentric)
+float _HorizonRadius;
+float _CosHalfFOV;     // Cosine of (FOV/2 + margin)
+
+uint _AsteroidCount;
+int _MaxAsteroidsPerFrame; 
+
+[numthreads(256, 1, 1)]
+void CullAsteroids(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _AsteroidCount)
+        return;
+        
+    // "Dirtiest and Fastest" optimization:
+    // If we have more asteroids than the limit, skip them uniformly using a stride.
+    if (_MaxAsteroidsPerFrame > 0 && _AsteroidCount > (uint)_MaxAsteroidsPerFrame)
+    {
+        uint stride = _AsteroidCount / (uint)_MaxAsteroidsPerFrame;
+        if (stride > 1 && (id.x % stride) != 0)
+            return;
+    }
+    
+    AsteroidInput asteroid = _AllAsteroids[id.x];
+    
+    // Calculate vector P from player to asteroid
+    // AsteroidPos is Heliocentric AU. PlayerPos is Heliocentric AU.
+    // P = AsteroidPos - PlayerPos
+    float3 asteroidPosAu = asteroid.posAndDist.xyz;
+    float3 P = asteroidPosAu - _PlayerPosRelativeSunAu;
+    
+    // Fast Squared FOV Check
+    float dotF = dot(P, _CameraForward);
+    
+    // 1. Cull if behind camera
+    if (dotF <= 0)
+        return;
+        
+    // 2. Cull if outside field of view cone
+    // Optimization: dotF^2 < cos^2 * dot(P, P)
+    float distSq = dot(P, P);
+    if (dotF * dotF < (_CosHalfFOV * _CosHalfFOV) * distSq)
+        return;
+        
+    // Asteroid is visible. 
+    // Calculate projected world position for rendering on the horizon sphere.
+    // Ideally asteroids have depth, but if we behave like stars/planets projected on horizon:
+    // float invDist = rsqrt(distSq);
+    // float3 dir = P * invDist;
+    // float3 worldPos = dir * _HorizonRadius;
+    
+    // NOTE: Unlike stars, asteroids might be close enough to have actual parallax/depth?
+    // The user's prompt implies "StarCulling" logic, which projects to _HorizonRadius.
+    // "implement the same compute shader ... for the asteroids".
+    // I will stick to projecting to _HorizonRadius for now as that's what the request implies (parallax simulation).
+    
+    float invDist = rsqrt(distSq);
+    float3 dir = P * invDist;
+    float3 worldPos = dir * _HorizonRadius;
+    
+    // Output visible asteroid
+    AsteroidOutput output;
+    output.worldPosition = worldPos;
+    _VisibleAsteroids.Append(output);
+}
+
+// Copy the append buffer count to indirect args
+[numthreads(1, 1, 1)]
+void CopyCount(uint3 id : SV_DispatchThreadID)
+{
+    // IndirectArgs format for DrawMeshInstancedIndirect:
+    // [0] = index count per instance
+    // [1] = instance count (this is what we set)
+    // [2] = start index location
+    // [3] = base vertex location
+    // [4] = start instance location
+    // The count is already in args[1] from CopyCount
+}

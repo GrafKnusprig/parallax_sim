@@ -82,7 +82,16 @@ public class SolarSystemParallaxManager : MonoBehaviour
     [Tooltip("Overall brightness for all asteroids (0-5x)")]
     [SerializeField] private float asteroidBrightness = 1.2f;
     [Tooltip("Maximum asteroids to render per frame (count)")]
+    [Range(0, 100000)]
     [SerializeField] private int maxAsteroidsPerFrame = 100000;
+    
+    [Header("GPU Asteroid Processing")]
+    [Tooltip("Use GPU compute shader for asteroid processing (fastest)")]
+    [SerializeField] private bool useAsteroidComputeShader = true;
+    [Tooltip("Compute shader for asteroid culling")]
+    [SerializeField] private ComputeShader asteroidCullingShader;
+    [Tooltip("GPU-optimized asteroid material (uses StructuredBuffer)")]
+    [SerializeField] private Material asteroidMaterialGPU;
     
     [Header("Player (real space)")]
     [Tooltip("Angular velocity for orbit mode (radians/sec)")]
@@ -140,6 +149,23 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private MaterialPropertyBlock asteroidPropertyBlock;
     private Mesh asteroidMesh;
     private bool asteroidsLoaded = false;
+    
+    // GPU Asteroid resources
+    private ComputeBuffer asteroidInputBuffer;       // All asteroids (uploaded once)
+    private ComputeBuffer visibleAsteroidsBuffer;    // Visible asteroids output (AppendBuffer)
+    private ComputeBuffer asteroidIndirectArgsBuffer;// For DrawMeshInstancedIndirect
+    private bool asteroidComputeBuffersAllocated = false;
+    private int asteroidComputeKernelCull;
+    private uint[] asteroidIndirectArgs = new uint[5];
+    
+    // GPU input struct (must match compute shader)
+    private struct AsteroidInputGPU
+    {
+        public Vector4 posAndDist;     // xyz = positionAU, w = distance
+        public Vector4 dirAndInvDist;  // xyz = direction,  w = invDistance (unused but kept for alignment/future)
+        
+        public static int Size => sizeof(float) * 8; // 32 bytes
+    }
     
     // Dynamic scaling and speed
     private BodyInstance nearestPlanet;
@@ -505,9 +531,17 @@ public class SolarSystemParallaxManager : MonoBehaviour
         // Update and render asteroids
         if (asteroidsLoaded && enableAsteroids)
         {
-            UpdateVisibleAsteroids();
-            UpdateAsteroidRendering();
-            RenderAsteroids();
+            if (useAsteroidComputeShader && asteroidComputeBuffersAllocated && asteroidCullingShader != null)
+            {
+                UpdateVisibleAsteroidsGPU();
+                RenderAsteroidsGPU();
+            }
+            else
+            {
+                UpdateVisibleAsteroids();
+                UpdateAsteroidRendering();
+                RenderAsteroids();
+            }
         }
         
         // Stellar manager handles its own update based on playerRealPosAu
@@ -1507,8 +1541,12 @@ public class SolarSystemParallaxManager : MonoBehaviour
             float originalIntensity = lensedMaterial.GetFloat("_Intensity");
             lensedMaterial.SetFloat("_Intensity", originalIntensity * opacityMultiplier);
         }
-        
         meshRenderer.material = lensedMaterial;
+    }
+
+    private void OnDestroy()
+    {
+        DisposeAsteroidComputeBuffers();
     }
     
     private Mesh CreateRingMesh(float innerRadius, float outerRadius, int segments)
@@ -3001,6 +3039,125 @@ public class SolarSystemParallaxManager : MonoBehaviour
         asteroidMesh.RecalculateNormals();
         asteroidMesh.bounds = new Bounds(Vector3.zero, Vector3.one * 10000f);
     }
+
+    private IEnumerator AllocateAsteroidComputeBuffersAsync()
+    {
+        if (asteroidCullingShader == null)
+        {
+            yield break;
+        }
+
+        DisposeAsteroidComputeBuffers();
+
+        int count = allAsteroids.Count;
+        if (count == 0) yield break;
+
+        asteroidComputeKernelCull = asteroidCullingShader.FindKernel("CullAsteroids");
+
+        asteroidInputBuffer = new ComputeBuffer(count, AsteroidInputGPU.Size);
+
+        AsteroidInputGPU[] inputData = new AsteroidInputGPU[count];
+        int batchSize = 100000;
+        int processed = 0;
+
+        for (int i = 0; i < count; i++)
+        {
+            AsteroidData asteroid = allAsteroids[i];
+            
+            // Convert to absolute Vector3 relative to Sun for GPU
+            // Asteroid positions are relatively small (in AU) so vector3 float precision is fine for culling
+            // HierarchicalPosition -> Vector3 (relative to 0,0,0 which is Sun)
+            Vector3d absolutePos = asteroid.positionAU.ToAbsolutePosition(SECTOR_SIZE_AU);
+
+            inputData[i] = new AsteroidInputGPU
+            {
+                posAndDist = new Vector4((float)absolutePos.x, (float)absolutePos.y, (float)absolutePos.z, asteroid.distance),
+                dirAndInvDist = new Vector4(0,1,0, 0) // Direction not strictly needed if we have pos, but uniform with stars
+            };
+
+            processed++;
+            if (processed % batchSize == 0)
+                yield return null;
+        }
+
+        asteroidInputBuffer.SetData(inputData);
+        inputData = null;
+        GC.Collect();
+
+        // Output buffers
+        int maxVisible = Mathf.Min(count, maxAsteroidsPerFrame);
+        visibleAsteroidsBuffer = new ComputeBuffer(maxVisible, sizeof(float) * 3, ComputeBufferType.Append);
+        asteroidIndirectArgsBuffer = new ComputeBuffer(1, sizeof(uint) * 5, ComputeBufferType.IndirectArguments);
+
+        asteroidIndirectArgs[0] = asteroidMesh != null ? asteroidMesh.GetIndexCount(0) : 6;
+        asteroidIndirectArgs[1] = 0;
+        asteroidIndirectArgs[2] = 0;
+        asteroidIndirectArgs[3] = 0;
+        asteroidIndirectArgs[4] = 0;
+        asteroidIndirectArgsBuffer.SetData(asteroidIndirectArgs);
+
+        asteroidComputeBuffersAllocated = true;
+        Debug.Log($"[StellarParallaxManager] Allocated Asteroid ComputeBuffers for {count} asteroids");
+    }
+
+    private void DisposeAsteroidComputeBuffers()
+    {
+        if (asteroidInputBuffer != null) { asteroidInputBuffer.Release(); asteroidInputBuffer = null; }
+        if (visibleAsteroidsBuffer != null) { visibleAsteroidsBuffer.Release(); visibleAsteroidsBuffer = null; }
+        if (asteroidIndirectArgsBuffer != null) { asteroidIndirectArgsBuffer.Release(); asteroidIndirectArgsBuffer = null; }
+        asteroidComputeBuffersAllocated = false;
+    }
+    
+    private void UpdateVisibleAsteroidsGPU()
+    {
+        if (visibleAsteroidsBuffer == null) return;
+        
+        visibleAsteroidsBuffer.SetCounterValue(0);
+
+        Camera cam = GetActiveCamera();
+        if (cam == null) return;
+        
+        // Get Player pos relative to sun in AU (heliocentric coordinates)
+        Vector3d playerPosRelativeSun = GetPlayerPositionRelativeToSun();
+        
+        float halfFOVWithMargin = cam.fieldOfView * 0.5f + 45f;
+        float cosHalfFOV = Mathf.Cos(halfFOVWithMargin * Mathf.Deg2Rad);
+
+        asteroidCullingShader.SetBuffer(asteroidComputeKernelCull, "_AllAsteroids", asteroidInputBuffer);
+        asteroidCullingShader.SetBuffer(asteroidComputeKernelCull, "_VisibleAsteroids", visibleAsteroidsBuffer);
+
+        asteroidCullingShader.SetVector("_CameraPos", cam.transform.position);
+        asteroidCullingShader.SetVector("_CameraForward", cam.transform.forward);
+        asteroidCullingShader.SetVector("_PlayerPosRelativeSunAu", (Vector3)playerPosRelativeSun);
+        asteroidCullingShader.SetFloat("_HorizonRadius", horizonRadius);
+        asteroidCullingShader.SetFloat("_CosHalfFOV", cosHalfFOV);
+        asteroidCullingShader.SetInt("_AsteroidCount", allAsteroids.Count);
+        asteroidCullingShader.SetInt("_MaxAsteroidsPerFrame", maxAsteroidsPerFrame);
+
+        int threadGroups = Mathf.CeilToInt(allAsteroids.Count / 256f);
+        asteroidCullingShader.Dispatch(asteroidComputeKernelCull, threadGroups, 1, 1);
+
+        ComputeBuffer.CopyCount(visibleAsteroidsBuffer, asteroidIndirectArgsBuffer, sizeof(uint));
+    }
+
+    private void RenderAsteroidsGPU()
+    {
+        if (!asteroidComputeBuffersAllocated || asteroidMaterialGPU == null) return;
+
+        asteroidMaterialGPU.SetBuffer("_VisibleAsteroids", visibleAsteroidsBuffer);
+        // Reuse star material properties if needed, or add asteroid specific ones
+        asteroidMaterialGPU.SetColor("_Color", asteroidColor);
+        asteroidMaterialGPU.SetFloat("_Brightness", asteroidBrightness);
+        asteroidMaterialGPU.SetFloat("_Size", baseAsteroidSize);
+
+        Graphics.DrawMeshInstancedIndirect(
+            asteroidMesh,
+            0,
+            asteroidMaterialGPU,
+            new Bounds(Vector3.zero, Vector3.one * 100000f),
+            asteroidIndirectArgsBuffer
+        );
+    }
     
     private IEnumerator LoadAsteroidDataAsync()
     {
@@ -3070,6 +3227,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         Debug.Log($"Total asteroids loaded: {allAsteroids.Count}");
         asteroidsLoaded = true;
+
+        // Allocate GPU buffers
+        yield return StartCoroutine(AllocateAsteroidComputeBuffersAsync());
         
         // Initial update
         UpdateVisibleAsteroids();
