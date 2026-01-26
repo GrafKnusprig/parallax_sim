@@ -128,3 +128,5 @@ $RECYCLE.BIN/
 
 # Windows shortcuts
 *.lnk
+
+Assets/StreamingAssets/GDR3/*.bin*
