@@ -1257,6 +1257,9 @@ public class SolarSystemUIManager : MonoBehaviour
         btnText.fontSize = 24;
         btnText.color = new Color(0.9f, 0.8f, 1f, 1f);
         btnText.alignment = TextAlignmentOptions.Left;
+        
+        // Add to autopilotButtons list for VR navigation highlighting
+        autopilotButtons.Add(button);
     }
     
     private void ToggleMoonsCategory()
@@ -1604,13 +1607,31 @@ public class SolarSystemUIManager : MonoBehaviour
             Image btnImage = btn.GetComponent<Image>();
             if (btnImage != null)
             {
+                AutopilotBodyInfo body = menuSelectableBodies[i];
+                
                 if (i == menuSelectedIndex)
                 {
-                    btnImage.color = new Color(0.3f, 0.6f, 1f, 1f); // Highlighted
+                    // Highlighted color - bright blue for all types
+                    btnImage.color = new Color(0.3f, 0.6f, 1f, 1f);
                 }
                 else
                 {
-                    btnImage.color = new Color(0.15f, 0.25f, 0.4f, 1f); // Normal
+                    // Normal colors - depends on type
+                    if (body.isCategoryHeader)
+                    {
+                        // Moons category - purple tone
+                        btnImage.color = new Color(0.2f, 0.15f, 0.3f, 1f);
+                    }
+                    else if (body.isMoon)
+                    {
+                        // Moon - slightly different blue
+                        btnImage.color = new Color(0.12f, 0.2f, 0.35f, 1f);
+                    }
+                    else
+                    {
+                        // Regular planet - standard blue
+                        btnImage.color = new Color(0.15f, 0.25f, 0.4f, 1f);
+                    }
                 }
             }
         }
