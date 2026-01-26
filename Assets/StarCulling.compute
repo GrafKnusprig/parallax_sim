@@ -40,47 +40,6 @@ float _ParallaxApproxDistanceParsecs;
 
 uint _StarCount;
 
-// Calculate world position with parallax
-float3 CalculateWorldPosition(StarInput star, float3 playerPosAu)
-{
-    float3 positionParsecs = star.posAndDist.xyz;
-    float3 originalDirection = star.dirAndInvDist.xyz;
-    float distance = star.posAndDist.w;
-    float invDistance = star.dirAndInvDist.w;
-    
-    if (_EnableParallax == 0)
-    {
-        return originalDirection * _HorizonRadius;
-    }
-    
-    // Fast approximation for distant stars
-    if (_EnableFastParallaxApprox == 1 && distance >= _ParallaxApproxDistanceParsecs)
-    {
-        float3 playerPosParsecs = playerPosAu * _AuToParsec;
-        float3 approxDir = normalize(originalDirection - (playerPosParsecs * invDistance));
-        
-        if (any(isnan(approxDir)) || any(isinf(approxDir)))
-            approxDir = originalDirection;
-            
-        return approxDir * _HorizonRadius;
-    }
-    
-    // Full precision parallax
-    float3 playerPosParsecs = playerPosAu * _AuToParsec;
-    float3 playerToStar = positionParsecs - playerPosParsecs;
-    float actualDistance = length(playerToStar);
-    
-    if (actualDistance < 0.001)
-        return originalDirection * _HorizonRadius;
-    
-    float3 apparentDirection = playerToStar / actualDistance;
-    
-    if (any(isnan(apparentDirection)) || any(isinf(apparentDirection)))
-        apparentDirection = originalDirection;
-    
-    return apparentDirection * _HorizonRadius;
-}
-
 [numthreads(256, 1, 1)]
 void CullStars(uint3 id : SV_DispatchThreadID)
 {
@@ -89,28 +48,47 @@ void CullStars(uint3 id : SV_DispatchThreadID)
     
     StarInput star = _AllStars[id.x];
     
-    // Rough FOV culling REMOVED for full rendering
-    // float3 originalDirection = star.dirAndInvDist.xyz;
-    // float3 starDir = originalDirection * _HorizonRadius;
-    // float3 toStarRough = normalize(starDir - _CameraPos);
-    // float roughDot = dot(_CameraForward, toStarRough);
-    // 
-    // if (roughDot < _CosRoughFOV)
-    //     return;
+    float3 worldPos;
     
-    // Calculate world position with parallax
-    float3 worldPos = CalculateWorldPosition(star, _PlayerPosAu);
-    
-    // Validate
-    if (any(isnan(worldPos)) || any(isinf(worldPos)))
-        return;
-    
-    // Precise FOV culling REMOVED for full rendering
-    // float3 toStar = normalize(worldPos - _CameraPos);
-    // float dotProduct = dot(_CameraForward, toStar);
-    // 
-    // if (dotProduct < _CosHalfFOV)
-    //     return;
+    // Optimized Culling Logic
+    if (_EnableParallax == 0)
+    {
+        float3 dir = star.dirAndInvDist.xyz;
+        
+        // Fast Pre-Check (No Parallax)
+        if (dot(dir, _CameraForward) < _CosHalfFOV)
+            return;
+            
+        worldPos = dir * _HorizonRadius;
+    }
+    else
+    {
+        // Parallax enabled: Calculate vector P from player to star
+        // P = StarPos - PlayerPos (All in Parsecs)
+        float3 P = star.posAndDist.xyz - (_PlayerPosAu * _AuToParsec);
+        
+        // Fast Squared FOV Check
+        // We defer costly sqrt/normalize until after culling
+        float dotF = dot(P, _CameraForward);
+        
+        // 1. Cull if behind camera (assuming FOV < 180)
+        if (dotF <= 0)
+            return;
+            
+        // 2. Cull if outside field of view cone
+        // Check: dot(P, F) < cos(theta) * length(P)
+        // Optimization: dotF^2 < cos^2 * dot(P, P)
+        float distSq = dot(P, P);
+        if (dotF * dotF < (_CosHalfFOV * _CosHalfFOV) * distSq)
+            return;
+            
+        // Star is visible: Compute final world position
+        // rsqrt is fast on GPU
+        float invDist = rsqrt(distSq);
+        float3 dir = P * invDist;
+        
+        worldPos = dir * _HorizonRadius;
+    }
     
     // Output visible star
     StarOutput output;
