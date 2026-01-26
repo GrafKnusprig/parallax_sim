@@ -54,9 +54,9 @@ Shader "Custom/AsteroidPointGPU"
             {
                 v2f o;
                 
-                UNITY_SETUP_INSTANCE_ID(v); // VR optimization
-                UNITY_INITIALIZE_OUTPUT(v2f, o); // VR optimization
-                UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o); // VR optimization
+                // Only initialize stereo output - don't use UNITY_SETUP_INSTANCE_ID
+                // because v.instanceID is used for buffer indexing, not Unity's GPU instancing
+                UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
                 
                 // Get asteroid data from buffer
                 AsteroidData asteroid = _VisibleAsteroids[v.instanceID];
@@ -88,6 +88,8 @@ Shader "Custom/AsteroidPointGPU"
 
             fixed4 frag(v2f i) : SV_Target
             {
+                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
+                
                 // Create circular asteroid with falloff
                 float2 center = float2(0.5, 0.5);
                 float dist = distance(i.uv, center);
