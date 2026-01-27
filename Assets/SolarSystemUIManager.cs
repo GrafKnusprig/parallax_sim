@@ -1718,11 +1718,12 @@ public class SolarSystemUIManager : MonoBehaviour
     [Header("Loading Screen")]
     [Tooltip("Show loading screen while stellar data is being loaded")]
     [SerializeField] private bool enableLoadingScreen = true;
+    [SerializeField] private string loadingScreenImagePath = "Assets/TitleScreen.jpg";
     
     // Loading screen UI elements
     private GameObject loadingScreenUI;
-    private TextMeshProUGUI loadingText;
     private Image loadingBackground;
+    private GameObject loadingCircle;
     private Image progressBarBackground;
     private Image progressBarFill;
     private TextMeshProUGUI progressText;
@@ -1730,6 +1731,7 @@ public class SolarSystemUIManager : MonoBehaviour
     private bool loadingComplete = false;
     private float loadingFadeProgress = 0f;
     private const float LOADING_FADE_SPEED = 2f;
+    private Sprite loadingScreenSprite;
     
     // Reference to HUD (for hiding during loading)
     private GameObject hudReference;
@@ -1764,6 +1766,40 @@ public class SolarSystemUIManager : MonoBehaviour
             return;
         }
         
+        // Load background image
+        if (loadingScreenSprite == null && !string.IsNullOrEmpty(loadingScreenImagePath))
+        {
+#if UNITY_EDITOR
+            loadingScreenSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(loadingScreenImagePath);
+            if (loadingScreenSprite == null)
+            {
+                // Fallback: Try loading as Texture2D and create a sprite (handles images not marked as "Sprite" in Unity)
+                Texture2D tex = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(loadingScreenImagePath);
+                if (tex != null)
+                {
+                    loadingScreenSprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
+                    Debug.Log($"[UIManager] Created sprite from texture for loading screen: {loadingScreenImagePath}");
+                }
+                else
+                {
+                    Debug.LogWarning($"[UIManager] Failed to load loading screen image at: {loadingScreenImagePath}");
+                }
+            }
+#else
+            // In build, we assumes the image is in Resources if we want to load it this way,
+            string resourcesPath = loadingScreenImagePath.Replace("Assets/", "").Replace(".jpg", "").Replace(".png", "");
+            loadingScreenSprite = Resources.Load<Sprite>(resourcesPath);
+            if (loadingScreenSprite == null)
+            {
+                Texture2D tex = Resources.Load<Texture2D>(resourcesPath);
+                if (tex != null)
+                {
+                    loadingScreenSprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
+                }
+            }
+#endif
+        }
+
         // Create loading screen container
         loadingScreenUI = new GameObject("LoadingScreen");
         loadingScreenUI.transform.SetParent(labelCanvas.transform, false);
@@ -1775,42 +1811,66 @@ public class SolarSystemUIManager : MonoBehaviour
         rectTransform.offsetMin = Vector2.zero;
         rectTransform.offsetMax = Vector2.zero;
         
-        // Add dark background
+        // Add background
         loadingBackground = loadingScreenUI.AddComponent<Image>();
-        loadingBackground.color = new Color(0.02f, 0.02f, 0.05f, 1f); // Very dark blue-black
+        if (loadingScreenSprite != null)
+        {
+            loadingBackground.sprite = loadingScreenSprite;
+            loadingBackground.color = Color.white;
+            loadingBackground.preserveAspect = true; // Best for title screens
+            // Make it fill the screen
+            loadingBackground.type = Image.Type.Simple;
+        }
+        else
+        {
+            loadingBackground.color = new Color(0.02f, 0.02f, 0.05f, 1f); // Fallback to dark blue-black
+        }
         
-        // Create center container for loading content
-        GameObject centerContainer = new GameObject("CenterContainer");
-        centerContainer.transform.SetParent(loadingScreenUI.transform, false);
-        RectTransform centerRect = centerContainer.AddComponent<RectTransform>();
-        centerRect.anchorMin = new Vector2(0.5f, 0.5f);
-        centerRect.anchorMax = new Vector2(0.5f, 0.5f);
-        centerRect.pivot = new Vector2(0.5f, 0.5f);
-        centerRect.anchoredPosition = Vector2.zero;
-        centerRect.sizeDelta = new Vector2(600, 250);
+        // === TOP QUARTER: LOADING CIRCLE ===
+        GameObject topContainer = new GameObject("TopContainer");
+        topContainer.transform.SetParent(loadingScreenUI.transform, false);
+        RectTransform topRect = topContainer.AddComponent<RectTransform>();
+        topRect.anchorMin = new Vector2(0.5f, 0.75f);
+        topRect.anchorMax = new Vector2(0.5f, 0.75f);
+        topRect.pivot = new Vector2(0.5f, 0.5f);
+        topRect.anchoredPosition = Vector2.zero;
+        topRect.sizeDelta = new Vector2(200, 200);
+
+        loadingCircle = new GameObject("LoadingCircle");
+        loadingCircle.transform.SetParent(topContainer.transform, false);
+        RectTransform circleRect = loadingCircle.AddComponent<RectTransform>();
+        circleRect.sizeDelta = new Vector2(100, 100);
         
-        // Create loading text
-        GameObject textGO = new GameObject("LoadingText");
-        textGO.transform.SetParent(centerContainer.transform, false);
-        RectTransform textRect = textGO.AddComponent<RectTransform>();
-        textRect.anchorMin = new Vector2(0, 0.6f);
-        textRect.anchorMax = new Vector2(1, 1f);
-        textRect.offsetMin = Vector2.zero;
-        textRect.offsetMax = Vector2.zero;
+        Image circleImage = loadingCircle.AddComponent<Image>();
+        // Use a simple circle sprite or create a procedural one
+        // For now, we'll create a simple ring appearance using a filled image with radial fill
+        circleImage.color = new Color(0.3f, 0.6f, 1f, 1f);
         
-        loadingText = textGO.AddComponent<TextMeshProUGUI>();
-        if (labelFont != null) loadingText.font = labelFont;
-        loadingText.fontSize = 32;
-        loadingText.color = new Color(0.8f, 0.9f, 1f, 1f);
-        loadingText.alignment = TextAlignmentOptions.Center;
-        loadingText.text = "Loading Stellar Data...";
+        // Try to find a default Unity sprite for the circle if possible, or just use a square for now 
+        // until we have a proper asset. Actually, we can use the "Knob" sprite which is usually present.
+#if UNITY_EDITOR
+        circleImage.sprite = UnityEditor.AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/Knob.psd");
+#endif
+        circleImage.type = Image.Type.Filled;
+        circleImage.fillMethod = Image.FillMethod.Radial360;
+        circleImage.fillAmount = 0.25f; // Quarter circle
+        
+        // === BOTTOM QUARTER: PROGRESS BAR & INFO ===
+        GameObject bottomContainer = new GameObject("BottomContainer");
+        bottomContainer.transform.SetParent(loadingScreenUI.transform, false);
+        RectTransform bottomRect = bottomContainer.AddComponent<RectTransform>();
+        bottomRect.anchorMin = new Vector2(0.5f, 0.25f);
+        bottomRect.anchorMax = new Vector2(0.5f, 0.25f);
+        bottomRect.pivot = new Vector2(0.5f, 0.5f);
+        bottomRect.anchoredPosition = Vector2.zero;
+        bottomRect.sizeDelta = new Vector2(600, 150);
         
         // Create progress bar container
         GameObject progressContainer = new GameObject("ProgressBarContainer");
-        progressContainer.transform.SetParent(centerContainer.transform, false);
+        progressContainer.transform.SetParent(bottomContainer.transform, false);
         RectTransform progressContainerRect = progressContainer.AddComponent<RectTransform>();
-        progressContainerRect.anchorMin = new Vector2(0.1f, 0.35f);
-        progressContainerRect.anchorMax = new Vector2(0.9f, 0.45f);
+        progressContainerRect.anchorMin = new Vector2(0.1f, 0.45f);
+        progressContainerRect.anchorMax = new Vector2(0.9f, 0.55f);
         progressContainerRect.offsetMin = Vector2.zero;
         progressContainerRect.offsetMax = Vector2.zero;
         
@@ -1824,7 +1884,7 @@ public class SolarSystemUIManager : MonoBehaviour
         progressBgRect.offsetMax = Vector2.zero;
         
         progressBarBackground = progressBgGO.AddComponent<Image>();
-        progressBarBackground.color = new Color(0.1f, 0.12f, 0.18f, 1f);
+        progressBarBackground.color = new Color(0.1f, 0.12f, 0.18f, 0.8f);
         
         // Progress bar fill
         GameObject progressFillGO = new GameObject("ProgressBarFill");
@@ -1841,33 +1901,33 @@ public class SolarSystemUIManager : MonoBehaviour
         
         // Progress percentage text
         GameObject progressTextGO = new GameObject("ProgressText");
-        progressTextGO.transform.SetParent(centerContainer.transform, false);
+        progressTextGO.transform.SetParent(bottomContainer.transform, false);
         RectTransform progressTextRect = progressTextGO.AddComponent<RectTransform>();
-        progressTextRect.anchorMin = new Vector2(0, 0.15f);
-        progressTextRect.anchorMax = new Vector2(1, 0.32f);
+        progressTextRect.anchorMin = new Vector2(0, 0.25f);
+        progressTextRect.anchorMax = new Vector2(1, 0.42f);
         progressTextRect.offsetMin = Vector2.zero;
         progressTextRect.offsetMax = Vector2.zero;
         
         progressText = progressTextGO.AddComponent<TextMeshProUGUI>();
         if (labelFont != null) progressText.font = labelFont;
-        progressText.fontSize = 16;
-        progressText.color = new Color(0.6f, 0.7f, 0.8f, 0.9f);
+        progressText.fontSize = 18;
+        progressText.color = new Color(0.8f, 0.9f, 1f, 1f);
         progressText.alignment = TextAlignmentOptions.Center;
         progressText.text = "0% - 0 / 0 stars";
         
         // Sub-text hint
         GameObject hintGO = new GameObject("LoadingHint");
-        hintGO.transform.SetParent(centerContainer.transform, false);
+        hintGO.transform.SetParent(bottomContainer.transform, false);
         RectTransform hintRect = hintGO.AddComponent<RectTransform>();
-        hintRect.anchorMin = new Vector2(0, 0f);
-        hintRect.anchorMax = new Vector2(1, 0.15f);
+        hintRect.anchorMin = new Vector2(0, 0.1f);
+        hintRect.anchorMax = new Vector2(1, 0.25f);
         hintRect.offsetMin = Vector2.zero;
         hintRect.offsetMax = Vector2.zero;
         
         loadingSubText = hintGO.AddComponent<TextMeshProUGUI>();
         if (labelFont != null) loadingSubText.font = labelFont;
         loadingSubText.fontSize = 14;
-        loadingSubText.color = new Color(0.4f, 0.5f, 0.6f, 0.7f);
+        loadingSubText.color = new Color(0.6f, 0.7f, 0.8f, 0.9f);
         loadingSubText.alignment = TextAlignmentOptions.Center;
         loadingSubText.text = "Preparing stellar dataset...";
         
@@ -1877,7 +1937,7 @@ public class SolarSystemUIManager : MonoBehaviour
             hudReference.SetActive(false);
         }
         
-        Debug.Log("[UIManager] Loading screen created with progress bar");
+        Debug.Log("[UIManager] Loading screen created with background image and loading circle");
     }
     
     /// <summary>
@@ -1889,6 +1949,12 @@ public class SolarSystemUIManager : MonoBehaviour
     {
         if (loadingScreenUI == null) return;
         
+        // Animate loading circle
+        if (loadingCircle != null)
+        {
+            loadingCircle.transform.Rotate(0, 0, -200f * Time.deltaTime);
+        }
+
         // Update sub-text with dataset name
         if (loadingSubText != null)
         {
@@ -1896,6 +1962,19 @@ public class SolarSystemUIManager : MonoBehaviour
         }
 
         float progress = totalStars > 0 ? Mathf.Clamp01((float)starCount / totalStars) : 0f;
+        
+        // Update progress bar fill
+        if (progressBarFill != null && !loadingComplete)
+        {
+            RectTransform fillRect = progressBarFill.GetComponent<RectTransform>();
+            fillRect.anchorMax = new Vector2(progress, 1f);
+        }
+        
+        // Update progress text
+        if (progressText != null && !loadingComplete)
+        {
+            progressText.text = $"{(progress * 100f):F1}% - {starCount:N0} / {totalStars:N0} stars";
+        }
         
         if (dataReady && !loadingComplete)
         {
@@ -1933,55 +2012,62 @@ public class SolarSystemUIManager : MonoBehaviour
                 float alpha = 1f - loadingFadeProgress;
                 if (loadingBackground != null)
                 {
-                    loadingBackground.color = new Color(0.02f, 0.02f, 0.05f, alpha);
+                    // If we have a sprite, keep its base color (white) and just fade alpha
+                    Color bgCol = loadingScreenSprite != null ? Color.white : new Color(0.02f, 0.02f, 0.05f, 1f);
+                    bgCol.a = alpha;
+                    loadingBackground.color = bgCol;
                 }
-                if (loadingText != null)
+                if (loadingCircle != null)
                 {
-                    loadingText.color = new Color(0.8f, 0.9f, 1f, alpha);
+                    Image circleImg = loadingCircle.GetComponent<Image>();
+                    if (circleImg != null)
+                    {
+                        Color c = circleImg.color;
+                        c.a = alpha;
+                        circleImg.color = c;
+                    }
                 }
                 if (progressBarBackground != null)
                 {
-                    progressBarBackground.color = new Color(0.1f, 0.12f, 0.18f, alpha);
+                    Color c = progressBarBackground.color;
+                    c.a = alpha * 0.8f;
+                    progressBarBackground.color = c;
                 }
                 if (progressBarFill != null)
                 {
-                    progressBarFill.color = new Color(0.3f, 0.6f, 1f, alpha);
+                    Color c = progressBarFill.color;
+                    c.a = alpha;
+                    progressBarFill.color = c;
                 }
                 if (progressText != null)
                 {
-                    progressText.color = new Color(0.6f, 0.7f, 0.8f, alpha * 0.9f);
+                    Color c = progressText.color;
+                    c.a = alpha;
+                    progressText.color = c;
+                }
+                if (loadingSubText != null)
+                {
+                    Color c = loadingSubText.color;
+                    c.a = alpha * 0.9f;
+                    loadingSubText.color = c;
                 }
             }
         }
-        else if (!dataReady)
+    }
+    
+    /// <summary>
+    /// Shows or hides all labels.
+    /// </summary>
+    public void SetLabelsVisible(bool visible)
+    {
+        if (labelCanvas != null)
         {
-            // Animate loading text with dots
-            int dotCount = (int)(Time.time * 2f) % 4;
-            string dots = new string('.', dotCount);
-            loadingText.text = $"Loading Stellar Data{dots}";
-            
-            // Update progress bar fill
-            if (progressBarFill != null)
+            foreach (Transform child in labelCanvas.transform)
             {
-                RectTransform fillRect = progressBarFill.GetComponent<RectTransform>();
-                float currentProgress = fillRect.anchorMax.x;
-                float targetProgress = progress;
-                float smoothProgress = Mathf.Lerp(currentProgress, targetProgress, Time.deltaTime * 5f);
-                fillRect.anchorMax = new Vector2(smoothProgress, 1f);
-            }
-            
-            // Update progress text
-            if (progressText != null)
-            {
-                int percentage = Mathf.RoundToInt(progress * 100f);
-                progressText.text = $"{percentage}% - {starCount:N0} / {totalStars:N0} stars";
-            }
-            
-            // Subtle pulsing effect on progress bar color
-            float pulse = 0.9f + 0.1f * Mathf.Sin(Time.time * 3f);
-            if (progressBarFill != null)
-            {
-                progressBarFill.color = new Color(0.3f * pulse, 0.6f * pulse, 1f, 1f);
+                if (child.name.EndsWith("_Label"))
+                {
+                    child.gameObject.SetActive(visible);
+                }
             }
         }
     }

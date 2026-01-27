@@ -230,6 +230,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private double orbitDistanceAu = 0.0;
     private double orbitHeightAu = 0.0;
 
+    private bool sceneObjectsVisible = true;
+    
     private class BodyInstance
     {
         public string name;
@@ -373,6 +375,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
         // Create loading screen via UI manager (passing HUD reference for hiding during load)
         uiManager.CreateLoadingScreen(uiManager.HudUI);
         
+        // HIDE EVERYTHING while loading
+        SetSceneObjectsVisible(false);
+
         // Initialize asteroid rendering
         if (asteroidPropertyBlock == null)
             asteroidPropertyBlock = new MaterialPropertyBlock();
@@ -506,12 +511,17 @@ public class SolarSystemParallaxManager : MonoBehaviour
             int starCount = stellarManager != null ? stellarManager.GetLoadedStarCount() : 0;
             int totalStars = stellarManager != null ? stellarManager.GetTotalStarCount() : 0;
             uiManager.UpdateLoadingScreen(starsReady, starCount, totalStars, starDatasetName);
-        }
-        
-        // Don't allow gameplay until loading is complete
-        if (uiManager != null && !uiManager.IsLoadingComplete)
-        {
-            return;
+            
+            // Manage scene visibility during loading
+            if (!uiManager.IsLoadingComplete)
+            {
+                if (sceneObjectsVisible) SetSceneObjectsVisible(false);
+                return;
+            }
+            else if (!sceneObjectsVisible)
+            {
+                SetSceneObjectsVisible(true);
+            }
         }
         
         // Delegate input handling to UIManager (handles keyboard X/I keys, VR controller buttons, menu navigation)
@@ -604,6 +614,37 @@ public class SolarSystemParallaxManager : MonoBehaviour
         if (IsOrbiting)
         {
             UpdateOrbitCamera();
+        }
+    }
+    
+    private void SetSceneObjectsVisible(bool visible)
+    {
+        sceneObjectsVisible = visible;
+        
+        // Toggle bodies
+        foreach (var body in bodies)
+        {
+            if (body.proxy != null) body.proxy.gameObject.SetActive(visible);
+            if (body.ringObject != null) body.ringObject.SetActive(visible);
+            if (body.lensingTorus != null) body.lensingTorus.SetActive(visible);
+        }
+        
+        // Toggle horizon
+        if (horizonSphere != null)
+        {
+            horizonSphere.SetActive(visible && showHorizonSphere);
+        }
+        
+        // Toggle labels
+        if (uiManager != null)
+        {
+            uiManager.SetLabelsVisible(visible);
+        }
+        
+        // Toggle stars
+        if (stellarManager != null)
+        {
+            stellarManager.SetStarsVisible(visible);
         }
     }
     
@@ -3264,7 +3305,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
     private void RenderAsteroidsGPU()
     {
-        if (!asteroidComputeBuffersAllocated || asteroidMaterialGPU == null) return;
+        if (!sceneObjectsVisible || !asteroidComputeBuffersAllocated || asteroidMaterialGPU == null) return;
 
         asteroidMaterialGPU.SetBuffer("_VisibleAsteroids", visibleAsteroidsBuffer);
         // Reuse star material properties if needed, or add asteroid specific ones
@@ -3429,7 +3470,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     
     private void RenderAsteroids()
     {
-        if (asteroidMatrices == null || asteroidMatrices.Length == 0 || asteroidMaterial == null)
+        if (!sceneObjectsVisible || asteroidMatrices == null || asteroidMatrices.Length == 0 || asteroidMaterial == null)
             return;
         
         // Ensure asteroidPropertyBlock is initialized
