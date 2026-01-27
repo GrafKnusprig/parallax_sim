@@ -329,8 +329,11 @@ public class SolarSystemUIManager : MonoBehaviour
             canvasRect.sizeDelta = new Vector2(1920, 1080);
         }
         
-        // Scale down for world space (2 meters wide approximately)
-        canvas.transform.localScale = Vector3.one * 0.001f;
+        // Scale down for world space
+        canvas.transform.localScale = Vector3.one * 0.0006f; // Slightly smaller for better fit
+        
+        // Remove from any existing parent first to be safe
+        canvas.transform.SetParent(null);
         
         CanvasScaler scaler = canvas.GetComponent<CanvasScaler>();
         if (scaler == null)
@@ -417,17 +420,19 @@ public class SolarSystemUIManager : MonoBehaviour
         
         if (labelCanvas == null || cam == null) return;
         
-        // Position the canvas in front of the camera
-        // Distance of 2 meters is comfortable for VR viewing
-        float canvasDistance = 2f;
-        
-        Transform canvasTransform = labelCanvas.transform;
-        
-        // Position canvas in front of camera
-        canvasTransform.position = cam.transform.position + cam.transform.forward * canvasDistance;
-        
-        // Make canvas face the camera
-        canvasTransform.rotation = cam.transform.rotation;
+        // To ensure the HUD is perfectly locked to the head, we parent the canvas to the camera.
+        // We only do this once if the parent is not already the camera.
+        if (labelCanvas.transform.parent != cam.transform)
+        {
+            labelCanvas.transform.SetParent(cam.transform, false);
+            
+            // Position it in front of the camera
+            // 0.5m - 0.8m is typically a good distance for a HUD in VR
+            labelCanvas.transform.localPosition = new Vector3(0, 0, 0.6f);
+            labelCanvas.transform.localRotation = Quaternion.identity;
+            
+            Debug.Log($"[UIManager] LabelCanvas parented to {cam.name} for locked HUD behavior.");
+        }
         
         // Assign the world camera for proper raycasting in VR
         if (labelCanvas.worldCamera != cam)
