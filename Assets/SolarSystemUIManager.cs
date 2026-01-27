@@ -48,7 +48,6 @@ public class SolarSystemUIManager : MonoBehaviour
     private SolarSystemParallaxManager parallaxManager;
     
     // Internal state
-    private bool isVRMode = false;
     private bool wasVRMode = false;
     
     // VR input state tracking
@@ -63,7 +62,7 @@ public class SolarSystemUIManager : MonoBehaviour
     public int LabelFontSize => labelFontSize;
     public Color LabelColor => labelColor;
     public float LabelOffsetPixels => labelOffsetPixels;
-    public bool IsVRMode => isVRMode;
+    public bool IsVRMode => enableVRMode;
     
     // Events for input notifications - ParallaxManager subscribes to respond to input
     public System.Action OnAutopilotTogglePressed;
@@ -77,10 +76,14 @@ public class SolarSystemUIManager : MonoBehaviour
     
     private void OnEnable()
     {
-        if (autopilotMenuAction != null) autopilotMenuAction.action.Enable();
-        if (planetInfoAction != null) planetInfoAction.action.Enable();
-        if (menuScrollAction != null) menuScrollAction.action.Enable();
-        if (menuSelectAction != null) menuSelectAction.action.Enable();
+        // Only enable VR actions if in VR mode
+        if (enableVRMode)
+        {
+            if (autopilotMenuAction != null) autopilotMenuAction.action.Enable();
+            if (planetInfoAction != null) planetInfoAction.action.Enable();
+            if (menuScrollAction != null) menuScrollAction.action.Enable();
+            if (menuSelectAction != null) menuSelectAction.action.Enable();
+        }
     }
     
     private void OnDisable()
@@ -96,11 +99,17 @@ public class SolarSystemUIManager : MonoBehaviour
     /// </summary>
     public void UpdateInput()
     {
+        // Handle runtime VR mode toggle in Inspector
+        if (enableVRMode != wasVRMode)
+        {
+            SetupLabelCanvas();
+        }
+
         // Handle autopilot toggle with X key or VR controller button
         bool autopilotTogglePressed = (Keyboard.current != null && Keyboard.current.xKey.wasPressedThisFrame);
         
-        // Check VR controller trigger (it's an axis, so we need to detect edge)
-        if (autopilotMenuAction != null && autopilotMenuAction.action.enabled)
+        // Check VR controller trigger (only in VR mode)
+        if (enableVRMode && autopilotMenuAction != null && autopilotMenuAction.action.enabled)
         {
             float triggerValue = autopilotMenuAction.action.ReadValue<float>();
             bool triggerIsPressed = triggerValue > 0.5f;
@@ -121,8 +130,8 @@ public class SolarSystemUIManager : MonoBehaviour
         // Handle planet info toggle with I key or VR controller button
         bool planetInfoTogglePressed = (Keyboard.current != null && Keyboard.current.iKey.wasPressedThisFrame);
         
-        // Check VR controller trigger for planet info
-        if (planetInfoAction != null && planetInfoAction.action.enabled)
+        // Check VR controller trigger for planet info (only in VR mode)
+        if (enableVRMode && planetInfoAction != null && planetInfoAction.action.enabled)
         {
             float triggerValue = planetInfoAction.action.ReadValue<float>();
             bool triggerIsPressed = triggerValue > 0.5f;
@@ -160,17 +169,18 @@ public class SolarSystemUIManager : MonoBehaviour
     /// </summary>
     private void HandleVRMenuNavigation()
     {
+        // Only process VR navigation if in VR mode (keyboard fallback remains)
         float scrollInput = 0f;
         bool selectPressed = false;
         
-        // VR Controller thumbstick/trackpad (2D axis - use Y component)
-        if (menuScrollAction != null && menuScrollAction.action.enabled)
+        // VR Controller thumbstick/trackpad (only in VR mode)
+        if (enableVRMode && menuScrollAction != null && menuScrollAction.action.enabled)
         {
             Vector2 scrollValue = menuScrollAction.action.ReadValue<Vector2>();
             scrollInput = scrollValue.y;
         }
         
-        // Keyboard fallback (arrow keys)
+        // Keyboard fallback (always active)
         if (Keyboard.current != null)
         {
             if (Keyboard.current.upArrowKey.wasPressedThisFrame)
@@ -188,8 +198,8 @@ public class SolarSystemUIManager : MonoBehaviour
             }
         }
         
-        // VR controller select button (trigger/trackpad press)
-        if (menuSelectAction != null && menuSelectAction.action.enabled)
+        // VR controller select button (only in VR mode)
+        if (enableVRMode && menuSelectAction != null && menuSelectAction.action.enabled)
         {
             float selectValue = menuSelectAction.action.ReadValue<float>();
             bool selectIsPressed = selectValue > 0.5f;
@@ -219,10 +229,25 @@ public class SolarSystemUIManager : MonoBehaviour
     /// </summary>
     public void SetupLabelCanvas()
     {
-        // Use manual VR mode setting from Inspector
-        isVRMode = enableVRMode;
-        wasVRMode = isVRMode;
-        Debug.Log($"[UIManager] VR Mode enabled: {isVRMode}");
+        // Sync state
+        wasVRMode = enableVRMode;
+        Debug.Log($"[UIManager] VR Mode enabled: {enableVRMode}");
+
+        // Sync input action states
+        if (enableVRMode)
+        {
+            if (autopilotMenuAction != null) autopilotMenuAction.action.Enable();
+            if (planetInfoAction != null) planetInfoAction.action.Enable();
+            if (menuScrollAction != null) menuScrollAction.action.Enable();
+            if (menuSelectAction != null) menuSelectAction.action.Enable();
+        }
+        else
+        {
+            if (autopilotMenuAction != null) autopilotMenuAction.action.Disable();
+            if (planetInfoAction != null) planetInfoAction.action.Disable();
+            if (menuScrollAction != null) menuScrollAction.action.Disable();
+            if (menuSelectAction != null) menuSelectAction.action.Disable();
+        }
         
         if (enableLabels && labelCanvas == null)
         {
@@ -231,7 +256,7 @@ public class SolarSystemUIManager : MonoBehaviour
             Canvas canvas = canvasGO.AddComponent<Canvas>();
             
             // Configure based on VR mode
-            if (isVRMode)
+            if (enableVRMode)
             {
                 ConfigureCanvasForVR(canvas);
             }
@@ -241,7 +266,7 @@ public class SolarSystemUIManager : MonoBehaviour
             }
             
             // Add appropriate raycaster based on VR mode
-            if (isVRMode)
+            if (enableVRMode)
             {
                 // Use TrackedDeviceGraphicRaycaster for VR controller interaction
                 canvasGO.AddComponent<TrackedDeviceGraphicRaycaster>();
@@ -251,12 +276,12 @@ public class SolarSystemUIManager : MonoBehaviour
                 canvasGO.AddComponent<GraphicRaycaster>();
             }
             labelCanvas = canvas;
-            Debug.Log($"[UIManager] Created automatic label canvas ({(isVRMode ? "World Space for VR with TrackedDeviceGraphicRaycaster" : "Screen Space for Desktop")})");
+            Debug.Log($"[UIManager] Created automatic label canvas ({(enableVRMode ? "World Space for VR with TrackedDeviceGraphicRaycaster" : "Screen Space for Desktop")})");
         }
         else if (labelCanvas != null)
         {
             // Configure existing canvas based on VR mode
-            if (isVRMode)
+            if (enableVRMode)
             {
                 ConfigureCanvasForVR(labelCanvas);
                 
@@ -285,7 +310,7 @@ public class SolarSystemUIManager : MonoBehaviour
             GameObject eventSystemGO = new GameObject("EventSystem");
             eventSystemGO.AddComponent<UnityEngine.EventSystems.EventSystem>();
             
-            if (isVRMode)
+            if (enableVRMode)
             {
                 // Use XRUIInputModule for VR controller input
                 eventSystemGO.AddComponent<XRUIInputModule>();
@@ -297,7 +322,7 @@ public class SolarSystemUIManager : MonoBehaviour
                 Debug.Log("[UIManager] Created EventSystem for UI interaction");
             }
         }
-        else if (isVRMode)
+        else if (enableVRMode)
         {
             // Ensure VR UI input module is present if EventSystem already exists
             var existingEventSystem = UnityEngine.EventSystems.EventSystem.current;
@@ -416,7 +441,7 @@ public class SolarSystemUIManager : MonoBehaviour
     public void UpdateVRCanvasPosition(Camera cam)
     {
         // Only update canvas position in VR mode
-        if (!isVRMode) return;
+        if (!enableVRMode) return;
         
         if (labelCanvas == null || cam == null) return;
         

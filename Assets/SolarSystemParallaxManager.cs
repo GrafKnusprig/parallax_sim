@@ -2442,8 +2442,14 @@ public class SolarSystemParallaxManager : MonoBehaviour
     {
         if (moveAction == null) return;
 
+        bool isVRMode = uiManager != null && uiManager.IsVRMode;
+        
         Vector2 move = moveAction.action.ReadValue<Vector2>(); // x: strafe, y: forward
         float vertical = verticalAction != null ? verticalAction.action.ReadValue<float>() : 0f;
+
+        // If not in VR mode, we could filter XR drift here, but we must ensure we don't
+        // block keyboard/mouse input if the headset is jittering and becoming the 'activeControl'.
+        // For now, we rely on the user turning off VR mode to switch control schemes.
 
         // Movement is expressed in camera space, but we do NOT move the camera in Unity world.
         // We only move the player in REAL space (AU).

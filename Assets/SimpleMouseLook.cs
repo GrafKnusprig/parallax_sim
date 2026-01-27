@@ -31,6 +31,14 @@ public class SimpleMouseLook : MonoBehaviour
     
     private void EnableCurrentLookAction()
     {
+        // Manage TrackedPoseDrivers (disable in desktop mode to allow mouse control)
+        // We find all in scene to prevent any VR headset from overriding rotation
+        var poseDrivers = FindObjectsByType<UnityEngine.InputSystem.XR.TrackedPoseDriver>(FindObjectsSortMode.None);
+        foreach (var pd in poseDrivers)
+        {
+            pd.enabled = vrMode;
+        }
+
         if (vrMode)
         {
             if (vrLookAction != null) vrLookAction.action.Enable();
@@ -80,6 +88,18 @@ public class SimpleMouseLook : MonoBehaviour
 
     private void Update()
     {
+        // Sync VR mode from UI manager if available to ensure one source of truth
+        SolarSystemUIManager uiManager = FindFirstObjectByType<SolarSystemUIManager>();
+        if (uiManager != null)
+        {
+            if (vrMode != uiManager.IsVRMode)
+            {
+                vrMode = uiManager.IsVRMode;
+                DisableAllLookActions();
+                EnableCurrentLookAction();
+            }
+        }
+
         // Update cursor state based on menu
         UpdateCursorState();
         
@@ -104,7 +124,7 @@ public class SimpleMouseLook : MonoBehaviour
         // We add manual rotation from the right controller trackpad/stick.
         if (vrMode)
         {
-            if (vrControllerLookAction != null)
+            if (vrControllerLookAction != null && vrControllerLookAction.action.enabled)
             {
                 Vector2 controllerDelta = vrControllerLookAction.action.ReadValue<Vector2>();
                 
@@ -122,8 +142,7 @@ public class SimpleMouseLook : MonoBehaviour
             return;
         }
         
-        // Non-VR mode: use mouse look
-        if (mouseLookAction == null) return;
+        if (mouseLookAction == null || !mouseLookAction.action.enabled) return;
 
         // Mouse delta / right stick etc.
         Vector2 delta = mouseLookAction.action.ReadValue<Vector2>();
