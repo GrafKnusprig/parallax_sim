@@ -2410,24 +2410,26 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         if (isVRMode)
         {
-            // VR Mode: Rotate the player rig (camera parent) to face the planet
-            // This allows VR head tracking to continue working while keeping player oriented toward planet
-            Transform rig = GetCameraRig();
-            if (rig != null)
+            // VR Mode: Rotate the ARTIFICIAL PIVOT (not the rig) to face the planet
+            // This keeps the rig (body) stationary while orienting the view frame.
+            SimpleMouseLook mouseLook = cam.GetComponent<SimpleMouseLook>();
+            Transform pivot = (mouseLook != null) ? mouseLook.ArtificialLookPivot : null;
+            
+            // Fallback to rig if pivot not found (unlikely)
+            Transform targetTransform = (pivot != null) ? pivot : GetCameraRig();
+            
+            if (targetTransform != null)
             {
-                // Calculate direction from rig to planet
-                Vector3 directionToPlanet = orbitTargetBody.proxy.position - rig.position;
+                // Calculate direction from targetTransform to planet
+                Vector3 directionToPlanet = orbitTargetBody.proxy.position - targetTransform.position;
                 
                 // Only rotate around Y axis (yaw) to keep horizon level
-                // This prevents disorienting roll/pitch in VR
                 directionToPlanet.y = 0;
                 
                 if (directionToPlanet.sqrMagnitude > 0.001f)
                 {
                     Quaternion targetRotation = Quaternion.LookRotation(directionToPlanet);
-                    
-                    // Smooth rotation for comfort in VR
-                    rig.rotation = Quaternion.Slerp(rig.rotation, targetRotation, Time.deltaTime * 2f);
+                    targetTransform.rotation = Quaternion.Slerp(targetTransform.rotation, targetRotation, Time.deltaTime * 2f);
                 }
             }
         }
@@ -2446,6 +2448,12 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         Vector2 move = moveAction.action.ReadValue<Vector2>(); // x: strafe, y: forward
         float vertical = verticalAction != null ? verticalAction.action.ReadValue<float>() : 0f;
+
+        // Diagnostic logging for VR movement
+        if (isVRMode && move.sqrMagnitude > 0.01f)
+        {
+            Debug.Log($"[SolarSystemParallaxManager] Processing VR Movement Input: {move}");
+        }
 
         // If not in VR mode, we could filter XR drift here, but we must ensure we don't
         // block keyboard/mouse input if the headset is jittering and becoming the 'activeControl'.
@@ -2829,18 +2837,34 @@ public class SolarSystemParallaxManager : MonoBehaviour
             return;
         }
         
-        // Smooth camera rotation towards target
+        // Smooth orientation towards target
         Camera cam = GetActiveCamera();
         if (cam != null && autopilotTarget.proxy != null)
         {
-            // Look at the target's proxy position (where it appears on the horizon sphere)
+            bool isVRMode = uiManager != null && uiManager.IsVRMode;
+            
+            // Look at the target's proxy position
             Vector3 targetDirection = autopilotTarget.proxy.position - cam.transform.position;
             
             if (targetDirection.sqrMagnitude > 0.001f)
             {
                 Quaternion targetRotation = Quaternion.LookRotation(targetDirection);
                 float rotationSpeed = 2f; // Smooth rotation speed
-                cam.transform.rotation = Quaternion.Slerp(cam.transform.rotation, targetRotation, Time.deltaTime * rotationSpeed);
+                
+                if (isVRMode)
+                {
+                    // In VR, rotate the Pivot instead of the camera or rig
+                    SimpleMouseLook mouseLook = cam.GetComponent<SimpleMouseLook>();
+                    Transform pivot = (mouseLook != null) ? mouseLook.ArtificialLookPivot : null;
+                    if (pivot != null)
+                    {
+                        pivot.rotation = Quaternion.Slerp(pivot.rotation, targetRotation, Time.deltaTime * rotationSpeed);
+                    }
+                }
+                else
+                {
+                    cam.transform.rotation = Quaternion.Slerp(cam.transform.rotation, targetRotation, Time.deltaTime * rotationSpeed);
+                }
             }
         }
         

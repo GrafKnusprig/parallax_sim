@@ -211,7 +211,29 @@
                 {
                     "name": "",
                     "id": "1635d3fe-58b6-4ba9-a4e2-f4b964f6b5c8",
-                    "path": "<XRController>/{Primary2DAxis}",
+                    "path": "<XRController>{LeftHand}/{Primary2DAxis}",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "XR",
+                    "action": "Move",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "2635d3fe-58b6-4ba9-a4e2-f4b964f6b5c8",
+                    "path": "<XRController>{LeftHand}/thumbstick",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "XR",
+                    "action": "Move",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "3635d3fe-58b6-4ba9-a4e2-f4b964f6b5c8",
+                    "path": "<XRController>{LeftHand}/trackpad",
                     "interactions": "",
                     "processors": "",
                     "groups": "XR",
@@ -270,6 +292,61 @@
                     "interactions": "",
                     "processors": "",
                     "groups": "",
+                    "action": "Look",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "e6f494b8-cff0-4130-ab95-274814beee72",
+                    "path": "<XRController>{RightHand}/{Primary2DAxis}",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "XR",
+                    "action": "Look",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "f6f494b8-cff0-4130-ab95-274814beee72",
+                    "path": "<XRController>{RightHand}/thumbstick",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "XR",
+                    "action": "Look",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "07f494b8-cff0-4130-ab95-274814beee72",
+                    "path": "<XRController>{RightHand}/trackpad",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "XR",
+                    "action": "Look",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "17f494b8-cff0-4130-ab95-274814beee72",
+                    "path": "<XRController>{RightHand}/secondary2DAxis",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "XR",
+                    "action": "Look",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "27f494b8-cff0-4130-ab95-274814beee72",
+                    "path": "<XRController>{RightHand}/{Secondary2DAxis}",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "XR",
                     "action": "Look",
                     "isComposite": false,
                     "isPartOfComposite": false
