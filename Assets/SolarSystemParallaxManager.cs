@@ -199,6 +199,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     // Autopilot system - UI managed by SolarSystemUIManager
     private bool autopilotActive = false;
     private BodyInstance autopilotTarget = null;
+    private Quaternion autopilotViewCorrection = Quaternion.identity; // For VR view correction
     
     // Static property for other scripts to check autopilot state
     public static bool IsAutopilotActive { get; private set; } = false;
@@ -2786,6 +2787,22 @@ public class SolarSystemParallaxManager : MonoBehaviour
             autopilotTarget = target;
             autopilotActive = true;
             IsAutopilotActive = true;
+            
+            // In VR, we want to center the view on the planet (compensating for head rotation)
+            // Correction = Inverse(Camera.localRotation)
+            // Pivot.rotation = LookRot(Planet) * Correction
+            // Pivot.rotation * Camera.localRotation = LookRot(Planet) * Inverse(Head) * Head = LookRot(Planet) -> Camera looks at Planet
+            Camera cam = GetActiveCamera();
+            if (cam != null && uiManager != null && uiManager.IsVRMode)
+            {
+                autopilotViewCorrection = Quaternion.Inverse(cam.transform.localRotation);
+                Debug.Log($"Autopilot: Captured view correction {autopilotViewCorrection.eulerAngles}");
+            }
+            else
+            {
+                autopilotViewCorrection = Quaternion.identity;
+            }
+            
             Debug.Log($"Autopilot: Traveling to {target.name}");
         }
     }
@@ -2894,7 +2911,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
                     Transform pivot = (mouseLook != null) ? mouseLook.ArtificialLookPivot : null;
                     if (pivot != null)
                     {
-                        pivot.rotation = Quaternion.Slerp(pivot.rotation, targetRotation, Time.deltaTime * rotationSpeed);
+                        // Apply the view correction to "center" the view on the planet based on initial head pose
+                        Quaternion adjustedTargetRotation = targetRotation * autopilotViewCorrection;
+                        pivot.rotation = Quaternion.Slerp(pivot.rotation, adjustedTargetRotation, Time.deltaTime * rotationSpeed);
                     }
                 }
                 else
