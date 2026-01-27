@@ -2387,7 +2387,11 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private void ToggleOrbit()
     {
         // Mutual exclusion: Cannot orbit while autopilot is active
-        if (autopilotActive) return;
+        if (autopilotActive)
+        {
+            Debug.Log("Cannot engage Orbit Mode while Autopilot is active.");
+            return;
+        }
 
         if (IsOrbiting)
         {
@@ -2779,6 +2783,13 @@ public class SolarSystemParallaxManager : MonoBehaviour
     /// </summary>
     private void OnAutopilotTargetSelected(SolarSystemUIManager.AutopilotBodyInfo bodyInfo)
     {
+        // Mutual exclusion: Cannot engage autopilot while orbiting
+        if (IsOrbiting)
+        {
+            Debug.Log("Cannot engage Autopilot while Orbit Mode is active.");
+            return;
+        }
+
         // Find the corresponding BodyInstance
         BodyInstance target = bodyInfo.bodyReference as BodyInstance;
         

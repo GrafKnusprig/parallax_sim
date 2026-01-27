@@ -37,9 +37,11 @@ public class SolarSystemUIManager : MonoBehaviour
     [Tooltip("VR Controller button to confirm selection in menu (e.g., trigger or trackpad press).")]
     [SerializeField] private InputActionReference menuSelectAction;
     
+    [Tooltip("VR Controller button to toggle orbit mode (e.g., Right Hand Menu/Primary button).")]
+    [SerializeField] private InputActionReference orbitAction;
+    
     [Header("HUD (Heads-Up Display)")]
     [SerializeField] private bool enableHUD = true;
-    [Tooltip("Font size for HUD text (pt)")]
     [SerializeField] private int hudFontSize = 28;
     [SerializeField] private Color hudColor = Color.cyan;
     [SerializeField] private Vector2 hudPosition = new Vector2(300f, -100f); // offset from top-left corner
@@ -53,6 +55,7 @@ public class SolarSystemUIManager : MonoBehaviour
     // VR input state tracking
     private bool autopilotTriggerWasPressed = false;
     private bool planetInfoTriggerWasPressed = false;
+    private bool orbitTriggerWasPressed = false;
     private bool vrSelectWasPressed = false;
     
     // Public accessors
@@ -83,6 +86,7 @@ public class SolarSystemUIManager : MonoBehaviour
             if (planetInfoAction != null) planetInfoAction.action.Enable();
             if (menuScrollAction != null) menuScrollAction.action.Enable();
             if (menuSelectAction != null) menuSelectAction.action.Enable();
+            if (orbitAction != null) orbitAction.action.Enable();
         }
     }
     
@@ -92,6 +96,7 @@ public class SolarSystemUIManager : MonoBehaviour
         if (planetInfoAction != null) planetInfoAction.action.Disable();
         if (menuScrollAction != null) menuScrollAction.action.Disable();
         if (menuSelectAction != null) menuSelectAction.action.Disable();
+        if (orbitAction != null) orbitAction.action.Disable();
     }
     
     /// <summary>
@@ -151,6 +156,20 @@ public class SolarSystemUIManager : MonoBehaviour
         
         // Handle orbit toggle with O key
         bool orbitTogglePressed = (Keyboard.current != null && Keyboard.current.oKey.wasPressedThisFrame);
+        
+        // Check VR controller toggle for orbit (only in VR mode)
+        if (enableVRMode && orbitAction != null && orbitAction.action.enabled)
+        {
+            float triggerValue = orbitAction.action.ReadValue<float>();
+            bool triggerIsPressed = triggerValue > 0.5f;
+            
+            // Detect rising edge (button just pressed)
+            if (triggerIsPressed && !orbitTriggerWasPressed)
+            {
+                orbitTogglePressed = true;
+            }
+            orbitTriggerWasPressed = triggerIsPressed;
+        }
         
         if (orbitTogglePressed)
         {
