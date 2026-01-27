@@ -889,6 +889,17 @@ public class SolarSystemUIManager : MonoBehaviour
     private int menuSelectedIndex = 0;
     private float menuScrollCooldown = 0f;
     private const float MENU_SCROLL_DELAY = 0.2f;
+
+    // Structure for navigable items (planets, moons, categories, buttons)
+    private struct NavigableItem
+    {
+        public string name;
+        public Button button;
+        public System.Action onSelect;
+        public bool isCategory;
+        public bool isMoon;
+    }
+    private List<NavigableItem> navigableItems = new List<NavigableItem>();
     
     // Static properties for other scripts
     public static bool IsMenuOpen { get; private set; } = false;
@@ -915,12 +926,7 @@ public class SolarSystemUIManager : MonoBehaviour
     
     // Cached body info for the menu
     private List<AutopilotBodyInfo> menuBodies = new List<AutopilotBodyInfo>();
-    private List<AutopilotBodyInfo> menuSelectableBodies = new List<AutopilotBodyInfo>();
     
-    /// <summary>
-    /// Creates the autopilot menu UI. Call from Start() after the body list is loaded.
-    /// </summary>
-    /// <param name="bodies">List of bodies to populate the menu with</param>
     public void CreateAutopilotMenu(List<AutopilotBodyInfo> bodies)
     {
         if (labelCanvas == null)
@@ -1073,18 +1079,16 @@ public class SolarSystemUIManager : MonoBehaviour
             return 0;
         });
         
-        // Add buttons for main bodies
+        // Clear buttons and items
+        autopilotButtons.Clear();
+        
         float buttonHeight = 50f;
         float spacing = 8f;
         int itemIndex = 0;
         
-        menuSelectableBodies.Clear();
-        autopilotButtons.Clear();
-        
         foreach (var body in mainBodies)
         {
             CreateAutopilotButton(contentGO, body, itemIndex, buttonHeight, spacing, false);
-            menuSelectableBodies.Add(body);
             itemIndex++;
         }
         
@@ -1114,9 +1118,8 @@ public class SolarSystemUIManager : MonoBehaviour
             moonsContainer.SetActive(false);
         }
         
-        // Calculate content size
-        int visibleCount = mainBodies.Count + (moons.Count > 0 ? 1 : 0);
-        autopilotContentRect.sizeDelta = new Vector2(0, visibleCount * (buttonHeight + spacing));
+        // Calculate content size and initial navigation
+        RefreshNavigableItems();
         
         // Cancel button
         CreateCancelButton();
@@ -1125,6 +1128,114 @@ public class SolarSystemUIManager : MonoBehaviour
         autopilotUI.SetActive(false);
         
         Debug.Log($"[UIManager] Autopilot menu created: {mainBodies.Count} planets, {moons.Count} moons");
+    }
+
+    private void RefreshNavigableItems()
+    {
+        navigableItems.Clear();
+        
+        float buttonHeight = 50f;
+        float spacing = 8f;
+        float itemHeight = buttonHeight + spacing;
+        
+        // Count how many top-level items we have to correctly position moonsContainer
+        int topLevelItemCount = 0;
+        
+        // Sort autopilotButtons by their sibling index to ensure correct processing order
+        // if they share the same parent. 
+        List<Button> sortedButtons = new List<Button>(autopilotButtons);
+        sortedButtons.RemoveAll(b => b == null);
+        
+        // Process top-level items (planets and category)
+        foreach (var btn in sortedButtons)
+        {
+            if (!btn.gameObject.activeInHierarchy || btn.transform.parent != autopilotContentRect) continue;
+            
+            topLevelItemCount++;
+            
+            if (btn.name == "Moons_Category")
+            {
+                Button capturedCategory = btn;
+                navigableItems.Add(new NavigableItem {
+                    name = "Moons Category",
+                    button = btn,
+                    onSelect = () => ToggleMoonsCategory(),
+                    isCategory = true
+                });
+                
+                // If moons are expanded, add the moons from the container
+                if (moonsExpanded && moonsContainer != null)
+                {
+                    // Find moons - they are children of moonsContainer
+                    foreach (var moonBtn in sortedButtons)
+                    {
+                        if (moonBtn.gameObject.activeInHierarchy && moonBtn.transform.parent == moonsContainer.transform)
+                        {
+                            Button capturedMoon = moonBtn;
+                            navigableItems.Add(new NavigableItem {
+                                name = moonBtn.name,
+                                button = moonBtn,
+                                onSelect = () => capturedMoon.onClick.Invoke(),
+                                isMoon = true
+                            });
+                        }
+                    }
+                }
+            }
+            else
+            {
+                Button capturedPlanet = btn;
+                navigableItems.Add(new NavigableItem {
+                    name = btn.name,
+                    button = btn,
+                    onSelect = () => capturedPlanet.onClick.Invoke()
+                });
+            }
+        }
+        
+        // Add cancel button - it's a child of autopilotUI, not content
+        foreach (var btn in sortedButtons)
+        {
+            if (btn != null && btn.name == "CancelButton")
+            {
+                Button capturedCancel = btn;
+                navigableItems.Add(new NavigableItem {
+                    name = "Cancel",
+                    button = btn,
+                    onSelect = () => capturedCancel.onClick.Invoke()
+                });
+                break;
+            }
+        }
+
+        // Update content size based on visible items in scroll area
+        int visibleInScrollCount = 0;
+        foreach (var item in navigableItems)
+        {
+            if (item.name != "Cancel") visibleInScrollCount++;
+        }
+        
+        if (autopilotContentRect != null)
+        {
+            autopilotContentRect.sizeDelta = new Vector2(0, visibleInScrollCount * itemHeight + 20f); // Add a small bottom padding
+            
+            // Reposition moons container correctly below its category button
+            if (moonsExpanded && moonsContainer != null)
+            {
+                // Find index of Moons_Category among top-level buttons to know where it is
+                int categoryIndex = 0;
+                foreach (Transform child in autopilotContentRect)
+                {
+                    if (child.name == "Moons_Category") break;
+                    // Only count visible planets (activeInHierarchy might not be reliable here if parent is inactive, 
+                    // but we know planets are active if we're here)
+                    if (child.gameObject.activeSelf) categoryIndex++;
+                }
+                
+                RectTransform moonsRect = moonsContainer.GetComponent<RectTransform>();
+                moonsRect.anchoredPosition = new Vector2(0, -(categoryIndex + 1) * itemHeight);
+            }
+        }
     }
     
     private void CreateScrollbar(GameObject scrollViewGO, ScrollRect scroll)
@@ -1253,6 +1364,7 @@ public class SolarSystemUIManager : MonoBehaviour
         button.colors = colors;
         
         button.onClick.AddListener(ToggleMoonsCategory);
+        autopilotButtons.Add(button);
         
         // Button text with arrow
         GameObject textGO = new GameObject("Text");
@@ -1294,32 +1406,9 @@ public class SolarSystemUIManager : MonoBehaviour
                 }
             }
             
-            // Recalculate content size
-            float buttonHeight = 50f;
-            float spacing = 8f;
-            
-            int mainCount = 0;
-            int moonCount = 0;
-            foreach (var body in menuBodies)
-            {
-                if (body.isMoon) moonCount++;
-                else mainCount++;
-            }
-            
-            int visibleCount = mainCount + 1; // +1 for moons category header
-            if (moonsExpanded)
-            {
-                visibleCount += moonCount;
-            }
-            
-            autopilotContentRect.sizeDelta = new Vector2(0, visibleCount * (buttonHeight + spacing));
-            
-            // Reposition moons container
-            if (moonsExpanded && moonsContainer != null)
-            {
-                RectTransform moonsRect = moonsContainer.GetComponent<RectTransform>();
-                moonsRect.anchoredPosition = new Vector2(0, -(mainCount + 1) * (buttonHeight + spacing));
-            }
+            // Refresh everything through the central logic
+            RefreshNavigableItems();
+            UpdateMenuSelectionHighlight();
         }
     }
     
@@ -1347,6 +1436,7 @@ public class SolarSystemUIManager : MonoBehaviour
         cancelColors.fadeDuration = 0.15f;
         cancelBtn.colors = cancelColors;
         cancelBtn.onClick.AddListener(() => ToggleAutopilotMenu());
+        autopilotButtons.Add(cancelBtn);
         
         GameObject cancelTextGO = new GameObject("Text");
         cancelTextGO.transform.SetParent(cancelGO.transform, false);
@@ -1405,6 +1495,7 @@ public class SolarSystemUIManager : MonoBehaviour
         // Reset selection when opening
         if (autopilotMenuOpen)
         {
+            RefreshNavigableItems();
             menuSelectedIndex = 0;
             UpdateMenuSelectionHighlight();
         }
@@ -1427,6 +1518,7 @@ public class SolarSystemUIManager : MonoBehaviour
         autopilotMenuOpen = true;
         autopilotUI.SetActive(true);
         IsMenuOpen = true;
+        RefreshNavigableItems();
         menuSelectedIndex = 0;
         UpdateMenuSelectionHighlight();
         
@@ -1482,7 +1574,7 @@ public class SolarSystemUIManager : MonoBehaviour
     /// <param name="selectPressed">Whether the select button was pressed this frame</param>
     public void UpdateVRMenuNavigation(float scrollInput, bool selectPressed)
     {
-        if (!autopilotMenuOpen || menuSelectableBodies.Count == 0) return;
+        if (!autopilotMenuOpen || navigableItems.Count == 0) return;
         
         // Decrease scroll cooldown
         if (menuScrollCooldown > 0)
@@ -1501,7 +1593,7 @@ public class SolarSystemUIManager : MonoBehaviour
             }
             else if (scrollInput < -0.5f)
             {
-                menuSelectedIndex = Mathf.Min(menuSelectableBodies.Count - 1, menuSelectedIndex + 1);
+                menuSelectedIndex = Mathf.Min(navigableItems.Count - 1, menuSelectedIndex + 1);
             }
             
             if (menuSelectedIndex != previousIndex)
@@ -1512,18 +1604,18 @@ public class SolarSystemUIManager : MonoBehaviour
         }
         
         // Confirm selection
-        if (selectPressed && menuSelectedIndex >= 0 && menuSelectedIndex < menuSelectableBodies.Count)
+        if (selectPressed && menuSelectedIndex >= 0 && menuSelectedIndex < navigableItems.Count)
         {
-            SelectAutopilotTarget(menuSelectableBodies[menuSelectedIndex]);
+            navigableItems[menuSelectedIndex].onSelect?.Invoke();
         }
     }
     
     private void UpdateMenuSelectionHighlight()
     {
-        // Update visual highlight on all buttons
-        for (int i = 0; i < autopilotButtons.Count && i < menuSelectableBodies.Count; i++)
+        // Update visual highlight on all buttons in the navigable list
+        for (int i = 0; i < navigableItems.Count; i++)
         {
-            Button btn = autopilotButtons[i];
+            Button btn = navigableItems[i].button;
             if (btn == null) continue;
             
             Image btnImage = btn.GetComponent<Image>();
@@ -1531,33 +1623,89 @@ public class SolarSystemUIManager : MonoBehaviour
             {
                 if (i == menuSelectedIndex)
                 {
-                    btnImage.color = new Color(0.3f, 0.6f, 1f, 1f); // Highlighted
+                    // Special colors for categories
+                    if (navigableItems[i].isCategory)
+                        btnImage.color = new Color(0.45f, 0.35f, 0.7f, 1f);
+                    else if (navigableItems[i].isMoon)
+                        btnImage.color = new Color(0.25f, 0.5f, 0.9f, 1f);
+                    else if (navigableItems[i].name == "Cancel")
+                        btnImage.color = new Color(0.8f, 0.3f, 0.3f, 1f);
+                    else
+                        btnImage.color = new Color(0.3f, 0.6f, 1f, 1f); // Highlighted
                 }
                 else
                 {
-                    btnImage.color = new Color(0.15f, 0.25f, 0.4f, 1f); // Normal
+                    // Normal colors
+                    if (navigableItems[i].isCategory)
+                        btnImage.color = new Color(0.2f, 0.15f, 0.3f, 1f);
+                    else if (navigableItems[i].isMoon)
+                        btnImage.color = new Color(0.12f, 0.2f, 0.35f, 1f);
+                    else if (navigableItems[i].name == "Cancel")
+                        btnImage.color = new Color(0.5f, 0.2f, 0.2f, 1f);
+                    else
+                        btnImage.color = new Color(0.15f, 0.25f, 0.4f, 1f); // Normal
                 }
             }
         }
         
         // Scroll list to keep selection visible
-        if (autopilotContentRect != null && menuSelectedIndex >= 0)
+        if (autopilotContentRect != null && menuSelectedIndex >= 0 && menuSelectedIndex < navigableItems.Count)
         {
+            // Don't auto-scroll for the Cancel button as it's outside the scroll view
+            if (navigableItems[menuSelectedIndex].name == "Cancel") return;
+
             float buttonHeight = 50f;
             float spacing = 8f;
             float itemHeight = buttonHeight + spacing;
-            float scrollPosition = menuSelectedIndex * itemHeight;
+            
+            // Find the index of this item specifically among scrollable items
+            int scrollableIndex = 0;
+            for (int i = 0; i < menuSelectedIndex; i++)
+            {
+                if (navigableItems[i].name != "Cancel") scrollableIndex++;
+            }
+
+            float scrollPosition = scrollableIndex * itemHeight;
             
             ScrollRect scrollRect = autopilotUI?.GetComponentInChildren<ScrollRect>();
-            if (scrollRect != null)
+            if (scrollRect != null && scrollRect.viewport != null)
             {
                 float contentHeight = autopilotContentRect.sizeDelta.y;
                 float viewportHeight = scrollRect.viewport.rect.height;
                 
-                if (contentHeight > viewportHeight)
+                // Fallback for viewport height if not yet updated by layout system or too small
+                if (viewportHeight < 100f) viewportHeight = 550f; 
+
+                float scrollArea = contentHeight - viewportHeight;
+                if (scrollArea > 0.001f)
                 {
-                    float normalizedPosition = 1f - (scrollPosition / (contentHeight - viewportHeight));
-                    scrollRect.verticalNormalizedPosition = Mathf.Clamp01(normalizedPosition);
+                    // We want to keep the item in view. 
+                    // Calculate current normalized scroll position
+                    float currentScroll = scrollRect.verticalNormalizedPosition;
+                    
+                    // Top of item in normalized space
+                    float itemTopNormalized = 1f - (scrollPosition / scrollArea);
+                    // Bottom of item in normalized space
+                    float itemBottomNormalized = 1f - ((scrollPosition + itemHeight) / scrollArea);
+                    
+                    // Small buffers to prevent jitter and ensure full visibility
+                    float buffer = 0.05f; 
+                    
+                    // If item is below view, scroll down
+                    if (currentScroll > itemTopNormalized)
+                    {
+                        scrollRect.verticalNormalizedPosition = Mathf.Clamp01(itemTopNormalized);
+                    }
+                    // If item is above view, scroll up
+                    else if (currentScroll < itemBottomNormalized)
+                    {
+                        scrollRect.verticalNormalizedPosition = Mathf.Clamp01(itemBottomNormalized);
+                    }
+                }
+                else
+                {
+                    // Everything fits, keep it at top
+                    scrollRect.verticalNormalizedPosition = 1f;
                 }
             }
         }
