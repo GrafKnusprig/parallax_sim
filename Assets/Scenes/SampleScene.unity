@@ -472,7 +472,7 @@ MonoBehaviour:
   maxDistanceFromSunLy: 600000
   targetCamera: {fileID: 1528494429}
   moveAction: {fileID: -1680190386980627800, guid: 052faaac586de48259a63d0c4782560b, type: 3}
-  verticalAction: {fileID: -1957627301107028444, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+  verticalAction: {fileID: 7989075091711430949, guid: 052faaac586de48259a63d0c4782560b, type: 3}
 --- !u!4 &713169412
 Transform:
   m_ObjectHideFlags: 0
