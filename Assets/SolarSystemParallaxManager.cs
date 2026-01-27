@@ -2461,17 +2461,12 @@ public class SolarSystemParallaxManager : MonoBehaviour
             
             if (targetTransform != null)
             {
-                // Calculate direction from targetTransform to planet
-                Vector3 directionToPlanet = orbitTargetBody.proxy.position - targetTransform.position;
-                
-                // Only rotate around Y axis (yaw) to keep horizon level
-                directionToPlanet.y = 0;
-                
-                if (directionToPlanet.sqrMagnitude > 0.001f)
-                {
-                    Quaternion targetRotation = Quaternion.LookRotation(directionToPlanet);
-                    targetTransform.rotation = Quaternion.Slerp(targetTransform.rotation, targetRotation, Time.deltaTime * 2f);
-                }
+                // Rotate the rig to match orbital movement (keep planet fixed in view relative to head)
+                // Orbit moves naturally in X/Z plane using Sin/Cos (CCW for positive angle).
+                // To maintain the same view relative to the center, we must rotate the rig CCW by the same amount.
+                // Unity positive Y rotation is Clockwise (Right). Negative is Counter-Clockwise (Left).
+                float rotationStep = orbitAngularVelocity * Time.deltaTime * Mathf.Rad2Deg;
+                targetTransform.Rotate(Vector3.up, -rotationStep, Space.World);
             }
         }
         else
