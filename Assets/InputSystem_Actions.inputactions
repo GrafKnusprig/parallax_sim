@@ -88,10 +88,10 @@
                     "initialStateCheck": false
                 },
                 {
-                    "name": "UpDown",
+                    "name": "VRLook",
                     "type": "Value",
-                    "id": "fb9803a6-8807-464b-a0b1-eae526ad7416",
-                    "expectedControlType": "Axis",
+                    "id": "7b444451-8a00-4d00-a97e-f47457f736a8",
+                    "expectedControlType": "Vector2",
                     "processors": "",
                     "interactions": "",
                     "initialStateCheck": true
@@ -303,7 +303,7 @@
                     "interactions": "",
                     "processors": "",
                     "groups": "XR",
-                    "action": "Look",
+                    "action": "VRLook",
                     "isComposite": false,
                     "isPartOfComposite": false
                 },
@@ -314,7 +314,7 @@
                     "interactions": "",
                     "processors": "",
                     "groups": "XR",
-                    "action": "Look",
+                    "action": "VRLook",
                     "isComposite": false,
                     "isPartOfComposite": false
                 },
@@ -325,7 +325,7 @@
                     "interactions": "",
                     "processors": "",
                     "groups": "XR",
-                    "action": "Look",
+                    "action": "VRLook",
                     "isComposite": false,
                     "isPartOfComposite": false
                 },
@@ -336,7 +336,7 @@
                     "interactions": "",
                     "processors": "",
                     "groups": "XR",
-                    "action": "Look",
+                    "action": "VRLook",
                     "isComposite": false,
                     "isPartOfComposite": false
                 },
@@ -347,7 +347,7 @@
                     "interactions": "",
                     "processors": "",
                     "groups": "XR",
-                    "action": "Look",
+                    "action": "VRLook",
                     "isComposite": false,
                     "isPartOfComposite": false
                 },

@@ -46,10 +46,17 @@ public class SimpleMouseLook : MonoBehaviour
         {
             if (vrLookAction != null) vrLookAction.action.Enable();
             if (vrControllerLookAction != null) vrControllerLookAction.action.Enable();
+            
+            // Explicitly disable mouse look action in VR mode
+            if (mouseLookAction != null) mouseLookAction.action.Disable();
         }
-        else if (!vrMode && mouseLookAction != null)
+        else if (!vrMode)
         {
-            mouseLookAction.action.Enable();
+            if (mouseLookAction != null) mouseLookAction.action.Enable();
+            
+            // Explicitly disable VR actions in non-VR mode
+            if (vrLookAction != null) vrLookAction.action.Disable();
+            if (vrControllerLookAction != null) vrControllerLookAction.action.Disable();
         }
     }
     
@@ -189,7 +196,12 @@ public class SimpleMouseLook : MonoBehaviour
         if (vrMode)
         {
             InputAction actionToUse = vrControllerLookAction != null ? vrControllerLookAction.action : null;
-            if (actionToUse == null) actionToUse = InputSystem.actions?.FindAction("Look");
+            
+            // Fallback: If reference is null, search globally for "VRLook" action
+            if (actionToUse == null)
+            {
+                actionToUse = InputSystem.actions?.FindAction("VRLook");
+            }
 
             Vector2 controllerDelta = Vector2.zero;
             if (actionToUse != null)
