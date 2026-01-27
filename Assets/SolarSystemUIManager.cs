@@ -359,6 +359,8 @@ public class SolarSystemUIManager : MonoBehaviour
         }
     }
     
+    private const float VR_CANVAS_SCALE = 0.0006f;
+    
     /// <summary>
     /// Configures a Canvas for VR (World Space).
     /// </summary>
@@ -374,7 +376,7 @@ public class SolarSystemUIManager : MonoBehaviour
         }
         
         // Scale down for world space
-        canvas.transform.localScale = Vector3.one * 0.0006f; // Slightly smaller for better fit
+        canvas.transform.localScale = Vector3.one * VR_CANVAS_SCALE; // Slightly smaller for better fit
         
         // Remove from any existing parent first to be safe
         canvas.transform.SetParent(null);
@@ -452,11 +454,11 @@ public class SolarSystemUIManager : MonoBehaviour
     }
     
     /// <summary>
-    /// Updates the World Space canvas position to follow the VR camera.
+    /// Updates the World Space canvas position and scale to follow the VR camera.
+    /// Handles INVERSE SCALING to counteract the camera's dynamic scaling.
     /// Call this from Update() when in VR mode.
     /// </summary>
     /// <param name="cam">The active camera</param>
-    /// previously UpdateVRCanvas
     public void UpdateVRCanvasPosition(Camera cam)
     {
         // Only update canvas position in VR mode
@@ -464,25 +466,36 @@ public class SolarSystemUIManager : MonoBehaviour
         
         if (labelCanvas == null || cam == null) return;
         
-        // To ensure the HUD is perfectly locked to the head, we parent the canvas to the camera.
-        // We only do this once if the parent is not already the camera.
+        // 1. Ensure parenting (Lock to head)
         if (labelCanvas.transform.parent != cam.transform)
         {
             labelCanvas.transform.SetParent(cam.transform, false);
-            
-            // Position it in front of the camera
-            // 0.5m - 0.8m is typically a good distance for a HUD in VR
-            labelCanvas.transform.localPosition = new Vector3(0, 0, 0.6f);
             labelCanvas.transform.localRotation = Quaternion.identity;
-            
             Debug.Log($"[UIManager] LabelCanvas parented to {cam.name} for locked HUD behavior.");
         }
         
-        // Assign the world camera for proper raycasting in VR
+        // 2. Assign world camera if needed
         if (labelCanvas.worldCamera != cam)
         {
             labelCanvas.worldCamera = cam;
         }
+
+        // 3. Apply INVERSE SCALING
+        // The camera scales down (e.g. 0.00001) when near planets.
+        // We must scale the canvas UP by the inverse amount to keep it physically constant for the user.
+        float cameraScale = cam.transform.localScale.x;
+        
+        // Avoid division by zero
+        if (cameraScale < 0.0000001f) cameraScale = 0.0000001f;
+        
+        float inverseScale = 1.0f / cameraScale;
+        
+        // Apply scale: Base Scale * Inverse Scale
+        labelCanvas.transform.localScale = Vector3.one * VR_CANVAS_SCALE * inverseScale;
+        
+        // Apply position: Base Distance * Inverse Scale
+        // If we didn't scale the position, the canvas would be 0.6 * 0.00001 = 0.000006 units away (inside the eye)
+        labelCanvas.transform.localPosition = new Vector3(0, 0, 0.6f * inverseScale);
     }
     
     /// <summary>
@@ -2339,6 +2352,28 @@ public class SolarSystemUIManager : MonoBehaviour
         if (hudUI != null)
         {
             hudUI.SetActive(visible);
+        }
+    }
+    /// <summary>
+    /// Shows or hides the label text using transparency, keeping the label GameObject active.
+    /// This allows children (like HUD info boxes) to remain visible even if the name label is hidden.
+    /// </summary>
+    public void SetLabelTextVisible(GameObject labelGO, bool visible)
+    {
+        if (labelGO == null) return;
+        
+        var textComp = labelGO.GetComponent<TextMeshProUGUI>();
+        if (textComp != null)
+        {
+            // Use alpha for visibility instead of enabling/disabling component
+            // This ensures the component remains active which might be needed for layout/children
+            // or if the "Box" is somehow dependent on the TextMeshPro component being enabled.
+            Color c = textComp.color;
+            c.a = visible ? 1f : 0f;
+            textComp.color = c;
+            
+            // Also ensure the component is actually enabled
+            if (!textComp.enabled) textComp.enabled = true;
         }
     }
 }

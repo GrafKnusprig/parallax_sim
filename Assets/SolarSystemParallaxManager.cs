@@ -2194,6 +2194,14 @@ public class SolarSystemParallaxManager : MonoBehaviour
         {
             cam.transform.localScale = Vector3.one * currentScale;
             
+            // Update VR Canvas Position AND Scale (Inverse Scaling)
+            // This is critical: When camera scales down (currentScale < 1), the canvas attached to it also shrinks.
+            // UpdateVRCanvasPosition calculates the inverse scale to keep the HUD a constant physical size/distance.
+            if (uiManager != null)
+            {
+                uiManager.UpdateVRCanvasPosition(cam);
+            }
+            
             // Extra debug for scale application
             if (Time.frameCount % 60 == 0) // Every 60 frames (about 1 second)
             {
@@ -2674,19 +2682,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
                         }
                     }
 
-                    // Check if we are "near" the planet and looking directly at it
-                    // If so, hide the label to avoid visual clutter
-                    if (isVisible)
-                    {
-                        float angle = Vector3.Angle(cam.transform.forward, directionToBody);
-                        // Threshold: 100x radius. e.g. Earth (6371 km) -> 637,100 km (~2 light seconds)
-                        double nearThresholdKm = body.radiusKm * 100.0;
-                        
-                        if (distKm < nearThresholdKm && angle < 15f)
-                        {
-                            isVisible = false;
-                        }
-                    }
+                    // [REMOVED] Near-planet hiding logic as per user request.
+                    // Labels will now remain visible regardless of proximity unless they are behind the camera or occluded.
                 }
                 
                 if (isVisible)
@@ -2713,6 +2710,15 @@ public class SolarSystemParallaxManager : MonoBehaviour
                     float labelHeight = 25f;
                     Rect bounds = new Rect(canvasPos.x - labelWidth / 2, canvasPos.y - labelHeight / 2, labelWidth, labelHeight);
                     
+                    // Ensure the GameObject is active
+                    if (!body.labelUI.activeSelf) body.labelUI.SetActive(true);
+
+                    // Ensure text is visible (resetting any previous hidden state)
+                    if (uiManager != null)
+                    {
+                        uiManager.SetLabelTextVisible(body.labelUI, true);
+                    }
+
                     // Add to visible labels for UI manager to process
                     visibleLabels.Add(new SolarSystemUIManager.LabelVisibilityData
                     {
@@ -2730,6 +2736,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
                     body.labelUI.SetActive(false);
                 }
             }
+
         }
         
         // Delegate label collision detection and positioning to UI manager
