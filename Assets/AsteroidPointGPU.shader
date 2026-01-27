@@ -35,8 +35,7 @@ Shader "Custom/AsteroidPointGPU"
             {
                 float4 vertex : POSITION;
                 float2 uv : TEXCOORD0;
-                uint instanceID : SV_InstanceID;
-                UNITY_VERTEX_INPUT_INSTANCE_ID // VR optimization
+                uint instanceID : SV_InstanceID; // Manually defined to ensure it's always available for buffer indexing
             };
 
             struct v2f
@@ -54,8 +53,8 @@ Shader "Custom/AsteroidPointGPU"
             {
                 v2f o;
                 
-                // Only initialize stereo output - don't use UNITY_SETUP_INSTANCE_ID
-                // because v.instanceID is used for buffer indexing, not Unity's GPU instancing
+                // Use setup macro to initialize stereo eye index from our manual instanceID
+                UNITY_SETUP_INSTANCE_ID(v);
                 UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
                 
                 // Get asteroid data from buffer

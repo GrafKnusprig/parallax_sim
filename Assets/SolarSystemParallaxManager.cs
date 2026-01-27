@@ -2450,6 +2450,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
         Camera cam = GetActiveCamera();
         if (cam == null) return;
 
+        // In VR, cam.transform.forward already reflects head orientation.
+        // In Desktop, it reflects mouse look orientation.
         Vector3 camForward = cam.transform.forward;
         Vector3 camRight = cam.transform.right;
         Vector3 camUp = cam.transform.up;
@@ -2457,8 +2459,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
         // Full 3D movement based on camera orientation
         Vector3 moveDir =
             camRight * move.x +        // strafe left/right
-            camForward * move.y +      // move forward/backward in camera direction
-            camUp * vertical;          // move up/down relative to camera
+            camForward * move.y +      // move forward/backward (Left stick Y)
+            camUp * vertical;          // vertical move (Q/E or controller equivalent)
 
         if (moveDir.sqrMagnitude < 1e-6f)
         {
