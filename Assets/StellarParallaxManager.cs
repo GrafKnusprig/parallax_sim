@@ -145,6 +145,7 @@ public class StellarParallaxManager : MonoBehaviour
     private float lastRenderDistance = -1f;
     private float lastStarDistanceScale = 1f;
     private uint totalStars = 0;
+    private bool starsVisible = true;
     
     // Performance optimization
     private const float FOV_CULLING_MARGIN = 45f; // Large margin for seamless rendering
@@ -572,7 +573,7 @@ public class StellarParallaxManager : MonoBehaviour
     
     private void RenderStarsGPU()
     {
-        if (!computeBuffersAllocated || starMaterialGPU == null) return;
+        if (!starsVisible || !computeBuffersAllocated || starMaterialGPU == null) return;
         
         // Set the visible stars buffer on the material
         starMaterialGPU.SetBuffer("_VisibleStars", visibleStarsBuffer);
@@ -953,8 +954,15 @@ public class StellarParallaxManager : MonoBehaviour
         return lastStarDistanceScale;
     }
     
+    public void SetStarsVisible(bool visible)
+    {
+        starsVisible = visible;
+    }
+    
     private void RenderStars()
     {
+        if (!starsVisible) return;
+        
         // Use GPU path if available
         if (useComputeShader && computeBuffersAllocated && starCullingShader != null && starMaterialGPU != null)
         {

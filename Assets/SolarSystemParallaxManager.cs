@@ -199,6 +199,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     // Autopilot system - UI managed by SolarSystemUIManager
     private bool autopilotActive = false;
     private BodyInstance autopilotTarget = null;
+    private Quaternion autopilotViewCorrection = Quaternion.identity; // For VR view correction
     
     // Static property for other scripts to check autopilot state
     public static bool IsAutopilotActive { get; private set; } = false;
@@ -230,6 +231,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private double orbitDistanceAu = 0.0;
     private double orbitHeightAu = 0.0;
 
+    private bool sceneObjectsVisible = true;
+    
     private class BodyInstance
     {
         public string name;
@@ -373,6 +376,9 @@ public class SolarSystemParallaxManager : MonoBehaviour
         // Create loading screen via UI manager (passing HUD reference for hiding during load)
         uiManager.CreateLoadingScreen(uiManager.HudUI);
         
+        // HIDE EVERYTHING while loading
+        SetSceneObjectsVisible(false);
+
         // Initialize asteroid rendering
         if (asteroidPropertyBlock == null)
             asteroidPropertyBlock = new MaterialPropertyBlock();
@@ -506,12 +512,17 @@ public class SolarSystemParallaxManager : MonoBehaviour
             int starCount = stellarManager != null ? stellarManager.GetLoadedStarCount() : 0;
             int totalStars = stellarManager != null ? stellarManager.GetTotalStarCount() : 0;
             uiManager.UpdateLoadingScreen(starsReady, starCount, totalStars, starDatasetName);
-        }
-        
-        // Don't allow gameplay until loading is complete
-        if (uiManager != null && !uiManager.IsLoadingComplete)
-        {
-            return;
+            
+            // Manage scene visibility during loading
+            if (!uiManager.IsLoadingComplete)
+            {
+                if (sceneObjectsVisible) SetSceneObjectsVisible(false);
+                return;
+            }
+            else if (!sceneObjectsVisible)
+            {
+                SetSceneObjectsVisible(true);
+            }
         }
         
         // Delegate input handling to UIManager (handles keyboard X/I keys, VR controller buttons, menu navigation)
@@ -604,6 +615,37 @@ public class SolarSystemParallaxManager : MonoBehaviour
         if (IsOrbiting)
         {
             UpdateOrbitCamera();
+        }
+    }
+    
+    private void SetSceneObjectsVisible(bool visible)
+    {
+        sceneObjectsVisible = visible;
+        
+        // Toggle bodies
+        foreach (var body in bodies)
+        {
+            if (body.proxy != null) body.proxy.gameObject.SetActive(visible);
+            if (body.ringObject != null) body.ringObject.SetActive(visible);
+            if (body.lensingTorus != null) body.lensingTorus.SetActive(visible);
+        }
+        
+        // Toggle horizon
+        if (horizonSphere != null)
+        {
+            horizonSphere.SetActive(visible && showHorizonSphere);
+        }
+        
+        // Toggle labels
+        if (uiManager != null)
+        {
+            uiManager.SetLabelsVisible(visible);
+        }
+        
+        // Toggle stars
+        if (stellarManager != null)
+        {
+            stellarManager.SetStarsVisible(visible);
         }
     }
     
@@ -2152,6 +2194,14 @@ public class SolarSystemParallaxManager : MonoBehaviour
         {
             cam.transform.localScale = Vector3.one * currentScale;
             
+            // Update VR Canvas Position AND Scale (Inverse Scaling)
+            // This is critical: When camera scales down (currentScale < 1), the canvas attached to it also shrinks.
+            // UpdateVRCanvasPosition calculates the inverse scale to keep the HUD a constant physical size/distance.
+            if (uiManager != null)
+            {
+                uiManager.UpdateVRCanvasPosition(cam);
+            }
+            
             // Extra debug for scale application
             if (Time.frameCount % 60 == 0) // Every 60 frames (about 1 second)
             {
@@ -2345,7 +2395,11 @@ public class SolarSystemParallaxManager : MonoBehaviour
     private void ToggleOrbit()
     {
         // Mutual exclusion: Cannot orbit while autopilot is active
-        if (autopilotActive) return;
+        if (autopilotActive)
+        {
+            Debug.Log("Cannot engage Orbit Mode while Autopilot is active.");
+            return;
+        }
 
         if (IsOrbiting)
         {
@@ -2410,25 +2464,22 @@ public class SolarSystemParallaxManager : MonoBehaviour
         
         if (isVRMode)
         {
-            // VR Mode: Rotate the player rig (camera parent) to face the planet
-            // This allows VR head tracking to continue working while keeping player oriented toward planet
-            Transform rig = GetCameraRig();
-            if (rig != null)
+            // VR Mode: Rotate the ARTIFICIAL PIVOT (not the rig) to face the planet
+            // This keeps the rig (body) stationary while orienting the view frame.
+            SimpleMouseLook mouseLook = cam.GetComponent<SimpleMouseLook>();
+            Transform pivot = (mouseLook != null) ? mouseLook.ArtificialLookPivot : null;
+            
+            // Fallback to rig if pivot not found (unlikely)
+            Transform targetTransform = (pivot != null) ? pivot : GetCameraRig();
+            
+            if (targetTransform != null)
             {
-                // Calculate direction from rig to planet
-                Vector3 directionToPlanet = orbitTargetBody.proxy.position - rig.position;
-                
-                // Only rotate around Y axis (yaw) to keep horizon level
-                // This prevents disorienting roll/pitch in VR
-                directionToPlanet.y = 0;
-                
-                if (directionToPlanet.sqrMagnitude > 0.001f)
-                {
-                    Quaternion targetRotation = Quaternion.LookRotation(directionToPlanet);
-                    
-                    // Smooth rotation for comfort in VR
-                    rig.rotation = Quaternion.Slerp(rig.rotation, targetRotation, Time.deltaTime * 2f);
-                }
+                // Rotate the rig to match orbital movement (keep planet fixed in view relative to head)
+                // Orbit moves naturally in X/Z plane using Sin/Cos (CCW for positive angle).
+                // To maintain the same view relative to the center, we must rotate the rig CCW by the same amount.
+                // Unity positive Y rotation is Clockwise (Right). Negative is Counter-Clockwise (Left).
+                float rotationStep = orbitAngularVelocity * Time.deltaTime * Mathf.Rad2Deg;
+                targetTransform.Rotate(Vector3.up, -rotationStep, Space.World);
             }
         }
         else
@@ -2442,14 +2493,28 @@ public class SolarSystemParallaxManager : MonoBehaviour
     {
         if (moveAction == null) return;
 
+        bool isVRMode = uiManager != null && uiManager.IsVRMode;
+        
         Vector2 move = moveAction.action.ReadValue<Vector2>(); // x: strafe, y: forward
         float vertical = verticalAction != null ? verticalAction.action.ReadValue<float>() : 0f;
+
+        // Diagnostic logging for VR movement
+        if (isVRMode && move.sqrMagnitude > 0.01f)
+        {
+            Debug.Log($"[SolarSystemParallaxManager] Processing VR Movement Input: {move}");
+        }
+
+        // If not in VR mode, we could filter XR drift here, but we must ensure we don't
+        // block keyboard/mouse input if the headset is jittering and becoming the 'activeControl'.
+        // For now, we rely on the user turning off VR mode to switch control schemes.
 
         // Movement is expressed in camera space, but we do NOT move the camera in Unity world.
         // We only move the player in REAL space (AU).
         Camera cam = GetActiveCamera();
         if (cam == null) return;
 
+        // In VR, cam.transform.forward already reflects head orientation.
+        // In Desktop, it reflects mouse look orientation.
         Vector3 camForward = cam.transform.forward;
         Vector3 camRight = cam.transform.right;
         Vector3 camUp = cam.transform.up;
@@ -2457,8 +2522,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
         // Full 3D movement based on camera orientation
         Vector3 moveDir =
             camRight * move.x +        // strafe left/right
-            camForward * move.y +      // move forward/backward in camera direction
-            camUp * vertical;          // move up/down relative to camera
+            camForward * move.y +      // move forward/backward (Left stick Y)
+            camUp * vertical;          // vertical move (Q/E or controller equivalent)
 
         if (moveDir.sqrMagnitude < 1e-6f)
         {
@@ -2617,19 +2682,8 @@ public class SolarSystemParallaxManager : MonoBehaviour
                         }
                     }
 
-                    // Check if we are "near" the planet and looking directly at it
-                    // If so, hide the label to avoid visual clutter
-                    if (isVisible)
-                    {
-                        float angle = Vector3.Angle(cam.transform.forward, directionToBody);
-                        // Threshold: 100x radius. e.g. Earth (6371 km) -> 637,100 km (~2 light seconds)
-                        double nearThresholdKm = body.radiusKm * 100.0;
-                        
-                        if (distKm < nearThresholdKm && angle < 15f)
-                        {
-                            isVisible = false;
-                        }
-                    }
+                    // [REMOVED] Near-planet hiding logic as per user request.
+                    // Labels will now remain visible regardless of proximity unless they are behind the camera or occluded.
                 }
                 
                 if (isVisible)
@@ -2656,6 +2710,15 @@ public class SolarSystemParallaxManager : MonoBehaviour
                     float labelHeight = 25f;
                     Rect bounds = new Rect(canvasPos.x - labelWidth / 2, canvasPos.y - labelHeight / 2, labelWidth, labelHeight);
                     
+                    // Ensure the GameObject is active
+                    if (!body.labelUI.activeSelf) body.labelUI.SetActive(true);
+
+                    // Ensure text is visible (resetting any previous hidden state)
+                    if (uiManager != null)
+                    {
+                        uiManager.SetLabelTextVisible(body.labelUI, true);
+                    }
+
                     // Add to visible labels for UI manager to process
                     visibleLabels.Add(new SolarSystemUIManager.LabelVisibilityData
                     {
@@ -2673,6 +2736,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
                     body.labelUI.SetActive(false);
                 }
             }
+
         }
         
         // Delegate label collision detection and positioning to UI manager
@@ -2726,6 +2790,13 @@ public class SolarSystemParallaxManager : MonoBehaviour
     /// </summary>
     private void OnAutopilotTargetSelected(SolarSystemUIManager.AutopilotBodyInfo bodyInfo)
     {
+        // Mutual exclusion: Cannot engage autopilot while orbiting
+        if (IsOrbiting)
+        {
+            Debug.Log("Cannot engage Autopilot while Orbit Mode is active.");
+            return;
+        }
+
         // Find the corresponding BodyInstance
         BodyInstance target = bodyInfo.bodyReference as BodyInstance;
         
@@ -2734,6 +2805,22 @@ public class SolarSystemParallaxManager : MonoBehaviour
             autopilotTarget = target;
             autopilotActive = true;
             IsAutopilotActive = true;
+            
+            // In VR, we want to center the view on the planet (compensating for head rotation)
+            // Correction = Inverse(Camera.localRotation)
+            // Pivot.rotation = LookRot(Planet) * Correction
+            // Pivot.rotation * Camera.localRotation = LookRot(Planet) * Inverse(Head) * Head = LookRot(Planet) -> Camera looks at Planet
+            Camera cam = GetActiveCamera();
+            if (cam != null && uiManager != null && uiManager.IsVRMode)
+            {
+                autopilotViewCorrection = Quaternion.Inverse(cam.transform.localRotation);
+                Debug.Log($"Autopilot: Captured view correction {autopilotViewCorrection.eulerAngles}");
+            }
+            else
+            {
+                autopilotViewCorrection = Quaternion.identity;
+            }
+            
             Debug.Log($"Autopilot: Traveling to {target.name}");
         }
     }
@@ -2821,18 +2908,36 @@ public class SolarSystemParallaxManager : MonoBehaviour
             return;
         }
         
-        // Smooth camera rotation towards target
+        // Smooth orientation towards target
         Camera cam = GetActiveCamera();
         if (cam != null && autopilotTarget.proxy != null)
         {
-            // Look at the target's proxy position (where it appears on the horizon sphere)
+            bool isVRMode = uiManager != null && uiManager.IsVRMode;
+            
+            // Look at the target's proxy position
             Vector3 targetDirection = autopilotTarget.proxy.position - cam.transform.position;
             
             if (targetDirection.sqrMagnitude > 0.001f)
             {
                 Quaternion targetRotation = Quaternion.LookRotation(targetDirection);
                 float rotationSpeed = 2f; // Smooth rotation speed
-                cam.transform.rotation = Quaternion.Slerp(cam.transform.rotation, targetRotation, Time.deltaTime * rotationSpeed);
+                
+                if (isVRMode)
+                {
+                    // In VR, rotate the Pivot instead of the camera or rig
+                    SimpleMouseLook mouseLook = cam.GetComponent<SimpleMouseLook>();
+                    Transform pivot = (mouseLook != null) ? mouseLook.ArtificialLookPivot : null;
+                    if (pivot != null)
+                    {
+                        // Apply the view correction to "center" the view on the planet based on initial head pose
+                        Quaternion adjustedTargetRotation = targetRotation * autopilotViewCorrection;
+                        pivot.rotation = Quaternion.Slerp(pivot.rotation, adjustedTargetRotation, Time.deltaTime * rotationSpeed);
+                    }
+                }
+                else
+                {
+                    cam.transform.rotation = Quaternion.Slerp(cam.transform.rotation, targetRotation, Time.deltaTime * rotationSpeed);
+                }
             }
         }
         
@@ -3232,7 +3337,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
 
     private void RenderAsteroidsGPU()
     {
-        if (!asteroidComputeBuffersAllocated || asteroidMaterialGPU == null) return;
+        if (!sceneObjectsVisible || !asteroidComputeBuffersAllocated || asteroidMaterialGPU == null) return;
 
         asteroidMaterialGPU.SetBuffer("_VisibleAsteroids", visibleAsteroidsBuffer);
         // Reuse star material properties if needed, or add asteroid specific ones
@@ -3397,7 +3502,7 @@ public class SolarSystemParallaxManager : MonoBehaviour
     
     private void RenderAsteroids()
     {
-        if (asteroidMatrices == null || asteroidMatrices.Length == 0 || asteroidMaterial == null)
+        if (!sceneObjectsVisible || asteroidMatrices == null || asteroidMatrices.Length == 0 || asteroidMaterial == null)
             return;
         
         // Ensure asteroidPropertyBlock is initialized
