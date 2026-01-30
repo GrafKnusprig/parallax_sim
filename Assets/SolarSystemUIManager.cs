@@ -37,9 +37,11 @@ public class SolarSystemUIManager : MonoBehaviour
     [Tooltip("VR Controller button to confirm selection in menu (e.g., trigger or trackpad press).")]
     [SerializeField] private InputActionReference menuSelectAction;
     
+    [Tooltip("VR Controller button to toggle orbit mode (e.g., Right Hand Menu/Primary button).")]
+    [SerializeField] private InputActionReference orbitAction;
+    
     [Header("HUD (Heads-Up Display)")]
     [SerializeField] private bool enableHUD = true;
-    [Tooltip("Font size for HUD text (pt)")]
     [SerializeField] private int hudFontSize = 28;
     [SerializeField] private Color hudColor = Color.cyan;
     [SerializeField] private Vector2 hudPosition = new Vector2(300f, -100f); // offset from top-left corner
@@ -48,12 +50,12 @@ public class SolarSystemUIManager : MonoBehaviour
     private SolarSystemParallaxManager parallaxManager;
     
     // Internal state
-    private bool isVRMode = false;
     private bool wasVRMode = false;
     
     // VR input state tracking
     private bool autopilotTriggerWasPressed = false;
     private bool planetInfoTriggerWasPressed = false;
+    private bool orbitTriggerWasPressed = false;
     private bool vrSelectWasPressed = false;
     
     // Public accessors
@@ -63,7 +65,7 @@ public class SolarSystemUIManager : MonoBehaviour
     public int LabelFontSize => labelFontSize;
     public Color LabelColor => labelColor;
     public float LabelOffsetPixels => labelOffsetPixels;
-    public bool IsVRMode => isVRMode;
+    public bool IsVRMode => enableVRMode;
     
     // Events for input notifications - ParallaxManager subscribes to respond to input
     public System.Action OnAutopilotTogglePressed;
@@ -77,10 +79,15 @@ public class SolarSystemUIManager : MonoBehaviour
     
     private void OnEnable()
     {
-        if (autopilotMenuAction != null) autopilotMenuAction.action.Enable();
-        if (planetInfoAction != null) planetInfoAction.action.Enable();
-        if (menuScrollAction != null) menuScrollAction.action.Enable();
-        if (menuSelectAction != null) menuSelectAction.action.Enable();
+        // Only enable VR actions if in VR mode
+        if (enableVRMode)
+        {
+            if (autopilotMenuAction != null) autopilotMenuAction.action.Enable();
+            if (planetInfoAction != null) planetInfoAction.action.Enable();
+            if (menuScrollAction != null) menuScrollAction.action.Enable();
+            if (menuSelectAction != null) menuSelectAction.action.Enable();
+            if (orbitAction != null) orbitAction.action.Enable();
+        }
     }
     
     private void OnDisable()
@@ -89,6 +96,7 @@ public class SolarSystemUIManager : MonoBehaviour
         if (planetInfoAction != null) planetInfoAction.action.Disable();
         if (menuScrollAction != null) menuScrollAction.action.Disable();
         if (menuSelectAction != null) menuSelectAction.action.Disable();
+        if (orbitAction != null) orbitAction.action.Disable();
     }
     
     /// <summary>
@@ -96,11 +104,17 @@ public class SolarSystemUIManager : MonoBehaviour
     /// </summary>
     public void UpdateInput()
     {
+        // Handle runtime VR mode toggle in Inspector
+        if (enableVRMode != wasVRMode)
+        {
+            SetupLabelCanvas();
+        }
+
         // Handle autopilot toggle with X key or VR controller button
         bool autopilotTogglePressed = (Keyboard.current != null && Keyboard.current.xKey.wasPressedThisFrame);
         
-        // Check VR controller trigger (it's an axis, so we need to detect edge)
-        if (autopilotMenuAction != null && autopilotMenuAction.action.enabled)
+        // Check VR controller trigger (only in VR mode)
+        if (enableVRMode && autopilotMenuAction != null && autopilotMenuAction.action.enabled)
         {
             float triggerValue = autopilotMenuAction.action.ReadValue<float>();
             bool triggerIsPressed = triggerValue > 0.5f;
@@ -121,8 +135,8 @@ public class SolarSystemUIManager : MonoBehaviour
         // Handle planet info toggle with I key or VR controller button
         bool planetInfoTogglePressed = (Keyboard.current != null && Keyboard.current.iKey.wasPressedThisFrame);
         
-        // Check VR controller trigger for planet info
-        if (planetInfoAction != null && planetInfoAction.action.enabled)
+        // Check VR controller trigger for planet info (only in VR mode)
+        if (enableVRMode && planetInfoAction != null && planetInfoAction.action.enabled)
         {
             float triggerValue = planetInfoAction.action.ReadValue<float>();
             bool triggerIsPressed = triggerValue > 0.5f;
@@ -143,6 +157,20 @@ public class SolarSystemUIManager : MonoBehaviour
         // Handle orbit toggle with O key
         bool orbitTogglePressed = (Keyboard.current != null && Keyboard.current.oKey.wasPressedThisFrame);
         
+        // Check VR controller toggle for orbit (only in VR mode)
+        if (enableVRMode && orbitAction != null && orbitAction.action.enabled)
+        {
+            float triggerValue = orbitAction.action.ReadValue<float>();
+            bool triggerIsPressed = triggerValue > 0.5f;
+            
+            // Detect rising edge (button just pressed)
+            if (triggerIsPressed && !orbitTriggerWasPressed)
+            {
+                orbitTogglePressed = true;
+            }
+            orbitTriggerWasPressed = triggerIsPressed;
+        }
+        
         if (orbitTogglePressed)
         {
             OnOrbitTogglePressed?.Invoke();
@@ -160,17 +188,18 @@ public class SolarSystemUIManager : MonoBehaviour
     /// </summary>
     private void HandleVRMenuNavigation()
     {
+        // Only process VR navigation if in VR mode (keyboard fallback remains)
         float scrollInput = 0f;
         bool selectPressed = false;
         
-        // VR Controller thumbstick/trackpad (2D axis - use Y component)
-        if (menuScrollAction != null && menuScrollAction.action.enabled)
+        // VR Controller thumbstick/trackpad (only in VR mode)
+        if (enableVRMode && menuScrollAction != null && menuScrollAction.action.enabled)
         {
             Vector2 scrollValue = menuScrollAction.action.ReadValue<Vector2>();
             scrollInput = scrollValue.y;
         }
         
-        // Keyboard fallback (arrow keys)
+        // Keyboard fallback (always active)
         if (Keyboard.current != null)
         {
             if (Keyboard.current.upArrowKey.wasPressedThisFrame)
@@ -188,8 +217,8 @@ public class SolarSystemUIManager : MonoBehaviour
             }
         }
         
-        // VR controller select button (trigger/trackpad press)
-        if (menuSelectAction != null && menuSelectAction.action.enabled)
+        // VR controller select button (only in VR mode)
+        if (enableVRMode && menuSelectAction != null && menuSelectAction.action.enabled)
         {
             float selectValue = menuSelectAction.action.ReadValue<float>();
             bool selectIsPressed = selectValue > 0.5f;
@@ -219,10 +248,25 @@ public class SolarSystemUIManager : MonoBehaviour
     /// </summary>
     public void SetupLabelCanvas()
     {
-        // Use manual VR mode setting from Inspector
-        isVRMode = enableVRMode;
-        wasVRMode = isVRMode;
-        Debug.Log($"[UIManager] VR Mode enabled: {isVRMode}");
+        // Sync state
+        wasVRMode = enableVRMode;
+        Debug.Log($"[UIManager] VR Mode enabled: {enableVRMode}");
+
+        // Sync input action states
+        if (enableVRMode)
+        {
+            if (autopilotMenuAction != null) autopilotMenuAction.action.Enable();
+            if (planetInfoAction != null) planetInfoAction.action.Enable();
+            if (menuScrollAction != null) menuScrollAction.action.Enable();
+            if (menuSelectAction != null) menuSelectAction.action.Enable();
+        }
+        else
+        {
+            if (autopilotMenuAction != null) autopilotMenuAction.action.Disable();
+            if (planetInfoAction != null) planetInfoAction.action.Disable();
+            if (menuScrollAction != null) menuScrollAction.action.Disable();
+            if (menuSelectAction != null) menuSelectAction.action.Disable();
+        }
         
         if (enableLabels && labelCanvas == null)
         {
@@ -231,7 +275,7 @@ public class SolarSystemUIManager : MonoBehaviour
             Canvas canvas = canvasGO.AddComponent<Canvas>();
             
             // Configure based on VR mode
-            if (isVRMode)
+            if (enableVRMode)
             {
                 ConfigureCanvasForVR(canvas);
             }
@@ -241,7 +285,7 @@ public class SolarSystemUIManager : MonoBehaviour
             }
             
             // Add appropriate raycaster based on VR mode
-            if (isVRMode)
+            if (enableVRMode)
             {
                 // Use TrackedDeviceGraphicRaycaster for VR controller interaction
                 canvasGO.AddComponent<TrackedDeviceGraphicRaycaster>();
@@ -251,12 +295,12 @@ public class SolarSystemUIManager : MonoBehaviour
                 canvasGO.AddComponent<GraphicRaycaster>();
             }
             labelCanvas = canvas;
-            Debug.Log($"[UIManager] Created automatic label canvas ({(isVRMode ? "World Space for VR with TrackedDeviceGraphicRaycaster" : "Screen Space for Desktop")})");
+            Debug.Log($"[UIManager] Created automatic label canvas ({(enableVRMode ? "World Space for VR with TrackedDeviceGraphicRaycaster" : "Screen Space for Desktop")})");
         }
         else if (labelCanvas != null)
         {
             // Configure existing canvas based on VR mode
-            if (isVRMode)
+            if (enableVRMode)
             {
                 ConfigureCanvasForVR(labelCanvas);
                 
@@ -285,7 +329,7 @@ public class SolarSystemUIManager : MonoBehaviour
             GameObject eventSystemGO = new GameObject("EventSystem");
             eventSystemGO.AddComponent<UnityEngine.EventSystems.EventSystem>();
             
-            if (isVRMode)
+            if (enableVRMode)
             {
                 // Use XRUIInputModule for VR controller input
                 eventSystemGO.AddComponent<XRUIInputModule>();
@@ -297,7 +341,7 @@ public class SolarSystemUIManager : MonoBehaviour
                 Debug.Log("[UIManager] Created EventSystem for UI interaction");
             }
         }
-        else if (isVRMode)
+        else if (enableVRMode)
         {
             // Ensure VR UI input module is present if EventSystem already exists
             var existingEventSystem = UnityEngine.EventSystems.EventSystem.current;
@@ -315,6 +359,8 @@ public class SolarSystemUIManager : MonoBehaviour
         }
     }
     
+    private const float VR_CANVAS_SCALE = 0.0006f;
+    
     /// <summary>
     /// Configures a Canvas for VR (World Space).
     /// </summary>
@@ -329,8 +375,11 @@ public class SolarSystemUIManager : MonoBehaviour
             canvasRect.sizeDelta = new Vector2(1920, 1080);
         }
         
-        // Scale down for world space (2 meters wide approximately)
-        canvas.transform.localScale = Vector3.one * 0.001f;
+        // Scale down for world space
+        canvas.transform.localScale = Vector3.one * VR_CANVAS_SCALE; // Slightly smaller for better fit
+        
+        // Remove from any existing parent first to be safe
+        canvas.transform.SetParent(null);
         
         CanvasScaler scaler = canvas.GetComponent<CanvasScaler>();
         if (scaler == null)
@@ -405,35 +454,48 @@ public class SolarSystemUIManager : MonoBehaviour
     }
     
     /// <summary>
-    /// Updates the World Space canvas position to follow the VR camera.
+    /// Updates the World Space canvas position and scale to follow the VR camera.
+    /// Handles INVERSE SCALING to counteract the camera's dynamic scaling.
     /// Call this from Update() when in VR mode.
     /// </summary>
     /// <param name="cam">The active camera</param>
-    /// previously UpdateVRCanvas
     public void UpdateVRCanvasPosition(Camera cam)
     {
         // Only update canvas position in VR mode
-        if (!isVRMode) return;
+        if (!enableVRMode) return;
         
         if (labelCanvas == null || cam == null) return;
         
-        // Position the canvas in front of the camera
-        // Distance of 2 meters is comfortable for VR viewing
-        float canvasDistance = 2f;
+        // 1. Ensure parenting (Lock to head)
+        if (labelCanvas.transform.parent != cam.transform)
+        {
+            labelCanvas.transform.SetParent(cam.transform, false);
+            labelCanvas.transform.localRotation = Quaternion.identity;
+            Debug.Log($"[UIManager] LabelCanvas parented to {cam.name} for locked HUD behavior.");
+        }
         
-        Transform canvasTransform = labelCanvas.transform;
-        
-        // Position canvas in front of camera
-        canvasTransform.position = cam.transform.position + cam.transform.forward * canvasDistance;
-        
-        // Make canvas face the camera
-        canvasTransform.rotation = cam.transform.rotation;
-        
-        // Assign the world camera for proper raycasting in VR
+        // 2. Assign world camera if needed
         if (labelCanvas.worldCamera != cam)
         {
             labelCanvas.worldCamera = cam;
         }
+
+        // 3. Apply INVERSE SCALING
+        // The camera scales down (e.g. 0.00001) when near planets.
+        // We must scale the canvas UP by the inverse amount to keep it physically constant for the user.
+        float cameraScale = cam.transform.localScale.x;
+        
+        // Avoid division by zero
+        if (cameraScale < 0.0000001f) cameraScale = 0.0000001f;
+        
+        float inverseScale = 1.0f / cameraScale;
+        
+        // Apply scale: Base Scale * Inverse Scale
+        labelCanvas.transform.localScale = Vector3.one * VR_CANVAS_SCALE * inverseScale;
+        
+        // Apply position: Base Distance * Inverse Scale
+        // If we didn't scale the position, the canvas would be 0.6 * 0.00001 = 0.000006 units away (inside the eye)
+        labelCanvas.transform.localPosition = new Vector3(0, 0, 0.6f * inverseScale);
     }
     
     /// <summary>
@@ -859,6 +921,17 @@ public class SolarSystemUIManager : MonoBehaviour
     private int menuSelectedIndex = 0;
     private float menuScrollCooldown = 0f;
     private const float MENU_SCROLL_DELAY = 0.2f;
+
+    // Structure for navigable items (planets, moons, categories, buttons)
+    private struct NavigableItem
+    {
+        public string name;
+        public Button button;
+        public System.Action onSelect;
+        public bool isCategory;
+        public bool isMoon;
+    }
+    private List<NavigableItem> navigableItems = new List<NavigableItem>();
     
     // Static properties for other scripts
     public static bool IsMenuOpen { get; private set; } = false;
@@ -885,12 +958,7 @@ public class SolarSystemUIManager : MonoBehaviour
     
     // Cached body info for the menu
     private List<AutopilotBodyInfo> menuBodies = new List<AutopilotBodyInfo>();
-    private List<AutopilotBodyInfo> menuSelectableBodies = new List<AutopilotBodyInfo>();
     
-    /// <summary>
-    /// Creates the autopilot menu UI. Call from Start() after the body list is loaded.
-    /// </summary>
-    /// <param name="bodies">List of bodies to populate the menu with</param>
     public void CreateAutopilotMenu(List<AutopilotBodyInfo> bodies)
     {
         if (labelCanvas == null)
@@ -1043,18 +1111,16 @@ public class SolarSystemUIManager : MonoBehaviour
             return 0;
         });
         
-        // Add buttons for main bodies
+        // Clear buttons and items
+        autopilotButtons.Clear();
+        
         float buttonHeight = 50f;
         float spacing = 8f;
         int itemIndex = 0;
         
-        menuSelectableBodies.Clear();
-        autopilotButtons.Clear();
-        
         foreach (var body in mainBodies)
         {
             CreateAutopilotButton(contentGO, body, itemIndex, buttonHeight, spacing, false);
-            menuSelectableBodies.Add(body);
             itemIndex++;
         }
         
@@ -1084,9 +1150,8 @@ public class SolarSystemUIManager : MonoBehaviour
             moonsContainer.SetActive(false);
         }
         
-        // Calculate content size
-        int visibleCount = mainBodies.Count + (moons.Count > 0 ? 1 : 0);
-        autopilotContentRect.sizeDelta = new Vector2(0, visibleCount * (buttonHeight + spacing));
+        // Calculate content size and initial navigation
+        RefreshNavigableItems();
         
         // Cancel button
         CreateCancelButton();
@@ -1095,6 +1160,114 @@ public class SolarSystemUIManager : MonoBehaviour
         autopilotUI.SetActive(false);
         
         Debug.Log($"[UIManager] Autopilot menu created: {mainBodies.Count} planets, {moons.Count} moons");
+    }
+
+    private void RefreshNavigableItems()
+    {
+        navigableItems.Clear();
+        
+        float buttonHeight = 50f;
+        float spacing = 8f;
+        float itemHeight = buttonHeight + spacing;
+        
+        // Count how many top-level items we have to correctly position moonsContainer
+        int topLevelItemCount = 0;
+        
+        // Sort autopilotButtons by their sibling index to ensure correct processing order
+        // if they share the same parent. 
+        List<Button> sortedButtons = new List<Button>(autopilotButtons);
+        sortedButtons.RemoveAll(b => b == null);
+        
+        // Process top-level items (planets and category)
+        foreach (var btn in sortedButtons)
+        {
+            if (!btn.gameObject.activeInHierarchy || btn.transform.parent != autopilotContentRect) continue;
+            
+            topLevelItemCount++;
+            
+            if (btn.name == "Moons_Category")
+            {
+                Button capturedCategory = btn;
+                navigableItems.Add(new NavigableItem {
+                    name = "Moons Category",
+                    button = btn,
+                    onSelect = () => ToggleMoonsCategory(),
+                    isCategory = true
+                });
+                
+                // If moons are expanded, add the moons from the container
+                if (moonsExpanded && moonsContainer != null)
+                {
+                    // Find moons - they are children of moonsContainer
+                    foreach (var moonBtn in sortedButtons)
+                    {
+                        if (moonBtn.gameObject.activeInHierarchy && moonBtn.transform.parent == moonsContainer.transform)
+                        {
+                            Button capturedMoon = moonBtn;
+                            navigableItems.Add(new NavigableItem {
+                                name = moonBtn.name,
+                                button = moonBtn,
+                                onSelect = () => capturedMoon.onClick.Invoke(),
+                                isMoon = true
+                            });
+                        }
+                    }
+                }
+            }
+            else
+            {
+                Button capturedPlanet = btn;
+                navigableItems.Add(new NavigableItem {
+                    name = btn.name,
+                    button = btn,
+                    onSelect = () => capturedPlanet.onClick.Invoke()
+                });
+            }
+        }
+        
+        // Add cancel button - it's a child of autopilotUI, not content
+        foreach (var btn in sortedButtons)
+        {
+            if (btn != null && btn.name == "CancelButton")
+            {
+                Button capturedCancel = btn;
+                navigableItems.Add(new NavigableItem {
+                    name = "Cancel",
+                    button = btn,
+                    onSelect = () => capturedCancel.onClick.Invoke()
+                });
+                break;
+            }
+        }
+
+        // Update content size based on visible items in scroll area
+        int visibleInScrollCount = 0;
+        foreach (var item in navigableItems)
+        {
+            if (item.name != "Cancel") visibleInScrollCount++;
+        }
+        
+        if (autopilotContentRect != null)
+        {
+            autopilotContentRect.sizeDelta = new Vector2(0, visibleInScrollCount * itemHeight + 20f); // Add a small bottom padding
+            
+            // Reposition moons container correctly below its category button
+            if (moonsExpanded && moonsContainer != null)
+            {
+                // Find index of Moons_Category among top-level buttons to know where it is
+                int categoryIndex = 0;
+                foreach (Transform child in autopilotContentRect)
+                {
+                    if (child.name == "Moons_Category") break;
+                    // Only count visible planets (activeInHierarchy might not be reliable here if parent is inactive, 
+                    // but we know planets are active if we're here)
+                    if (child.gameObject.activeSelf) categoryIndex++;
+                }
+                
+                RectTransform moonsRect = moonsContainer.GetComponent<RectTransform>();
+                moonsRect.anchoredPosition = new Vector2(0, -(categoryIndex + 1) * itemHeight);
+            }
+        }
     }
     
     private void CreateScrollbar(GameObject scrollViewGO, ScrollRect scroll)
@@ -1223,6 +1396,7 @@ public class SolarSystemUIManager : MonoBehaviour
         button.colors = colors;
         
         button.onClick.AddListener(ToggleMoonsCategory);
+        autopilotButtons.Add(button);
         
         // Button text with arrow
         GameObject textGO = new GameObject("Text");
@@ -1264,32 +1438,9 @@ public class SolarSystemUIManager : MonoBehaviour
                 }
             }
             
-            // Recalculate content size
-            float buttonHeight = 50f;
-            float spacing = 8f;
-            
-            int mainCount = 0;
-            int moonCount = 0;
-            foreach (var body in menuBodies)
-            {
-                if (body.isMoon) moonCount++;
-                else mainCount++;
-            }
-            
-            int visibleCount = mainCount + 1; // +1 for moons category header
-            if (moonsExpanded)
-            {
-                visibleCount += moonCount;
-            }
-            
-            autopilotContentRect.sizeDelta = new Vector2(0, visibleCount * (buttonHeight + spacing));
-            
-            // Reposition moons container
-            if (moonsExpanded && moonsContainer != null)
-            {
-                RectTransform moonsRect = moonsContainer.GetComponent<RectTransform>();
-                moonsRect.anchoredPosition = new Vector2(0, -(mainCount + 1) * (buttonHeight + spacing));
-            }
+            // Refresh everything through the central logic
+            RefreshNavigableItems();
+            UpdateMenuSelectionHighlight();
         }
     }
     
@@ -1317,6 +1468,7 @@ public class SolarSystemUIManager : MonoBehaviour
         cancelColors.fadeDuration = 0.15f;
         cancelBtn.colors = cancelColors;
         cancelBtn.onClick.AddListener(() => ToggleAutopilotMenu());
+        autopilotButtons.Add(cancelBtn);
         
         GameObject cancelTextGO = new GameObject("Text");
         cancelTextGO.transform.SetParent(cancelGO.transform, false);
@@ -1375,6 +1527,7 @@ public class SolarSystemUIManager : MonoBehaviour
         // Reset selection when opening
         if (autopilotMenuOpen)
         {
+            RefreshNavigableItems();
             menuSelectedIndex = 0;
             UpdateMenuSelectionHighlight();
         }
@@ -1397,6 +1550,7 @@ public class SolarSystemUIManager : MonoBehaviour
         autopilotMenuOpen = true;
         autopilotUI.SetActive(true);
         IsMenuOpen = true;
+        RefreshNavigableItems();
         menuSelectedIndex = 0;
         UpdateMenuSelectionHighlight();
         
@@ -1452,7 +1606,7 @@ public class SolarSystemUIManager : MonoBehaviour
     /// <param name="selectPressed">Whether the select button was pressed this frame</param>
     public void UpdateVRMenuNavigation(float scrollInput, bool selectPressed)
     {
-        if (!autopilotMenuOpen || menuSelectableBodies.Count == 0) return;
+        if (!autopilotMenuOpen || navigableItems.Count == 0) return;
         
         // Decrease scroll cooldown
         if (menuScrollCooldown > 0)
@@ -1471,7 +1625,7 @@ public class SolarSystemUIManager : MonoBehaviour
             }
             else if (scrollInput < -0.5f)
             {
-                menuSelectedIndex = Mathf.Min(menuSelectableBodies.Count - 1, menuSelectedIndex + 1);
+                menuSelectedIndex = Mathf.Min(navigableItems.Count - 1, menuSelectedIndex + 1);
             }
             
             if (menuSelectedIndex != previousIndex)
@@ -1482,18 +1636,18 @@ public class SolarSystemUIManager : MonoBehaviour
         }
         
         // Confirm selection
-        if (selectPressed && menuSelectedIndex >= 0 && menuSelectedIndex < menuSelectableBodies.Count)
+        if (selectPressed && menuSelectedIndex >= 0 && menuSelectedIndex < navigableItems.Count)
         {
-            SelectAutopilotTarget(menuSelectableBodies[menuSelectedIndex]);
+            navigableItems[menuSelectedIndex].onSelect?.Invoke();
         }
     }
     
     private void UpdateMenuSelectionHighlight()
     {
-        // Update visual highlight on all buttons
-        for (int i = 0; i < autopilotButtons.Count && i < menuSelectableBodies.Count; i++)
+        // Update visual highlight on all buttons in the navigable list
+        for (int i = 0; i < navigableItems.Count; i++)
         {
-            Button btn = autopilotButtons[i];
+            Button btn = navigableItems[i].button;
             if (btn == null) continue;
             
             Image btnImage = btn.GetComponent<Image>();
@@ -1501,33 +1655,89 @@ public class SolarSystemUIManager : MonoBehaviour
             {
                 if (i == menuSelectedIndex)
                 {
-                    btnImage.color = new Color(0.3f, 0.6f, 1f, 1f); // Highlighted
+                    // Special colors for categories
+                    if (navigableItems[i].isCategory)
+                        btnImage.color = new Color(0.45f, 0.35f, 0.7f, 1f);
+                    else if (navigableItems[i].isMoon)
+                        btnImage.color = new Color(0.25f, 0.5f, 0.9f, 1f);
+                    else if (navigableItems[i].name == "Cancel")
+                        btnImage.color = new Color(0.8f, 0.3f, 0.3f, 1f);
+                    else
+                        btnImage.color = new Color(0.3f, 0.6f, 1f, 1f); // Highlighted
                 }
                 else
                 {
-                    btnImage.color = new Color(0.15f, 0.25f, 0.4f, 1f); // Normal
+                    // Normal colors
+                    if (navigableItems[i].isCategory)
+                        btnImage.color = new Color(0.2f, 0.15f, 0.3f, 1f);
+                    else if (navigableItems[i].isMoon)
+                        btnImage.color = new Color(0.12f, 0.2f, 0.35f, 1f);
+                    else if (navigableItems[i].name == "Cancel")
+                        btnImage.color = new Color(0.5f, 0.2f, 0.2f, 1f);
+                    else
+                        btnImage.color = new Color(0.15f, 0.25f, 0.4f, 1f); // Normal
                 }
             }
         }
         
         // Scroll list to keep selection visible
-        if (autopilotContentRect != null && menuSelectedIndex >= 0)
+        if (autopilotContentRect != null && menuSelectedIndex >= 0 && menuSelectedIndex < navigableItems.Count)
         {
+            // Don't auto-scroll for the Cancel button as it's outside the scroll view
+            if (navigableItems[menuSelectedIndex].name == "Cancel") return;
+
             float buttonHeight = 50f;
             float spacing = 8f;
             float itemHeight = buttonHeight + spacing;
-            float scrollPosition = menuSelectedIndex * itemHeight;
+            
+            // Find the index of this item specifically among scrollable items
+            int scrollableIndex = 0;
+            for (int i = 0; i < menuSelectedIndex; i++)
+            {
+                if (navigableItems[i].name != "Cancel") scrollableIndex++;
+            }
+
+            float scrollPosition = scrollableIndex * itemHeight;
             
             ScrollRect scrollRect = autopilotUI?.GetComponentInChildren<ScrollRect>();
-            if (scrollRect != null)
+            if (scrollRect != null && scrollRect.viewport != null)
             {
                 float contentHeight = autopilotContentRect.sizeDelta.y;
                 float viewportHeight = scrollRect.viewport.rect.height;
                 
-                if (contentHeight > viewportHeight)
+                // Fallback for viewport height if not yet updated by layout system or too small
+                if (viewportHeight < 100f) viewportHeight = 550f; 
+
+                float scrollArea = contentHeight - viewportHeight;
+                if (scrollArea > 0.001f)
                 {
-                    float normalizedPosition = 1f - (scrollPosition / (contentHeight - viewportHeight));
-                    scrollRect.verticalNormalizedPosition = Mathf.Clamp01(normalizedPosition);
+                    // We want to keep the item in view. 
+                    // Calculate current normalized scroll position
+                    float currentScroll = scrollRect.verticalNormalizedPosition;
+                    
+                    // Top of item in normalized space
+                    float itemTopNormalized = 1f - (scrollPosition / scrollArea);
+                    // Bottom of item in normalized space
+                    float itemBottomNormalized = 1f - ((scrollPosition + itemHeight) / scrollArea);
+                    
+                    // Small buffers to prevent jitter and ensure full visibility
+                    float buffer = 0.05f; 
+                    
+                    // If item is below view, scroll down
+                    if (currentScroll > itemTopNormalized)
+                    {
+                        scrollRect.verticalNormalizedPosition = Mathf.Clamp01(itemTopNormalized);
+                    }
+                    // If item is above view, scroll up
+                    else if (currentScroll < itemBottomNormalized)
+                    {
+                        scrollRect.verticalNormalizedPosition = Mathf.Clamp01(itemBottomNormalized);
+                    }
+                }
+                else
+                {
+                    // Everything fits, keep it at top
+                    scrollRect.verticalNormalizedPosition = 1f;
                 }
             }
         }
@@ -1540,11 +1750,12 @@ public class SolarSystemUIManager : MonoBehaviour
     [Header("Loading Screen")]
     [Tooltip("Show loading screen while stellar data is being loaded")]
     [SerializeField] private bool enableLoadingScreen = true;
+    [SerializeField] private string loadingScreenImagePath = "Assets/TitleScreen.jpg";
     
     // Loading screen UI elements
     private GameObject loadingScreenUI;
-    private TextMeshProUGUI loadingText;
     private Image loadingBackground;
+    private GameObject loadingCircle;
     private Image progressBarBackground;
     private Image progressBarFill;
     private TextMeshProUGUI progressText;
@@ -1552,6 +1763,7 @@ public class SolarSystemUIManager : MonoBehaviour
     private bool loadingComplete = false;
     private float loadingFadeProgress = 0f;
     private const float LOADING_FADE_SPEED = 2f;
+    private Sprite loadingScreenSprite;
     
     // Reference to HUD (for hiding during loading)
     private GameObject hudReference;
@@ -1586,6 +1798,40 @@ public class SolarSystemUIManager : MonoBehaviour
             return;
         }
         
+        // Load background image
+        if (loadingScreenSprite == null && !string.IsNullOrEmpty(loadingScreenImagePath))
+        {
+#if UNITY_EDITOR
+            loadingScreenSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(loadingScreenImagePath);
+            if (loadingScreenSprite == null)
+            {
+                // Fallback: Try loading as Texture2D and create a sprite (handles images not marked as "Sprite" in Unity)
+                Texture2D tex = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(loadingScreenImagePath);
+                if (tex != null)
+                {
+                    loadingScreenSprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
+                    Debug.Log($"[UIManager] Created sprite from texture for loading screen: {loadingScreenImagePath}");
+                }
+                else
+                {
+                    Debug.LogWarning($"[UIManager] Failed to load loading screen image at: {loadingScreenImagePath}");
+                }
+            }
+#else
+            // In build, we assumes the image is in Resources if we want to load it this way,
+            string resourcesPath = loadingScreenImagePath.Replace("Assets/", "").Replace(".jpg", "").Replace(".png", "");
+            loadingScreenSprite = Resources.Load<Sprite>(resourcesPath);
+            if (loadingScreenSprite == null)
+            {
+                Texture2D tex = Resources.Load<Texture2D>(resourcesPath);
+                if (tex != null)
+                {
+                    loadingScreenSprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
+                }
+            }
+#endif
+        }
+
         // Create loading screen container
         loadingScreenUI = new GameObject("LoadingScreen");
         loadingScreenUI.transform.SetParent(labelCanvas.transform, false);
@@ -1597,42 +1843,66 @@ public class SolarSystemUIManager : MonoBehaviour
         rectTransform.offsetMin = Vector2.zero;
         rectTransform.offsetMax = Vector2.zero;
         
-        // Add dark background
+        // Add background
         loadingBackground = loadingScreenUI.AddComponent<Image>();
-        loadingBackground.color = new Color(0.02f, 0.02f, 0.05f, 1f); // Very dark blue-black
+        if (loadingScreenSprite != null)
+        {
+            loadingBackground.sprite = loadingScreenSprite;
+            loadingBackground.color = Color.white;
+            loadingBackground.preserveAspect = true; // Best for title screens
+            // Make it fill the screen
+            loadingBackground.type = Image.Type.Simple;
+        }
+        else
+        {
+            loadingBackground.color = new Color(0.02f, 0.02f, 0.05f, 1f); // Fallback to dark blue-black
+        }
         
-        // Create center container for loading content
-        GameObject centerContainer = new GameObject("CenterContainer");
-        centerContainer.transform.SetParent(loadingScreenUI.transform, false);
-        RectTransform centerRect = centerContainer.AddComponent<RectTransform>();
-        centerRect.anchorMin = new Vector2(0.5f, 0.5f);
-        centerRect.anchorMax = new Vector2(0.5f, 0.5f);
-        centerRect.pivot = new Vector2(0.5f, 0.5f);
-        centerRect.anchoredPosition = Vector2.zero;
-        centerRect.sizeDelta = new Vector2(600, 250);
+        // === TOP QUARTER: LOADING CIRCLE ===
+        GameObject topContainer = new GameObject("TopContainer");
+        topContainer.transform.SetParent(loadingScreenUI.transform, false);
+        RectTransform topRect = topContainer.AddComponent<RectTransform>();
+        topRect.anchorMin = new Vector2(0.5f, 0.75f);
+        topRect.anchorMax = new Vector2(0.5f, 0.75f);
+        topRect.pivot = new Vector2(0.5f, 0.5f);
+        topRect.anchoredPosition = Vector2.zero;
+        topRect.sizeDelta = new Vector2(200, 200);
+
+        loadingCircle = new GameObject("LoadingCircle");
+        loadingCircle.transform.SetParent(topContainer.transform, false);
+        RectTransform circleRect = loadingCircle.AddComponent<RectTransform>();
+        circleRect.sizeDelta = new Vector2(100, 100);
         
-        // Create loading text
-        GameObject textGO = new GameObject("LoadingText");
-        textGO.transform.SetParent(centerContainer.transform, false);
-        RectTransform textRect = textGO.AddComponent<RectTransform>();
-        textRect.anchorMin = new Vector2(0, 0.6f);
-        textRect.anchorMax = new Vector2(1, 1f);
-        textRect.offsetMin = Vector2.zero;
-        textRect.offsetMax = Vector2.zero;
+        Image circleImage = loadingCircle.AddComponent<Image>();
+        // Use a simple circle sprite or create a procedural one
+        // For now, we'll create a simple ring appearance using a filled image with radial fill
+        circleImage.color = new Color(0.3f, 0.6f, 1f, 1f);
         
-        loadingText = textGO.AddComponent<TextMeshProUGUI>();
-        if (labelFont != null) loadingText.font = labelFont;
-        loadingText.fontSize = 32;
-        loadingText.color = new Color(0.8f, 0.9f, 1f, 1f);
-        loadingText.alignment = TextAlignmentOptions.Center;
-        loadingText.text = "Loading Stellar Data...";
+        // Try to find a default Unity sprite for the circle if possible, or just use a square for now 
+        // until we have a proper asset. Actually, we can use the "Knob" sprite which is usually present.
+#if UNITY_EDITOR
+        circleImage.sprite = UnityEditor.AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/Knob.psd");
+#endif
+        circleImage.type = Image.Type.Filled;
+        circleImage.fillMethod = Image.FillMethod.Radial360;
+        circleImage.fillAmount = 0.25f; // Quarter circle
+        
+        // === BOTTOM QUARTER: PROGRESS BAR & INFO ===
+        GameObject bottomContainer = new GameObject("BottomContainer");
+        bottomContainer.transform.SetParent(loadingScreenUI.transform, false);
+        RectTransform bottomRect = bottomContainer.AddComponent<RectTransform>();
+        bottomRect.anchorMin = new Vector2(0.5f, 0.25f);
+        bottomRect.anchorMax = new Vector2(0.5f, 0.25f);
+        bottomRect.pivot = new Vector2(0.5f, 0.5f);
+        bottomRect.anchoredPosition = Vector2.zero;
+        bottomRect.sizeDelta = new Vector2(600, 150);
         
         // Create progress bar container
         GameObject progressContainer = new GameObject("ProgressBarContainer");
-        progressContainer.transform.SetParent(centerContainer.transform, false);
+        progressContainer.transform.SetParent(bottomContainer.transform, false);
         RectTransform progressContainerRect = progressContainer.AddComponent<RectTransform>();
-        progressContainerRect.anchorMin = new Vector2(0.1f, 0.35f);
-        progressContainerRect.anchorMax = new Vector2(0.9f, 0.45f);
+        progressContainerRect.anchorMin = new Vector2(0.1f, 0.45f);
+        progressContainerRect.anchorMax = new Vector2(0.9f, 0.55f);
         progressContainerRect.offsetMin = Vector2.zero;
         progressContainerRect.offsetMax = Vector2.zero;
         
@@ -1646,7 +1916,7 @@ public class SolarSystemUIManager : MonoBehaviour
         progressBgRect.offsetMax = Vector2.zero;
         
         progressBarBackground = progressBgGO.AddComponent<Image>();
-        progressBarBackground.color = new Color(0.1f, 0.12f, 0.18f, 1f);
+        progressBarBackground.color = new Color(0.1f, 0.12f, 0.18f, 0.8f);
         
         // Progress bar fill
         GameObject progressFillGO = new GameObject("ProgressBarFill");
@@ -1663,33 +1933,33 @@ public class SolarSystemUIManager : MonoBehaviour
         
         // Progress percentage text
         GameObject progressTextGO = new GameObject("ProgressText");
-        progressTextGO.transform.SetParent(centerContainer.transform, false);
+        progressTextGO.transform.SetParent(bottomContainer.transform, false);
         RectTransform progressTextRect = progressTextGO.AddComponent<RectTransform>();
-        progressTextRect.anchorMin = new Vector2(0, 0.15f);
-        progressTextRect.anchorMax = new Vector2(1, 0.32f);
+        progressTextRect.anchorMin = new Vector2(0, 0.25f);
+        progressTextRect.anchorMax = new Vector2(1, 0.42f);
         progressTextRect.offsetMin = Vector2.zero;
         progressTextRect.offsetMax = Vector2.zero;
         
         progressText = progressTextGO.AddComponent<TextMeshProUGUI>();
         if (labelFont != null) progressText.font = labelFont;
-        progressText.fontSize = 16;
-        progressText.color = new Color(0.6f, 0.7f, 0.8f, 0.9f);
+        progressText.fontSize = 18;
+        progressText.color = new Color(0.8f, 0.9f, 1f, 1f);
         progressText.alignment = TextAlignmentOptions.Center;
         progressText.text = "0% - 0 / 0 stars";
         
         // Sub-text hint
         GameObject hintGO = new GameObject("LoadingHint");
-        hintGO.transform.SetParent(centerContainer.transform, false);
+        hintGO.transform.SetParent(bottomContainer.transform, false);
         RectTransform hintRect = hintGO.AddComponent<RectTransform>();
-        hintRect.anchorMin = new Vector2(0, 0f);
-        hintRect.anchorMax = new Vector2(1, 0.15f);
+        hintRect.anchorMin = new Vector2(0, 0.1f);
+        hintRect.anchorMax = new Vector2(1, 0.25f);
         hintRect.offsetMin = Vector2.zero;
         hintRect.offsetMax = Vector2.zero;
         
         loadingSubText = hintGO.AddComponent<TextMeshProUGUI>();
         if (labelFont != null) loadingSubText.font = labelFont;
         loadingSubText.fontSize = 14;
-        loadingSubText.color = new Color(0.4f, 0.5f, 0.6f, 0.7f);
+        loadingSubText.color = new Color(0.6f, 0.7f, 0.8f, 0.9f);
         loadingSubText.alignment = TextAlignmentOptions.Center;
         loadingSubText.text = "Preparing stellar dataset...";
         
@@ -1699,7 +1969,7 @@ public class SolarSystemUIManager : MonoBehaviour
             hudReference.SetActive(false);
         }
         
-        Debug.Log("[UIManager] Loading screen created with progress bar");
+        Debug.Log("[UIManager] Loading screen created with background image and loading circle");
     }
     
     /// <summary>
@@ -1711,6 +1981,12 @@ public class SolarSystemUIManager : MonoBehaviour
     {
         if (loadingScreenUI == null) return;
         
+        // Animate loading circle
+        if (loadingCircle != null)
+        {
+            loadingCircle.transform.Rotate(0, 0, -200f * Time.deltaTime);
+        }
+
         // Update sub-text with dataset name
         if (loadingSubText != null)
         {
@@ -1718,6 +1994,19 @@ public class SolarSystemUIManager : MonoBehaviour
         }
 
         float progress = totalStars > 0 ? Mathf.Clamp01((float)starCount / totalStars) : 0f;
+        
+        // Update progress bar fill
+        if (progressBarFill != null && !loadingComplete)
+        {
+            RectTransform fillRect = progressBarFill.GetComponent<RectTransform>();
+            fillRect.anchorMax = new Vector2(progress, 1f);
+        }
+        
+        // Update progress text
+        if (progressText != null && !loadingComplete)
+        {
+            progressText.text = $"{(progress * 100f):F1}% - {starCount:N0} / {totalStars:N0} stars";
+        }
         
         if (dataReady && !loadingComplete)
         {
@@ -1755,55 +2044,62 @@ public class SolarSystemUIManager : MonoBehaviour
                 float alpha = 1f - loadingFadeProgress;
                 if (loadingBackground != null)
                 {
-                    loadingBackground.color = new Color(0.02f, 0.02f, 0.05f, alpha);
+                    // If we have a sprite, keep its base color (white) and just fade alpha
+                    Color bgCol = loadingScreenSprite != null ? Color.white : new Color(0.02f, 0.02f, 0.05f, 1f);
+                    bgCol.a = alpha;
+                    loadingBackground.color = bgCol;
                 }
-                if (loadingText != null)
+                if (loadingCircle != null)
                 {
-                    loadingText.color = new Color(0.8f, 0.9f, 1f, alpha);
+                    Image circleImg = loadingCircle.GetComponent<Image>();
+                    if (circleImg != null)
+                    {
+                        Color c = circleImg.color;
+                        c.a = alpha;
+                        circleImg.color = c;
+                    }
                 }
                 if (progressBarBackground != null)
                 {
-                    progressBarBackground.color = new Color(0.1f, 0.12f, 0.18f, alpha);
+                    Color c = progressBarBackground.color;
+                    c.a = alpha * 0.8f;
+                    progressBarBackground.color = c;
                 }
                 if (progressBarFill != null)
                 {
-                    progressBarFill.color = new Color(0.3f, 0.6f, 1f, alpha);
+                    Color c = progressBarFill.color;
+                    c.a = alpha;
+                    progressBarFill.color = c;
                 }
                 if (progressText != null)
                 {
-                    progressText.color = new Color(0.6f, 0.7f, 0.8f, alpha * 0.9f);
+                    Color c = progressText.color;
+                    c.a = alpha;
+                    progressText.color = c;
+                }
+                if (loadingSubText != null)
+                {
+                    Color c = loadingSubText.color;
+                    c.a = alpha * 0.9f;
+                    loadingSubText.color = c;
                 }
             }
         }
-        else if (!dataReady)
+    }
+    
+    /// <summary>
+    /// Shows or hides all labels.
+    /// </summary>
+    public void SetLabelsVisible(bool visible)
+    {
+        if (labelCanvas != null)
         {
-            // Animate loading text with dots
-            int dotCount = (int)(Time.time * 2f) % 4;
-            string dots = new string('.', dotCount);
-            loadingText.text = $"Loading Stellar Data{dots}";
-            
-            // Update progress bar fill
-            if (progressBarFill != null)
+            foreach (Transform child in labelCanvas.transform)
             {
-                RectTransform fillRect = progressBarFill.GetComponent<RectTransform>();
-                float currentProgress = fillRect.anchorMax.x;
-                float targetProgress = progress;
-                float smoothProgress = Mathf.Lerp(currentProgress, targetProgress, Time.deltaTime * 5f);
-                fillRect.anchorMax = new Vector2(smoothProgress, 1f);
-            }
-            
-            // Update progress text
-            if (progressText != null)
-            {
-                int percentage = Mathf.RoundToInt(progress * 100f);
-                progressText.text = $"{percentage}% - {starCount:N0} / {totalStars:N0} stars";
-            }
-            
-            // Subtle pulsing effect on progress bar color
-            float pulse = 0.9f + 0.1f * Mathf.Sin(Time.time * 3f);
-            if (progressBarFill != null)
-            {
-                progressBarFill.color = new Color(0.3f * pulse, 0.6f * pulse, 1f, 1f);
+                if (child.name.EndsWith("_Label"))
+                {
+                    child.gameObject.SetActive(visible);
+                }
             }
         }
     }
@@ -2056,6 +2352,28 @@ public class SolarSystemUIManager : MonoBehaviour
         if (hudUI != null)
         {
             hudUI.SetActive(visible);
+        }
+    }
+    /// <summary>
+    /// Shows or hides the label text using transparency, keeping the label GameObject active.
+    /// This allows children (like HUD info boxes) to remain visible even if the name label is hidden.
+    /// </summary>
+    public void SetLabelTextVisible(GameObject labelGO, bool visible)
+    {
+        if (labelGO == null) return;
+        
+        var textComp = labelGO.GetComponent<TextMeshProUGUI>();
+        if (textComp != null)
+        {
+            // Use alpha for visibility instead of enabling/disabling component
+            // This ensures the component remains active which might be needed for layout/children
+            // or if the "Box" is somehow dependent on the TextMeshPro component being enabled.
+            Color c = textComp.color;
+            c.a = visible ? 1f : 0f;
+            textComp.color = c;
+            
+            // Also ensure the component is actually enabled
+            if (!textComp.enabled) textComp.enabled = true;
         }
     }
 }

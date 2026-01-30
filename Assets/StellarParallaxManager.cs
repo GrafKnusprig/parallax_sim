@@ -54,21 +54,7 @@ public class StellarParallaxManager : MonoBehaviour
     [Tooltip("Distance (parsecs) beyond which fast approximation is used")]
     [SerializeField] private float parallaxApproxDistanceParsecs = 50f;
 
-    [Header("Player-Relative Culling")]
-    [Tooltip("Cull stars outside a fixed radius around the player (parsecs)")]
-    [SerializeField] private bool enablePlayerRelativeCulling = true;
-    [Tooltip("Player-relative culling radius (parsecs)")]
-    [SerializeField] private float playerCullingRadiusParsecs = 200f;
-    [Tooltip("Increase player-relative culling radius as distance from the Sun grows")]
-    [SerializeField] private bool enableAdaptivePlayerCullingRadius = true;
-    [Tooltip("Culling radius growth per parsec from Sun")]
-    [SerializeField] private float playerCullingRadiusGrowthPerParsec = 0.25f;
-    [Tooltip("Maximum adaptive culling radius (parsecs)")]
-    [SerializeField] private float maxPlayerCullingRadiusParsecs = 2000f;
-    [Tooltip("Ensure at least this many stars are shown by expanding selection if needed")]
-    [SerializeField] private int minVisibleStars = 5000;
-    [Tooltip("Enable fallback pass to reach minimum visible stars")]
-    [SerializeField] private bool enableMinVisibleStarFallback = true;
+
 
     [Header("Speed-Based Star Scaling")]
     [Tooltip("Scale star distances down when player speed exceeds the threshold")]
@@ -83,19 +69,7 @@ public class StellarParallaxManager : MonoBehaviour
     [SerializeField] private bool holdScaleWhenStopped = true;
     [Tooltip("Speed (AU/s) considered stopped for holding scale")]
     [SerializeField] private float stoppedSpeedThresholdAuPerSec = 0.05f;
-    [Header("Far Distance Culling (Performance)")]
-    [Tooltip("Enable gradual far-distance culling to reduce work at large distances")]
-    [SerializeField] private bool enableFarDistanceCulling = true;
-    [Tooltip("Distance (AU) where far-distance culling starts ramping in")]
-    [SerializeField] private float farCullingStartAu = 300000f; // ~1.45 ly
-    [Tooltip("Distance (AU) where far-distance culling reaches full effect")]
-    [SerializeField] private float farCullingEndAu = 2000000f; // ~9.7 ly
-    [Tooltip("Max stars to process when far-distance culling is off")]
-    [SerializeField] private int maxStarsToProcessNear = 4000000;
-    [Tooltip("Max stars to process when far-distance culling is fully on")]
-    [SerializeField] private int maxStarsToProcessFar = 1500000;
-    [Tooltip("Player-relative distance factor at far distances (fraction of maxDistance)")]
-    [SerializeField] private float farDistancePlayerRangeFactor = 0.6f;
+
     
     // Constants
     private const float PARSEC_TO_AU = 206264.806f;  // 1 parsec = 206,264.806 AU
@@ -171,6 +145,7 @@ public class StellarParallaxManager : MonoBehaviour
     private float lastRenderDistance = -1f;
     private float lastStarDistanceScale = 1f;
     private uint totalStars = 0;
+    private bool starsVisible = true;
     
     // Performance optimization
     private const float FOV_CULLING_MARGIN = 45f; // Large margin for seamless rendering
@@ -191,21 +166,17 @@ public class StellarParallaxManager : MonoBehaviour
         public float3 cameraPos;
         public float3 cameraForward;
         public float3 effectivePlayerPosAu;
-        public float3 effectivePlayerPosParsecs;
         public float horizonRadius;
         public float cosHalfFOV;
-        public float cosRoughFOV;
         public float maxDistance;
-        public float effectivePlayerCullingRadiusSq;
-        public float farDistancePlayerRangeFactor;
-        public float smoothFarT;
         public float auToParsec;
         public float parallaxApproxDistanceParsecs;
+        public int starCount;
+        public int maxStarsPerFrame;
         
         // Input: Feature flags
         public bool enableParallax;
         public bool enableFastParallaxApprox;
-        public bool enablePlayerRelativeCulling;
         
         // Output: Visibility flags and world positions (indexed by star index)
         // Each star writes to its own index, then we compact on main thread
@@ -216,70 +187,75 @@ public class StellarParallaxManager : MonoBehaviour
         
         public void Execute(int index)
         {
-            float distance = distances[index];
+            // Stride-based sampling: skip stars uniformly to reduce density
+            // This matches the compute shader's approach (lines 54-59 in StarCulling.compute)
+            if (maxStarsPerFrame > 0 && starCount > maxStarsPerFrame)
+            {
+                int stride = starCount / maxStarsPerFrame;
+                if (stride > 1 && (index % stride) != 0)
+                {
+                    visibilityFlags[index] = 0;
+                    return;
+                }
+            }
             
-            // Early distance culling - cheapest check first
-            // TESTING: Distance culling disabled - show all stars in FOV
-            // if (distance > maxDistance)
-            // {
-            //     visibilityFlags[index] = 0;
-            //     return;
-            // }
+            float distance = distances[index];
             
             float3 positionParsecs = positionsParsecs[index];
             
-            // TESTING: Player-relative culling disabled
-            // if (enablePlayerRelativeCulling)
-            // {
-            //     float3 starToPlayer = effectivePlayerPosParsecs - positionParsecs;
-            //     float sqrDist = math.lengthsq(starToPlayer);
-            //     if (sqrDist > effectivePlayerCullingRadiusSq)
-            //     {
-            //         visibilityFlags[index] = 0;
-            //         return;
-            //     }
-            // }
-            
-            // TESTING: Far distance culling disabled
-            // if (smoothFarT > 0f)
-            // {
-            //     float3 playerPosParsecsLocal = effectivePlayerPosAu * auToParsec;
-            //     float3 starToPlayer = playerPosParsecsLocal - positionParsecs;
-            //     float distanceToPlayer = math.length(starToPlayer);
-            //     if (distanceToPlayer > maxDistance * farDistancePlayerRangeFactor)
-            //     {
-            //         visibilityFlags[index] = 0;
-            //         return;
-            //     }
-            // }
-            
+            // Fast FOV culling (matches compute shader logic)
+            float3 worldPos;
             float3 direction = directions[index];
-            float3 starDir = direction * horizonRadius;
-            float3 toStarRough = math.normalize(starDir - cameraPos);
-            float roughDot = math.dot(cameraForward, toStarRough);
             
-            // Skip if clearly outside FOV
-            if (roughDot < cosRoughFOV)
+            if (!enableParallax)
             {
-                visibilityFlags[index] = 0;
-                return;
+                // No parallax: simple direction check (matches compute shader lines 71-72)
+                if (math.dot(direction, cameraForward) < cosHalfFOV)
+                {
+                    visibilityFlags[index] = 0;
+                    return;
+                }
+                
+                worldPos = direction * horizonRadius;
             }
-            
-            // Calculate world position with parallax
-            float3 worldPos = CalculateWorldPosition(index, direction, positionParsecs, distance);
+            else
+            {
+                // Parallax enabled: Calculate vector P from player to star
+                // P = StarPos - PlayerPos (All in Parsecs)
+                // Matches compute shader lines 78-95
+                float3 P = positionParsecs - (effectivePlayerPosAu * auToParsec);
+                
+                // Fast Squared FOV Check
+                // We defer costly sqrt/normalize until after culling
+                float dotF = math.dot(P, cameraForward);
+                
+                // 1. Cull if behind camera (assuming FOV < 180)
+                if (dotF <= 0)
+                {
+                    visibilityFlags[index] = 0;
+                    return;
+                }
+                
+                // 2. Cull if outside field of view cone
+                // Check: dot(P, F) < cos(theta) * length(P)
+                // Optimization: dotF^2 < cos^2 * dot(P, P)
+                float distSq = math.dot(P, P);
+                if (dotF * dotF < (cosHalfFOV * cosHalfFOV) * distSq)
+                {
+                    visibilityFlags[index] = 0;
+                    return;
+                }
+                
+                // Star is visible: Compute final world position
+                // rsqrt is fast on CPU with Burst as well
+                float invDist = math.rsqrt(distSq);
+                float3 dir = P * invDist;
+                
+                worldPos = dir * horizonRadius;
+            }
             
             // Validate world position
             if (math.any(math.isnan(worldPos)) || math.any(math.isinf(worldPos)))
-            {
-                visibilityFlags[index] = 0;
-                return;
-            }
-            
-            // Final precise FOV culling
-            float3 toStar = math.normalize(worldPos - cameraPos);
-            float dotProduct = math.dot(cameraForward, toStar);
-            
-            if (dotProduct < cosHalfFOV)
             {
                 visibilityFlags[index] = 0;
                 return;
@@ -565,7 +541,6 @@ public class StellarParallaxManager : MonoBehaviour
         
         float halfFOVWithMargin = playerCamera.fieldOfView * 0.5f + FOV_CULLING_MARGIN;
         float cosHalfFOV = Mathf.Cos(halfFOVWithMargin * Mathf.Deg2Rad);
-        float cosRoughFOV = Mathf.Cos((halfFOVWithMargin + 30f) * Mathf.Deg2Rad);
         
         // Reset append buffer
         visibleStarsBuffer.SetCounterValue(0);
@@ -579,7 +554,6 @@ public class StellarParallaxManager : MonoBehaviour
         starCullingShader.SetVector("_PlayerPosAu", effectivePlayerPosAu);
         starCullingShader.SetFloat("_HorizonRadius", horizonRadius);
         starCullingShader.SetFloat("_CosHalfFOV", cosHalfFOV);
-        starCullingShader.SetFloat("_CosRoughFOV", cosRoughFOV);
         starCullingShader.SetFloat("_AuToParsec", AU_TO_PARSEC);
         
         starCullingShader.SetInt("_EnableParallax", enableParallax ? 1 : 0);
@@ -599,7 +573,7 @@ public class StellarParallaxManager : MonoBehaviour
     
     private void RenderStarsGPU()
     {
-        if (!computeBuffersAllocated || starMaterialGPU == null) return;
+        if (!starsVisible || !computeBuffersAllocated || starMaterialGPU == null) return;
         
         // Set the visible stars buffer on the material
         starMaterialGPU.SetBuffer("_VisibleStars", visibleStarsBuffer);
@@ -636,30 +610,13 @@ public class StellarParallaxManager : MonoBehaviour
         Vector3d playerPosRelativeToSunAu = solarSystemManager.GetPlayerPositionRelativeToSun();
         Vector3 playerPosAu = (Vector3)playerPosRelativeToSunAu;
         Vector3 effectivePlayerPosAu = playerPosAu * starDistanceScale;
-        Vector3 effectivePlayerPosParsecs = effectivePlayerPosAu * AU_TO_PARSEC;
-        float playerDistanceParsecs = effectivePlayerPosParsecs.magnitude;
+
         
         float halfFOVWithMargin = playerCamera.fieldOfView * 0.5f + FOV_CULLING_MARGIN;
         float cosHalfFOV = Mathf.Cos(halfFOVWithMargin * Mathf.Deg2Rad);
-        float cosRoughFOV = Mathf.Cos((halfFOVWithMargin + 30f) * Mathf.Deg2Rad);
         
-        float effectivePlayerCullingRadiusParsecs = playerCullingRadiusParsecs;
-        if (enableAdaptivePlayerCullingRadius)
-        {
-            effectivePlayerCullingRadiusParsecs = Mathf.Clamp(
-                playerCullingRadiusParsecs + playerDistanceParsecs * playerCullingRadiusGrowthPerParsec,
-                playerCullingRadiusParsecs,
-                maxPlayerCullingRadiusParsecs
-            );
-        }
-        
-        float playerDistanceFromOrigin = effectivePlayerPosAu.magnitude;
-        float farT = enableFarDistanceCulling
-            ? Mathf.InverseLerp(farCullingStartAu, farCullingEndAu, playerDistanceFromOrigin)
-            : 0f;
-        float farT01 = Mathf.Clamp01(farT);
-        float smoothFarT = farT01 * farT01 * (3f - 2f * farT01);
-        float playerRangeFactor = Mathf.Lerp(1f, farDistancePlayerRangeFactor, smoothFarT);
+
+
         
         int starCount = allStars.Count;
         
@@ -677,20 +634,16 @@ public class StellarParallaxManager : MonoBehaviour
             cameraPos = new float3(cameraPos.x, cameraPos.y, cameraPos.z),
             cameraForward = new float3(cameraForward.x, cameraForward.y, cameraForward.z),
             effectivePlayerPosAu = new float3(effectivePlayerPosAu.x, effectivePlayerPosAu.y, effectivePlayerPosAu.z),
-            effectivePlayerPosParsecs = new float3(effectivePlayerPosParsecs.x, effectivePlayerPosParsecs.y, effectivePlayerPosParsecs.z),
             horizonRadius = horizonRadius,
             cosHalfFOV = cosHalfFOV,
-            cosRoughFOV = cosRoughFOV,
             maxDistance = maxDistance,
-            effectivePlayerCullingRadiusSq = effectivePlayerCullingRadiusParsecs * effectivePlayerCullingRadiusParsecs,
-            farDistancePlayerRangeFactor = playerRangeFactor,
-            smoothFarT = smoothFarT,
             auToParsec = AU_TO_PARSEC,
             parallaxApproxDistanceParsecs = parallaxApproxDistanceParsecs,
+            starCount = starCount,
+            maxStarsPerFrame = maxStarsPerFrame,
             
             enableParallax = enableParallax,
             enableFastParallaxApprox = enableFastParallaxApprox,
-            enablePlayerRelativeCulling = enablePlayerRelativeCulling,
             
             outputWorldPositions = nativeOutputWorldPositions,
             visibilityFlags = nativeVisibilityFlags
@@ -772,157 +725,115 @@ public class StellarParallaxManager : MonoBehaviour
         // Stars are positioned with Sun at origin (0,0,0), so we need player offset from Sun
         Vector3d playerPosRelativeToSunAu = solarSystemManager.GetPlayerPositionRelativeToSun();
         Vector3 playerPosAu = (Vector3)playerPosRelativeToSunAu;
-        Vector3 playerPosParsecs = playerPosAu * AU_TO_PARSEC;
         Vector3 effectivePlayerPosAu = playerPosAu * starDistanceScale;
-        Vector3 effectivePlayerPosParsecs = playerPosParsecs * starDistanceScale;
-        float playerDistanceParsecs = effectivePlayerPosParsecs.magnitude;
         
         // Calculate effective FOV with generous margin
         float halfFOVWithMargin = playerCamera.fieldOfView * 0.5f + FOV_CULLING_MARGIN;
         float cosHalfFOV = Mathf.Cos(halfFOVWithMargin * Mathf.Deg2Rad);
-        float cosRoughFOV = Mathf.Cos((halfFOVWithMargin + 30f) * Mathf.Deg2Rad);
         
-        float effectivePlayerCullingRadiusParsecs = playerCullingRadiusParsecs;
-        if (enableAdaptivePlayerCullingRadius)
-        {
-            effectivePlayerCullingRadiusParsecs = Mathf.Clamp(
-                playerCullingRadiusParsecs + playerDistanceParsecs * playerCullingRadiusGrowthPerParsec,
-                playerCullingRadiusParsecs,
-                maxPlayerCullingRadiusParsecs
-            );
-        }
-
         int processed = 0;
         HashSet<int> visibleIndices = new HashSet<int>();
-            float playerDistanceFromOrigin = effectivePlayerPosAu.magnitude;
-            float farT = enableFarDistanceCulling
-                ? Mathf.InverseLerp(farCullingStartAu, farCullingEndAu, playerDistanceFromOrigin)
-                : 0f;
-            float farT01 = Mathf.Clamp01(farT);
-            float smoothFarT = farT01 * farT01 * (3f - 2f * farT01); // smoothstep
-            int maxToProcess = Mathf.RoundToInt(Mathf.Lerp(maxStarsToProcessNear, maxStarsToProcessFar, smoothFarT));
-            float playerRangeFactor = Mathf.Lerp(1f, farDistancePlayerRangeFactor, smoothFarT);
         
+        // Calculate stride for uniform sampling (matches compute shader logic)
+        int starCount = allStars.Count;
+        int stride = 1;
+        if (maxStarsPerFrame > 0 && starCount > maxStarsPerFrame)
+        {
+            stride = starCount / maxStarsPerFrame;
+        }
+        
+        int starIndex = 0;
         foreach (StarData star in allStars)
         {
+            // Stride-based sampling: skip stars uniformly to reduce density
+            // This matches the compute shader's approach (lines 54-59 in StarCulling.compute)
+            if (stride > 1 && (starIndex % stride) != 0)
+            {
+                starIndex++;
+                continue;
+            }
+            
             // Early distance culling - cheapest check first
             if (star.distance > maxDistance)
             {
-                processed++;
-                if (processed > maxToProcess) break; // Prevent processing all 2.4M stars when far out
+                starIndex++;
                 continue;
             }
 
-            if (enablePlayerRelativeCulling)
+
+
+
+            
+            // Fast FOV culling (matches compute shader logic)
+            Vector3 worldPos;
+            if (!enableParallax)
             {
-                Vector3 starToPlayer = effectivePlayerPosParsecs - star.positionParsecs;
-                if (starToPlayer.sqrMagnitude > effectivePlayerCullingRadiusParsecs * effectivePlayerCullingRadiusParsecs)
+                // No parallax: simple direction check
+                Vector3 dir = star.direction;
+                
+                // Fast Pre-Check (No Parallax) - matches compute shader lines 71-72
+                if (Vector3.Dot(dir, cameraForward) < cosHalfFOV)
                 {
-                    processed++;
-                    if (processed > maxToProcess) break;
+                    starIndex++;
                     continue;
                 }
+                
+                worldPos = dir * horizonRadius;
             }
-
-            // Additional distance culling when player is far from galactic center (ramped)
-            if (smoothFarT > 0f)
+            else
             {
-                Vector3 starToPlayer = (effectivePlayerPosAu * AU_TO_PARSEC) - star.positionParsecs;
-                float distanceToPlayer = starToPlayer.magnitude;
-
-                // Only consider stars relatively close to player's position
-                if (distanceToPlayer > maxDistance * playerRangeFactor)
+                // Parallax enabled: Calculate vector P from player to star
+                // P = StarPos - PlayerPos (All in Parsecs)
+                // Matches compute shader lines 78-95
+                Vector3 P = star.positionParsecs - (effectivePlayerPosAu * AU_TO_PARSEC);
+                
+                // Fast Squared FOV Check
+                // We defer costly sqrt/normalize until after culling
+                float dotF = Vector3.Dot(P, cameraForward);
+                
+                // 1. Cull if behind camera (assuming FOV < 180)
+                if (dotF <= 0)
                 {
-                    processed++;
-                    if (processed > maxToProcess) break;
+                    starIndex++;
                     continue;
                 }
+                
+                // 2. Cull if outside field of view cone
+                // Check: dot(P, F) < cos(theta) * length(P)
+                // Optimization: dotF^2 < cos^2 * dot(P, P)
+                float distSq = Vector3.Dot(P, P);
+                if (dotF * dotF < (cosHalfFOV * cosHalfFOV) * distSq)
+                {
+                    starIndex++;
+                    continue;
+                }
+                
+                // Star is visible: Compute final world position
+                float invDist = 1f / Mathf.Sqrt(distSq);
+                Vector3 dir = P * invDist;
+                
+                worldPos = dir * horizonRadius;
             }
-            
-            // Cheap direction culling before expensive parallax calculation
-            Vector3 direction = star.direction;
-            Vector3 starDir = direction * horizonRadius;
-            Vector3 toStarRough = (starDir - cameraPos).normalized;
-            float roughDot = Vector3.Dot(cameraForward, toStarRough);
-            
-            // Skip expensive parallax calculation if star is clearly outside FOV
-            if (roughDot < cosRoughFOV)
-            {
-                processed++;
-                if (processed > maxToProcess) break;
-                continue;
-            }
-            
-            // Now do the expensive parallax calculation only for potential candidates
-            Vector3 worldPos = CalculateStarWorldPosition(star, direction, horizonRadius, effectivePlayerPosAu);
             
             // Skip stars with invalid world positions
             if (float.IsNaN(worldPos.x) || float.IsNaN(worldPos.y) || float.IsNaN(worldPos.z) ||
                 float.IsInfinity(worldPos.x) || float.IsInfinity(worldPos.y) || float.IsInfinity(worldPos.z))
             {
-                processed++;
-                if (processed > maxToProcess) break;
-                continue;
-            }
-            
-            // Final precise FOV culling with parallax-corrected position
-            Vector3 toStar = (worldPos - cameraPos).normalized;
-            float dotProduct = Vector3.Dot(cameraForward, toStar);
-            
-            // Use generous FOV margin for seamless experience
-            if (dotProduct < cosHalfFOV)
-            {
-                processed++;
-                if (processed > maxToProcess) break;
+                starIndex++;
                 continue;
             }
             
             visibleStars.Add(star);
             visibleStarWorldPositions.Add(worldPos);
             visibleIndices.Add(star.originalIndex);
-            processed++;
+            starIndex++;
             
             // Limit stars per frame for performance
-            if (visibleStars.Count >= maxStarsPerFrame || processed > maxToProcess)
+            if (visibleStars.Count >= maxStarsPerFrame)
                 break;
         }
 
-        if (enableMinVisibleStarFallback && visibleStars.Count < minVisibleStars)
-        {
-            int targetCount = Mathf.Min(minVisibleStars, maxStarsPerFrame);
-            foreach (StarData star in allStars)
-            {
-                if (visibleStars.Count >= targetCount)
-                    break;
 
-                // Skip stars already visible
-                if (visibleIndices.Contains(star.originalIndex))
-                    continue;
-
-                // Cheap direction culling before expensive parallax calculation
-                Vector3 direction = star.direction;
-                Vector3 starDir = direction * horizonRadius;
-                Vector3 toStarRough = (starDir - cameraPos).normalized;
-                float roughDot = Vector3.Dot(cameraForward, toStarRough);
-
-                if (roughDot < cosRoughFOV)
-                    continue;
-
-                Vector3 worldPos = CalculateStarWorldPosition(star, direction, horizonRadius, effectivePlayerPosAu);
-                if (float.IsNaN(worldPos.x) || float.IsNaN(worldPos.y) || float.IsNaN(worldPos.z) ||
-                    float.IsInfinity(worldPos.x) || float.IsInfinity(worldPos.y) || float.IsInfinity(worldPos.z))
-                    continue;
-
-                Vector3 toStar = (worldPos - cameraPos).normalized;
-                float dotProduct = Vector3.Dot(cameraForward, toStar);
-                if (dotProduct < cosHalfFOV)
-                    continue;
-
-                visibleStars.Add(star);
-                visibleStarWorldPositions.Add(worldPos);
-                visibleIndices.Add(star.originalIndex);
-            }
-        }
     }
     
     private void UpdateStarRendering()
@@ -1043,8 +954,15 @@ public class StellarParallaxManager : MonoBehaviour
         return lastStarDistanceScale;
     }
     
+    public void SetStarsVisible(bool visible)
+    {
+        starsVisible = visible;
+    }
+    
     private void RenderStars()
     {
+        if (!starsVisible) return;
+        
         // Use GPU path if available
         if (useComputeShader && computeBuffersAllocated && starCullingShader != null && starMaterialGPU != null)
         {
@@ -1110,15 +1028,7 @@ public class StellarParallaxManager : MonoBehaviour
         // Allow up to 20M for full dataset rendering
         maxStarsPerFrame = Mathf.Clamp(maxStarsPerFrame, 100, 20000000);
 
-        farCullingStartAu = Mathf.Max(0f, farCullingStartAu);
-        farCullingEndAu = Mathf.Max(farCullingStartAu, farCullingEndAu);
-        maxStarsToProcessNear = Mathf.Clamp(maxStarsToProcessNear, 100000, 4000000);
-        maxStarsToProcessFar = Mathf.Clamp(maxStarsToProcessFar, 100000, maxStarsToProcessNear);
-        farDistancePlayerRangeFactor = Mathf.Clamp01(farDistancePlayerRangeFactor);
-        playerCullingRadiusParsecs = Mathf.Max(0f, playerCullingRadiusParsecs);
-        playerCullingRadiusGrowthPerParsec = Mathf.Max(0f, playerCullingRadiusGrowthPerParsec);
-        maxPlayerCullingRadiusParsecs = Mathf.Max(playerCullingRadiusParsecs, maxPlayerCullingRadiusParsecs);
-        minVisibleStars = Mathf.Clamp(minVisibleStars, 0, 1000000);
+
 
         speedScalingStartAuPerSec = Mathf.Max(0f, speedScalingStartAuPerSec);
         speedScalingStrength = Mathf.Max(0f, speedScalingStrength);
