@@ -53,6 +53,7 @@
     *   **Burst Compiler**: Converts C# into ultra-optimized machine code using **SIMD** (Single Instruction, Multiple Data).
     *   **Native Data**: Uses `NativeArray` to bypass "Garbage Collection" (GC) spikes, ensuring jitter-free performance.
 *   **GPU Compute Shaders (Fastest)**:
+    *   **Problem With Stereo Rendering**: UNITY_SETUP_INSTANCE_ID(v); UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
     *   **Massive Parallelism**: Uses thousands of tiny GPU threads to process millions of stars at once.
     *   **GPU-Only Loop**: Calculations happen entirely on the graphics card. The results are sent directly to the renderer via **Indirect Drawing**, meaning the CPU never has to touch the star data.
 
